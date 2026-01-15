@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Donedex",
+    "slug": "donedex",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/donedex-icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/donedex-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F4C5C"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.donedex.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/donedex-icon.png",
+        "backgroundColor": "#0F4C5C"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.donedex.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/donedex-icon.png",
+      "output": "single",
+      "name": "Donedex"
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker"
+    ]
+  }
+}

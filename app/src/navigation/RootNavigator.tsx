@@ -1,0 +1,136 @@
+import React, { useEffect, useState } from 'react';
+import { View, ActivityIndicator, StyleSheet, Text, Platform } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { AuthNavigator } from './AuthNavigator';
+import { AdaptiveNavigator } from './AdaptiveNavigator';
+import { OnboardingNavigator } from './OnboardingNavigator';
+import { useAuthStore } from '../store/authStore';
+import { useOnboardingStore } from '../store/onboardingStore';
+import { colors, fontSize, spacing } from '../constants/theme';
+import { ImpersonationBanner } from '../components/ImpersonationBanner';
+import { useResponsive } from '../hooks/useResponsive';
+
+// DEV MODE: Skip all auth and go straight to main app
+const DEV_SKIP_AUTH = false;
+
+export function RootNavigator() {
+  const { isLoading, isInitialized, session, initialize, isSuperAdmin } = useAuthStore();
+  const {
+    initialize: initializeOnboarding,
+    needsOnboarding,
+    isComplete,
+    isLoading: isOnboardingLoading,
+  } = useOnboardingStore();
+
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
+
+  // Initialize auth
+  useEffect(() => {
+    if (!DEV_SKIP_AUTH) {
+      initialize();
+    }
+  }, [initialize]);
+
+  // Check onboarding status when authenticated (skip for super admins)
+  useEffect(() => {
+    const checkOnboarding = async () => {
+      if (session && isInitialized && !onboardingChecked) {
+        // Super admins don't need onboarding - they're vendor admins
+        if (isSuperAdmin) {
+          setOnboardingChecked(true);
+          return;
+        }
+
+        try {
+          await initializeOnboarding();
+        } catch (err) {
+          console.error('Onboarding init error:', err);
+        } finally {
+          setOnboardingChecked(true);
+        }
+      }
+    };
+
+    if (!DEV_SKIP_AUTH) {
+      checkOnboarding();
+    }
+  }, [session, isInitialized, onboardingChecked, initializeOnboarding, isSuperAdmin]);
+
+  // Reset onboarding check when session changes
+  useEffect(() => {
+    if (!session && !DEV_SKIP_AUTH) {
+      setOnboardingChecked(false);
+    }
+  }, [session]);
+
+  // DEV MODE: Skip everything and show main app
+  if (DEV_SKIP_AUTH) {
+    return (
+      <View style={styles.container}>
+        <NavigationContainer>
+          <AdaptiveNavigator />
+        </NavigationContainer>
+      </View>
+    );
+  }
+
+  // Show loading screen while checking auth state
+  if (!isInitialized || isLoading) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
+      </View>
+    );
+  }
+
+  // If authenticated, check onboarding status
+  if (session && !onboardingChecked) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
+
+  // Determine which navigator to show
+  const getNavigator = () => {
+    if (!session) {
+      return <AuthNavigator />;
+    }
+
+    // Show onboarding if needed (but not for super admins)
+    if (needsOnboarding && !isComplete && !isSuperAdmin) {
+      return <OnboardingNavigator />;
+    }
+
+    // Use AdaptiveNavigator for desktop web sidebar / mobile tabs
+    return <AdaptiveNavigator />;
+  };
+
+  return (
+    <View style={styles.container}>
+      <NavigationContainer>
+        {getNavigator()}
+      </NavigationContainer>
+      {session && !needsOnboarding && <ImpersonationBanner />}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  loading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+  },
+  loadingText: {
+    marginTop: spacing.md,
+    fontSize: fontSize.body,
+    color: colors.text.secondary,
+  },
+});
