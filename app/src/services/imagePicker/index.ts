@@ -23,6 +23,8 @@ import {
   launchImageLibrary as launchImageLibraryWeb,
   requestCameraPermissions as requestCameraPermissionsWeb,
   requestMediaLibraryPermissions as requestMediaLibraryPermissionsWeb,
+  launchVideoCamera as launchVideoCameraWeb,
+  launchVideoLibrary as launchVideoLibraryWeb,
 } from './imagePicker.web';
 
 export const launchCamera = Platform.OS === 'web' ? launchCameraWeb : launchCameraNative;
@@ -30,6 +32,6 @@ export const launchImageLibrary = Platform.OS === 'web' ? launchImageLibraryWeb 
 export const requestCameraPermissions = Platform.OS === 'web' ? requestCameraPermissionsWeb : requestCameraPermissionsNative;
 export const requestMediaLibraryPermissions = Platform.OS === 'web' ? requestMediaLibraryPermissionsWeb : requestMediaLibraryPermissionsNative;
 
-// Video functions - native only for now
-export const launchVideoCamera = launchVideoCameraNative;
-export const launchVideoLibrary = launchVideoLibraryNative;
+// Video functions - platform specific
+export const launchVideoCamera = Platform.OS === 'web' ? launchVideoCameraWeb : launchVideoCameraNative;
+export const launchVideoLibrary = Platform.OS === 'web' ? launchVideoLibraryWeb : launchVideoLibraryNative;

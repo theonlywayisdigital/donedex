@@ -150,8 +150,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   logo: {
-    width: 700,
-    height: 210,
+    width: '100%',
+    maxWidth: 400,
+    height: undefined,
+    aspectRatio: 700 / 210, // Maintain original aspect ratio (10:3)
     marginBottom: 0,
   },
   subtitle: {

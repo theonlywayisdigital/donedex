@@ -23,4 +23,6 @@ export interface ResponseDisplay {
   color: string;
   isSignature?: boolean;
   signatureUrl?: string;
+  photoUrls?: string[];
+  videoUrls?: string[];
 }

@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, StyleSheet, Platform, Text, Pressable } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useNavigationState, useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
@@ -14,7 +14,8 @@ import { useResponsive } from '../hooks/useResponsive';
 import { Sidebar, type SidebarSection } from '../components/layout';
 import { MainNavigator } from './MainNavigator';
 import { SuperAdminNavigator } from './SuperAdminNavigator';
-import { colors } from '../constants/theme';
+import { colors, spacing, fontSize, fontWeight, borderRadius } from '../constants/theme';
+import { Icon } from '../components/ui';
 
 // Import all screens for desktop flat navigation
 import {
@@ -182,14 +183,131 @@ const webStyles: Record<string, React.CSSProperties> = Platform.OS === 'web' ? {
   },
 } : {};
 
+// Custom header left button for desktop web
+function DesktopBackButton() {
+  const navigation = useNavigation<any>();
+  const canGoBack = navigation.canGoBack();
+
+  if (!canGoBack) return null;
+
+  return (
+    <Pressable
+      onPress={() => navigation.goBack()}
+      style={({ pressed }) => [
+        desktopHeaderStyles.backButton,
+        pressed && desktopHeaderStyles.backButtonPressed,
+      ]}
+    >
+      <Icon name="arrow-left" size={18} color={colors.primary.DEFAULT} />
+      <Text style={desktopHeaderStyles.backButtonText}>Back</Text>
+    </Pressable>
+  );
+}
+
+const desktopHeaderStyles = StyleSheet.create({
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    marginLeft: spacing.sm,
+    borderRadius: borderRadius.sm,
+  },
+  backButtonPressed: {
+    backgroundColor: colors.primary.light,
+  },
+  backButtonText: {
+    fontSize: fontSize.body,
+    color: colors.primary.DEFAULT,
+    fontWeight: fontWeight.medium,
+  },
+});
+
+// Screens that should show a header with back button on desktop web
+const SCREENS_WITH_BACK_BUTTON = new Set([
+  'RecordSearch',
+  'QuickCreateRecord',
+  'RecordDetail',
+  'TemplateSelect',
+  'Inspection',
+  'InspectionReview',
+  'InspectionComplete',
+  'ReportDetail',
+  'NewTemplate',
+  'TemplateEditor',
+  'AITemplateBuilder',
+  'RecordsList',
+  'SiteEditor',
+  'SiteAssignTemplates',
+  'AddRecordType',
+  'RecordTypeEditor',
+  'InviteUser',
+  'Profile',
+  'ChangePassword',
+  'Billing',
+  'OrganisationSettings',
+  'BrandingSettings',
+  'About',
+  'OrganisationDetail',
+  'CreateOrganisation',
+  'UserDetail',
+  'SendNotification',
+]);
+
+// Screen titles for desktop header
+const SCREEN_TITLES: Record<string, string> = {
+  RecordSearch: 'Select Record',
+  QuickCreateRecord: 'New Record',
+  RecordDetail: 'Record Details',
+  TemplateSelect: 'Select Template',
+  Inspection: 'Inspection',
+  InspectionReview: 'Review',
+  InspectionComplete: 'Complete',
+  ReportDetail: 'Report',
+  NewTemplate: 'New Template',
+  TemplateEditor: 'Edit Template',
+  AITemplateBuilder: 'AI Template Builder',
+  RecordsList: 'Records',
+  SiteEditor: 'Edit Record',
+  SiteAssignTemplates: 'Assign Templates',
+  AddRecordType: 'New Record Type',
+  RecordTypeEditor: 'Edit Record Type',
+  InviteUser: 'Invite User',
+  Profile: 'Profile',
+  ChangePassword: 'Change Password',
+  Billing: 'Billing',
+  OrganisationSettings: 'Organisation Settings',
+  BrandingSettings: 'Branding',
+  About: 'About',
+  OrganisationDetail: 'Organisation',
+  CreateOrganisation: 'New Organisation',
+  UserDetail: 'User Details',
+  SendNotification: 'Send Notification',
+};
+
 /**
  * Desktop Stack Navigator - flat hierarchy for web
  */
 function DesktopStackNavigator() {
   return (
     <DesktopStack.Navigator
-      screenOptions={{
-        headerShown: false, // We use PageLayout for headers
+      screenOptions={({ route }) => {
+        const showHeader = SCREENS_WITH_BACK_BUTTON.has(route.name);
+        return {
+          headerShown: showHeader,
+          headerTitle: SCREEN_TITLES[route.name] || route.name,
+          headerLeft: showHeader ? () => <DesktopBackButton /> : undefined,
+          headerStyle: {
+            backgroundColor: colors.background,
+          },
+          headerTitleStyle: {
+            fontSize: fontSize.sectionTitle,
+            fontWeight: fontWeight.semibold,
+            color: colors.text.primary,
+          },
+          headerShadowVisible: true,
+        };
       }}
     >
       {/* Dashboard / Home */}

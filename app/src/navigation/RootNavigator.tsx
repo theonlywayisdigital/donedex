@@ -9,6 +9,10 @@ import { useOnboardingStore } from '../store/onboardingStore';
 import { colors, fontSize, spacing } from '../constants/theme';
 import { ImpersonationBanner } from '../components/ImpersonationBanner';
 import { useResponsive } from '../hooks/useResponsive';
+import { linking } from './linking';
+import { initializeNetworkMonitoring } from '../services/networkStatus';
+import { initializeAutoSync } from '../services/syncService';
+import { OfflineIndicator } from '../components/ui/OfflineIndicator';
 
 // DEV MODE: Skip all auth and go straight to main app
 const DEV_SKIP_AUTH = false;
@@ -30,6 +34,15 @@ export function RootNavigator() {
       initialize();
     }
   }, [initialize]);
+
+  // Initialize offline sync services (network monitoring and auto-sync)
+  useEffect(() => {
+    // Initialize network monitoring to track online/offline status
+    initializeNetworkMonitoring();
+
+    // Initialize auto-sync to sync pending data when back online
+    initializeAutoSync();
+  }, []);
 
   // Check onboarding status when authenticated (skip for super admins)
   useEffect(() => {
@@ -67,7 +80,7 @@ export function RootNavigator() {
   if (DEV_SKIP_AUTH) {
     return (
       <View style={styles.container}>
-        <NavigationContainer>
+        <NavigationContainer linking={Platform.OS === 'web' ? linking : undefined}>
           <AdaptiveNavigator />
         </NavigationContainer>
       </View>
@@ -110,10 +123,11 @@ export function RootNavigator() {
 
   return (
     <View style={styles.container}>
-      <NavigationContainer>
+      <NavigationContainer linking={Platform.OS === 'web' ? linking : undefined}>
         {getNavigator()}
       </NavigationContainer>
       {session && !needsOnboarding && <ImpersonationBanner />}
+      {session && <OfflineIndicator />}
     </View>
   );
 }

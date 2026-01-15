@@ -3,7 +3,7 @@
  * Uses HTML5 file input and getUserMedia for camera access
  */
 
-import type { ImagePickerResult, ImagePickerOptions, ImageAsset } from './types';
+import type { ImagePickerResult, ImagePickerOptions, ImageAsset, VideoPickerResult, VideoAsset } from './types';
 
 /**
  * Request camera permissions (web)
@@ -190,4 +190,87 @@ export async function launchImageLibrary(
   );
 
   return { canceled: false, assets };
+}
+
+/**
+ * Convert video File to VideoAsset with duration
+ */
+async function fileToVideoAsset(file: File): Promise<VideoAsset> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+
+    video.onloadedmetadata = () => {
+      resolve({
+        uri: url,
+        width: video.videoWidth,
+        height: video.videoHeight,
+        duration: Math.round(video.duration * 1000), // Convert to milliseconds
+        fileName: file.name,
+        fileSize: file.size,
+      });
+    };
+
+    video.onerror = () => {
+      // If we can't load metadata, return with zeros
+      resolve({
+        uri: url,
+        width: 0,
+        height: 0,
+        duration: 0,
+        fileName: file.name,
+        fileSize: file.size,
+      });
+    };
+
+    video.src = url;
+  });
+}
+
+/**
+ * Launch camera to record a video (web)
+ * Uses HTML5 capture attribute for mobile devices
+ */
+export async function launchVideoCamera(): Promise<VideoPickerResult> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'video/*';
+    input.capture = 'environment'; // Use back camera on mobile
+    input.style.display = 'none';
+    document.body.appendChild(input);
+
+    input.onchange = async () => {
+      document.body.removeChild(input);
+      const files = input.files;
+      if (!files || files.length === 0) {
+        resolve({ canceled: true });
+        return;
+      }
+
+      const asset = await fileToVideoAsset(files[0]);
+      resolve({ canceled: false, asset });
+    };
+
+    input.oncancel = () => {
+      document.body.removeChild(input);
+      resolve({ canceled: true });
+    };
+
+    input.click();
+  });
+}
+
+/**
+ * Launch video picker to select from library (web)
+ */
+export async function launchVideoLibrary(): Promise<VideoPickerResult> {
+  const files = await createFileInput('video/*', false);
+  if (!files || files.length === 0) {
+    return { canceled: true };
+  }
+
+  const asset = await fileToVideoAsset(files[0]);
+  return { canceled: false, asset };
 }

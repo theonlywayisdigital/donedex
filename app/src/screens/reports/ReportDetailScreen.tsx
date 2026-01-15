@@ -13,13 +13,15 @@ import { showNotification } from '../../utils/alert';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { ReportsStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
-import { Icon, IconName } from '../../components/ui';
+import { Icon, IconName, VideoPlayer } from '../../components/ui';
 import {
   fetchReportById,
   fetchReportResponses,
   ReportWithDetails,
   ReportResponse,
   getPhotoUrl,
+  getVideoUrl,
+  getSignatureUrl,
 } from '../../services/reports';
 import { fetchTemplateWithSections, TemplateWithSections } from '../../services/templates';
 import { exportReportToPdf, printReport } from '../../services/pdfExport/index';
@@ -190,15 +192,159 @@ export function ReportDetailScreen() {
         }
 
       case 'signature':
-        return { text: 'Signature captured', color: colors.success, icon: 'check-circle' };
+        // Mark for special rendering
+        return { text: '__SIGNATURE__', color: colors.success, icon: 'check-circle' };
+
+      case 'photo':
+        return { text: 'Photo captured', color: colors.success, icon: 'camera' };
+
+      case 'video':
+        return { text: 'Video captured', color: colors.success, icon: 'video' };
 
       default:
         return { text: value, color: colors.text.primary };
     }
   };
 
+  // Check if value is a base64 image
+  const isBase64Image = (value: string | null | undefined): boolean => {
+    if (!value) return false;
+    return value.startsWith('data:image/');
+  };
+
+  // Parse response_value which may be single path or JSON array
+  const getMediaPaths = (responseValue: string | null): string[] => {
+    if (!responseValue) return [];
+    // Skip pending upload placeholders
+    if (responseValue.includes('pending upload')) return [];
+    try {
+      const parsed = JSON.parse(responseValue);
+      return Array.isArray(parsed) ? parsed : [responseValue];
+    } catch {
+      return [responseValue];
+    }
+  };
+
+  // Check if value is a storage path (not base64 or blob)
+  const isStoragePath = (value: string): boolean => {
+    return !value.startsWith('data:') && !value.startsWith('blob:') && !value.includes('pending upload');
+  };
+
   const renderResponseValue = (response: ResponseWithPhotos | undefined, itemType: string) => {
     const display = getResponseDisplay(response, itemType);
+
+    // Handle signature with image preview
+    if (itemType === 'signature' && response?.response_value) {
+      const value = response.response_value;
+
+      // Try to get signature image URL
+      let signatureUri: string | null = null;
+
+      if (isBase64Image(value)) {
+        // Direct base64 data
+        signatureUri = value;
+      } else {
+        // Try parsing as JSON (may contain path and signerName)
+        try {
+          const parsed = JSON.parse(value);
+          if (parsed.path) {
+            signatureUri = getSignatureUrl(parsed.path);
+          }
+        } catch {
+          // Not JSON, treat as storage path directly
+          if (isStoragePath(value)) {
+            signatureUri = getSignatureUrl(value);
+          }
+        }
+      }
+
+      if (signatureUri) {
+        return (
+          <View style={styles.signatureContainer}>
+            <Image
+              source={{ uri: signatureUri }}
+              style={styles.signatureImage}
+              resizeMode="contain"
+            />
+            <View style={styles.responseValueContainer}>
+              <Icon name="check-circle" size={16} color={colors.success} style={styles.responseIcon} />
+              <Text style={[styles.responseValue, { color: colors.success }]}>Captured</Text>
+            </View>
+          </View>
+        );
+      }
+
+      // Fallback to text indicator
+      return (
+        <View style={styles.responseValueContainer}>
+          <Icon name="check-circle" size={18} color={colors.success} style={styles.responseIcon} />
+          <Text style={[styles.responseValue, { color: colors.success }]}>Signature captured</Text>
+        </View>
+      );
+    }
+
+    // Handle photo with actual image display
+    if (itemType === 'photo' && response?.response_value) {
+      const paths = getMediaPaths(response.response_value);
+      if (paths.length > 0) {
+        return (
+          <View style={styles.photoGallery}>
+            {paths.map((path, index) => (
+              <TouchableOpacity
+                key={index}
+                onPress={() => setSelectedPhoto(path)}
+                activeOpacity={0.8}
+              >
+                <Image
+                  source={{ uri: getPhotoUrl(path) }}
+                  style={styles.photoThumbnail}
+                  resizeMode="cover"
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
+        );
+      }
+      // Fallback for pending uploads or invalid paths
+      return (
+        <View style={styles.responseValueContainer}>
+          <Icon name="camera" size={18} color={colors.success} style={styles.responseIcon} />
+          <Text style={[styles.responseValue, { color: colors.success }]}>Photo captured</Text>
+        </View>
+      );
+    }
+
+    // Handle video with player
+    if (itemType === 'video' && response?.response_value) {
+      const paths = getMediaPaths(response.response_value);
+      if (paths.length > 0) {
+        return (
+          <View style={styles.videoContainer}>
+            <View style={styles.responseValueContainer}>
+              <Icon name="video" size={18} color={colors.success} style={styles.responseIcon} />
+              <Text style={[styles.responseValue, { color: colors.success }]}>
+                {paths.length === 1 ? 'Video captured' : `${paths.length} videos captured`}
+              </Text>
+            </View>
+            {paths.map((path, index) => {
+              const videoUrl = isStoragePath(path) ? getVideoUrl(path) : path;
+              return (
+                <View key={index} style={styles.videoPlayerWrapper}>
+                  <VideoPlayer uri={videoUrl} thumbnailMode />
+                </View>
+              );
+            })}
+          </View>
+        );
+      }
+      // Fallback for pending uploads
+      return (
+        <View style={styles.responseValueContainer}>
+          <Icon name="video" size={18} color={colors.success} style={styles.responseIcon} />
+          <Text style={[styles.responseValue, { color: colors.success }]}>Video captured</Text>
+        </View>
+      );
+    }
 
     if (itemType === 'multi_select' && response?.response_value) {
       try {
@@ -544,6 +690,40 @@ const styles = StyleSheet.create({
   responseValue: {
     fontSize: fontSize.body,
     fontWeight: fontWeight.medium,
+  },
+  signatureContainer: {
+    alignItems: 'flex-start',
+  },
+  signatureImage: {
+    width: 150,
+    height: 60,
+    backgroundColor: colors.neutral[100],
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+    marginBottom: spacing.xs,
+  },
+  videoContainer: {
+    alignItems: 'flex-start',
+    width: '100%',
+  },
+  videoPlayerWrapper: {
+    marginTop: spacing.sm,
+    width: '100%',
+  },
+  photoGallery: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  photoThumbnail: {
+    width: 80,
+    height: 80,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.neutral[100],
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
   },
   multiSelectContainer: {
     flexDirection: 'row',

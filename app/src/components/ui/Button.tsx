@@ -8,7 +8,7 @@ import {
   TextStyle,
   View,
 } from 'react-native';
-import { colors, spacing, borderRadius, fontSize, fontWeight, components } from '../../constants/theme';
+import { colors, spacing, fontSize, fontWeight, components } from '../../constants/theme';
 import { Icon, IconName } from './Icon';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -24,6 +24,12 @@ interface ButtonProps {
   rightIcon?: IconName;
   style?: ViewStyle;
   textStyle?: TextStyle;
+  /** Accessibility label override - defaults to title */
+  accessibilityLabel?: string;
+  /** Accessibility hint - describes result of action */
+  accessibilityHint?: string;
+  /** Test ID for testing */
+  testID?: string;
 }
 
 export function Button({
@@ -37,6 +43,9 @@ export function Button({
   rightIcon,
   style,
   textStyle,
+  accessibilityLabel,
+  accessibilityHint,
+  testID,
 }: ButtonProps) {
   const isDisabled = disabled || loading;
 
@@ -61,17 +70,30 @@ export function Button({
     ? colors.white
     : colors.primary.DEFAULT;
 
+  // Build accessibility label
+  const a11yLabel = accessibilityLabel || title;
+  const a11yState = {
+    disabled: isDisabled,
+    busy: loading,
+  };
+
   return (
     <TouchableOpacity
       style={buttonStyles}
       onPress={onPress}
       disabled={isDisabled}
       activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={loading ? `${a11yLabel}, loading` : a11yLabel}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={a11yState}
+      testID={testID}
     >
       {loading ? (
         <ActivityIndicator
           color={iconColor}
           size="small"
+          accessibilityLabel="Loading"
         />
       ) : (
         <View style={styles.contentContainer}>

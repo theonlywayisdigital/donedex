@@ -14,6 +14,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Card, Button } from '../../components/ui';
 import { ResponseInput } from '../../components/inspection';
 import { useInspectionStore } from '../../store/inspectionStore';
+import { useResponsive } from '../../hooks/useResponsive';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
 import {
   launchCamera,
@@ -22,6 +23,7 @@ import {
   launchVideoLibrary,
   requestCameraPermissions,
 } from '../../services/imagePicker';
+import { persistFile } from '../../services/filePersistence';
 import type { HomeStackParamList } from '../../navigation/MainNavigator';
 import type { TemplateItem } from '../../services/templates';
 
@@ -32,6 +34,7 @@ export function InspectionScreen() {
   const navigation = useNavigation<InspectionNavigationProp>();
   const route = useRoute<InspectionRouteProp>();
   const { reportId } = route.params;
+  const { isMobile } = useResponsive();
 
   const {
     report,
@@ -147,7 +150,9 @@ export function InspectionScreen() {
 
         if (!result.canceled && result.assets && result.assets.length > 0) {
           const photo = result.assets[0];
-          addPhoto(templateItemId, photo.uri);
+          // Persist photo to documents directory so it survives until synced
+          const persistedUri = await persistFile(photo.uri, 'photo');
+          addPhoto(templateItemId, persistedUri);
           showNotification('Photo Added', 'Photo captured successfully');
         }
       },
@@ -169,7 +174,9 @@ export function InspectionScreen() {
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const photo = result.assets[0];
-      addPhoto(templateItemId, photo.uri);
+      // Persist photo to documents directory so it survives until synced
+      const persistedUri = await persistFile(photo.uri, 'photo');
+      addPhoto(templateItemId, persistedUri);
       showNotification('Photo Added', 'Photo added successfully');
     }
   }, [addPhoto]);
@@ -203,7 +210,9 @@ export function InspectionScreen() {
         const result = await launchVideoCamera();
 
         if (!result.canceled && result.asset) {
-          addVideo(templateItemId, result.asset.uri);
+          // Persist video to documents directory so it survives until synced
+          const persistedUri = await persistFile(result.asset.uri, 'video');
+          addVideo(templateItemId, persistedUri);
           showNotification('Video Added', 'Video recorded successfully');
         }
       },
@@ -221,7 +230,9 @@ export function InspectionScreen() {
     const result = await launchVideoLibrary();
 
     if (!result.canceled && result.asset) {
-      addVideo(templateItemId, result.asset.uri);
+      // Persist video to documents directory so it survives until synced
+      const persistedUri = await persistFile(result.asset.uri, 'video');
+      addVideo(templateItemId, persistedUri);
       showNotification('Video Added', 'Video added successfully');
     }
   }, [addVideo]);
@@ -339,11 +350,17 @@ export function InspectionScreen() {
       )}
 
       {/* Items list */}
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={[
+          styles.contentContainer,
+          isMobile && styles.contentContainerMobile,
+        ]}
+      >
         {getVisibleItems(currentSection.template_items).map((item, index) => {
           const response = responses.get(item.id);
           return (
-            <Card key={item.id} style={styles.itemCard}>
+            <Card key={item.id} style={isMobile ? StyleSheet.flatten([styles.itemCard, styles.itemCardMobile]) : styles.itemCard}>
               <View style={styles.itemHeader}>
                 <Text style={styles.itemNumber}>{index + 1}</Text>
                 <Text style={styles.itemLabel}>{item.label}</Text>
@@ -372,7 +389,7 @@ export function InspectionScreen() {
       </ScrollView>
 
       {/* Footer navigation */}
-      <View style={styles.footer}>
+      <View style={[styles.footer, isMobile && styles.footerMobile]}>
         <Button
           title={isFirstSection ? 'Exit' : 'Back'}
           onPress={handleBack}
@@ -540,5 +557,17 @@ const styles = StyleSheet.create({
   },
   footerButton: {
     flex: 1,
+  },
+  // Mobile-specific styles (screens < 768px)
+  contentContainerMobile: {
+    padding: spacing.sm,
+    gap: spacing.sm,
+  },
+  itemCardMobile: {
+    padding: spacing.sm,
+  },
+  footerMobile: {
+    padding: spacing.sm,
+    gap: spacing.sm,
   },
 });

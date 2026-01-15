@@ -3,7 +3,7 @@
  * Shared between native and web implementations
  */
 
-import { getSignatureUrl } from '../reports';
+import { getSignatureUrl, getPhotoUrl, getVideoUrl } from '../reports';
 import type { ExportOptions, ResponseDisplay } from './types';
 import { DEFAULT_BRANDING, BrandingContext } from '../../types/branding';
 
@@ -20,6 +20,21 @@ export function formatDateTime(dateString: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+/**
+ * Parse media paths from response_value (could be single path or JSON array)
+ */
+function getMediaPaths(value: string | null | undefined): string[] {
+  if (!value) return [];
+  // Skip pending upload placeholders
+  if (value.includes('pending upload')) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [value];
+  } catch {
+    return [value];
+  }
 }
 
 /**
@@ -266,13 +281,39 @@ export function getResponseDisplay(
         return { text: value, color: '#111827' };
       }
 
-    // Media types (photo, video, audio)
+    // Media types - photos with actual image embedding
     case 'photo':
     case 'photo_before_after':
-    case 'video':
+    case 'annotated_photo': {
+      const photoPaths = getMediaPaths(value);
+      if (photoPaths.length > 0) {
+        const photoUrls = photoPaths.map((p) => getPhotoUrl(p));
+        return {
+          text: `${photoPaths.length} photo(s)`,
+          color: '#059669',
+          photoUrls,
+        };
+      }
+      return { text: 'Photo attached', color: '#059669' };
+    }
+
+    // Video - show count (embedding video in PDF not practical)
+    case 'video': {
+      const videoPaths = getMediaPaths(value);
+      if (videoPaths.length > 0) {
+        const videoUrls = videoPaths.map((p) => getVideoUrl(p));
+        return {
+          text: `${videoPaths.length} video(s) attached`,
+          color: '#059669',
+          videoUrls,
+        };
+      }
+      return { text: 'Video attached', color: '#059669' };
+    }
+
+    // Audio - show indicator (embedding audio in PDF not practical)
     case 'audio':
-    case 'annotated_photo':
-      return { text: 'Media attached', color: '#059669' };
+      return { text: 'Audio recording attached', color: '#059669' };
 
     // Instruction (display only, no value)
     case 'instruction':
@@ -358,6 +399,29 @@ export function generateHtml(options: ExportOptions): string {
             `;
           }
 
+          // Handle photo galleries
+          let photoGalleryHtml = '';
+          if (display.photoUrls && display.photoUrls.length > 0) {
+            photoGalleryHtml = `
+              <div class="photo-gallery">
+                ${display.photoUrls.map((url) => `
+                  <img src="${url}" alt="Photo" class="photo-image" />
+                `).join('')}
+              </div>
+            `;
+          }
+
+          // Handle video links (can't embed video in PDF, show thumbnails or links)
+          let videoHtml = '';
+          if (display.videoUrls && display.videoUrls.length > 0) {
+            videoHtml = `
+              <div class="video-info">
+                <span class="video-icon">🎥</span>
+                ${display.videoUrls.length} video(s) captured
+              </div>
+            `;
+          }
+
           return `
             <div class="item">
               <div class="item-row">
@@ -370,6 +434,8 @@ export function generateHtml(options: ExportOptions): string {
                 </span>
               </div>
               ${signatureHtml}
+              ${photoGalleryHtml}
+              ${videoHtml}
               ${notesHtml}
               ${severityHtml}
             </div>
@@ -547,6 +613,37 @@ export function generateHtml(options: ExportOptions): string {
           max-width: 200px;
           max-height: 80px;
           object-fit: contain;
+        }
+
+        .photo-gallery {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 8px;
+        }
+
+        .photo-image {
+          max-width: 150px;
+          max-height: 120px;
+          border-radius: 6px;
+          border: 1px solid #E5E7EB;
+          object-fit: cover;
+        }
+
+        .video-info {
+          margin-top: 8px;
+          padding: 8px 12px;
+          background-color: #F0FDF4;
+          border-radius: 4px;
+          font-size: 12px;
+          color: #059669;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .video-icon {
+          font-size: 16px;
         }
 
         .footer {

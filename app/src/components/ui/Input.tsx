@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   ViewStyle,
 } from 'react-native';
-import { colors, spacing, borderRadius, fontSize, fontWeight, components } from '../../constants/theme';
+import { colors, spacing, fontSize, fontWeight, components } from '../../constants/theme';
 
 interface InputProps extends Omit<TextInputProps, 'style'> {
   label?: string;
@@ -16,6 +16,8 @@ interface InputProps extends Omit<TextInputProps, 'style'> {
   containerStyle?: ViewStyle;
   inputStyle?: ViewStyle;
   secureTextEntry?: boolean;
+  /** Test ID for testing */
+  testID?: string;
 }
 
 export function Input({
@@ -24,6 +26,9 @@ export function Input({
   containerStyle,
   inputStyle,
   secureTextEntry,
+  testID,
+  accessibilityLabel,
+  accessibilityHint,
   ...props
 }: InputProps) {
   const [isFocused, setIsFocused] = useState(false);
@@ -31,9 +36,20 @@ export function Input({
 
   const showPasswordToggle = secureTextEntry !== undefined;
 
+  // Build accessibility label from label prop if not provided
+  const a11yLabel = accessibilityLabel || label;
+
   return (
     <View style={[styles.container, containerStyle]}>
-      {label && <Text style={styles.label}>{label}</Text>}
+      {label && (
+        <Text
+          style={styles.label}
+          accessibilityRole="text"
+        >
+          {label}
+          {props.editable === false ? '' : ''}
+        </Text>
+      )}
       <View style={styles.inputWrapper}>
         <TextInput
           style={[
@@ -46,12 +62,22 @@ export function Input({
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           secureTextEntry={secureTextEntry && !isPasswordVisible}
+          accessibilityLabel={a11yLabel}
+          accessibilityHint={accessibilityHint || (error ? `Error: ${error}` : undefined)}
+          accessibilityState={{
+            disabled: props.editable === false,
+          }}
+          testID={testID}
           {...props}
         />
         {showPasswordToggle && (
           <TouchableOpacity
             style={styles.toggleButton}
             onPress={() => setIsPasswordVisible(!isPasswordVisible)}
+            accessibilityRole="button"
+            accessibilityLabel={isPasswordVisible ? 'Hide password' : 'Show password'}
+            accessibilityHint="Toggles password visibility"
+            testID={testID ? `${testID}-toggle` : undefined}
           >
             <Text style={styles.toggleText}>
               {isPasswordVisible ? 'Hide' : 'Show'}
@@ -59,7 +85,15 @@ export function Input({
           </TouchableOpacity>
         )}
       </View>
-      {error && <Text style={styles.error}>{error}</Text>}
+      {error && (
+        <Text
+          style={styles.error}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+        >
+          {error}
+        </Text>
+      )}
     </View>
   );
 }

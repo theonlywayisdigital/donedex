@@ -160,6 +160,130 @@ export interface PIIDetectionOptions {
   skipExemptFields?: boolean;
 }
 
+/**
+ * Organization-level PII handling configuration.
+ * Allows organizations to customize PII behavior based on their compliance needs.
+ */
+export interface PIIHandlingConfig {
+  /** Strategy for handling PII detections */
+  strategy: 'warn' | 'block-critical' | 'block-all';
+  /** Minimum severity level to trigger warnings */
+  warnThreshold: PiiSeverity;
+  /** Minimum severity level to trigger blocking (if strategy allows) */
+  blockThreshold: PiiSeverity;
+  /** Require acknowledgment checkbox for critical PII */
+  requireAcknowledgment: boolean;
+  /** Show inline warnings during typing */
+  showInlineWarnings: boolean;
+}
+
+/**
+ * Default PII handling configuration.
+ * Organizations can override these settings.
+ */
+export const DEFAULT_PII_CONFIG: PIIHandlingConfig = {
+  strategy: 'warn',
+  warnThreshold: 'low',
+  blockThreshold: 'critical',
+  requireAcknowledgment: true,
+  showInlineWarnings: true,
+};
+
+/**
+ * Determine the required action based on detection result and config.
+ * Returns what the UI should do in response to PII detection.
+ */
+export interface PIIActionRequired {
+  /** Whether the user can proceed with saving */
+  canProceed: boolean;
+  /** Whether to show a warning */
+  showWarning: boolean;
+  /** Whether acknowledgment checkbox is required */
+  requireAcknowledgment: boolean;
+  /** Specific message to show user */
+  message: string;
+  /** Whether submission is blocked */
+  isBlocked: boolean;
+}
+
+/**
+ * Get the required action based on detection result and configuration.
+ */
+export function getPIIAction(
+  result: PIIDetectionResult,
+  config: PIIHandlingConfig = DEFAULT_PII_CONFIG
+): PIIActionRequired {
+  // No detections - always allow
+  if (!result.hasDetections) {
+    return {
+      canProceed: true,
+      showWarning: false,
+      requireAcknowledgment: false,
+      message: '',
+      isBlocked: false,
+    };
+  }
+
+  const severityOrder: PiiSeverity[] = ['low', 'medium', 'high', 'critical'];
+  const highestSeverityIndex = result.highestSeverity
+    ? severityOrder.indexOf(result.highestSeverity)
+    : -1;
+  const warnThresholdIndex = severityOrder.indexOf(config.warnThreshold);
+  const blockThresholdIndex = severityOrder.indexOf(config.blockThreshold);
+
+  // Check if blocking is required
+  const shouldBlock =
+    (config.strategy === 'block-all' && highestSeverityIndex >= warnThresholdIndex) ||
+    (config.strategy === 'block-critical' && highestSeverityIndex >= blockThresholdIndex);
+
+  if (shouldBlock) {
+    return {
+      canProceed: false,
+      showWarning: true,
+      requireAcknowledgment: false,
+      message: getBlockMessage(result),
+      isBlocked: true,
+    };
+  }
+
+  // Check if warning is required
+  const showWarning = highestSeverityIndex >= warnThresholdIndex;
+
+  if (!showWarning) {
+    return {
+      canProceed: true,
+      showWarning: false,
+      requireAcknowledgment: false,
+      message: '',
+      isBlocked: false,
+    };
+  }
+
+  // Show warning - check if acknowledgment required
+  const requireAck = config.requireAcknowledgment && result.hasCritical;
+
+  return {
+    canProceed: true,
+    showWarning: true,
+    requireAcknowledgment: requireAck,
+    message: getWarningMessage(result),
+    isBlocked: false,
+  };
+}
+
+/**
+ * Get a blocking message for when PII cannot be saved
+ */
+function getBlockMessage(result: PIIDetectionResult): string {
+  const uniqueTypes = [...new Set(result.matches.map((m) => m.label))];
+
+  if (result.hasCritical) {
+    return `This field contains sensitive personal data (${uniqueTypes.join(', ')}) that cannot be stored in this field type. Please use an appropriate structured field or remove the sensitive data.`;
+  }
+
+  return `This field contains personal information (${uniqueTypes.join(', ')}) that is not allowed in this context. Please remove the personal data before saving.`;
+}
+
 // ============================================
 // Core Detection Functions
 // ============================================

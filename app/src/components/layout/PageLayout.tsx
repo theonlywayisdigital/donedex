@@ -41,6 +41,10 @@ export interface PageLayoutProps {
   padding?: 'none' | 'sm' | 'md' | 'lg';
   /** Background color */
   background?: 'default' | 'white';
+  /** Show a back button in the header (desktop web only) */
+  showBackButton?: boolean;
+  /** Custom back button handler (defaults to navigation.goBack) */
+  onBack?: () => void;
 }
 
 // Web-specific styles
@@ -76,10 +80,24 @@ export function PageLayout({
   scrollable = true,
   padding = 'lg',
   background = 'default',
+  showBackButton = false,
+  onBack,
 }: PageLayoutProps) {
   const navigation = useNavigation<any>();
   const { isWeb, isDesktop } = useResponsive();
   const showDesktopHeader = isWeb && isDesktop;
+
+  // Check if we can go back in navigation
+  const canGoBack = navigation.canGoBack();
+
+  // Handle back button press
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else if (canGoBack) {
+      navigation.goBack();
+    }
+  };
 
   const contentPadding = PADDING_MAP[padding];
   const backgroundColor = background === 'white' ? colors.white : colors.background;
@@ -123,13 +141,34 @@ export function PageLayout({
     );
   };
 
+  // Render back button
+  const renderBackButton = () => {
+    if (!showBackButton || (!canGoBack && !onBack)) return null;
+
+    return (
+      <Pressable
+        onPress={handleBack}
+        style={({ pressed }) => [
+          styles.backButton,
+          pressed && styles.backButtonPressed,
+        ]}
+      >
+        <Icon name="arrow-left" size={20} color={colors.primary.DEFAULT} />
+        <Text style={styles.backButtonText}>Back</Text>
+      </Pressable>
+    );
+  };
+
   // Desktop header with breadcrumbs, title, and actions
   const renderDesktopHeader = () => {
     if (!showDesktopHeader) return null;
 
+    const hasBackButton = showBackButton && (canGoBack || onBack);
+
     return (
       <View style={[styles.header, webStyles.header as any]}>
-        {renderBreadcrumbs()}
+        {hasBackButton && renderBackButton()}
+        {!hasBackButton && renderBreadcrumbs()}
         <View style={styles.headerContent}>
           <View style={styles.titleContainer}>
             <Text style={styles.title}>{title}</Text>
@@ -240,6 +279,25 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.sm,
+    marginLeft: -spacing.sm,
+    borderRadius: borderRadius.sm,
+    alignSelf: 'flex-start',
+  },
+  backButtonPressed: {
+    backgroundColor: colors.primary.light,
+  },
+  backButtonText: {
+    fontSize: fontSize.body,
+    color: colors.primary.DEFAULT,
+    fontWeight: fontWeight.medium,
   },
 });
 

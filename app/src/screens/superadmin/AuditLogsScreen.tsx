@@ -13,9 +13,10 @@ import { Icon } from '../../components/ui';
 import { fetchAuditLogs } from '../../services/superAdmin';
 import type { AuditLogEntry, AuditLogCategory } from '../../types/superAdmin';
 
-const CATEGORY_ICONS: Record<AuditLogCategory, 'building-2' | 'user' | 'file-text' | 'layout-template' | 'folder' | 'settings' | 'eye' | 'circle' | 'bell'> = {
+const CATEGORY_ICONS: Record<AuditLogCategory, 'building-2' | 'user' | 'users' | 'file-text' | 'layout-template' | 'folder' | 'settings' | 'eye' | 'circle' | 'bell'> = {
   organisation: 'building-2',
   user: 'user',
+  user_management: 'users',
   report: 'file-text',
   template: 'layout-template',
   record: 'folder',
@@ -27,6 +28,7 @@ const CATEGORY_ICONS: Record<AuditLogCategory, 'building-2' | 'user' | 'file-tex
 const CATEGORY_COLORS: Record<AuditLogCategory, string> = {
   organisation: colors.primary.DEFAULT,
   user: colors.success,
+  user_management: colors.primary.dark,
   report: colors.warning,
   template: colors.primary.dark,
   record: colors.neutral[500],

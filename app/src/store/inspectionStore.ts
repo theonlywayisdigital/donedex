@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import * as reportsService from '../services/reports';
 import * as templatesService from '../services/templates';
-import type { Report, ReportResponse } from '../services/reports';
+import type { Report } from '../services/reports';
 import type { TemplateWithSections, TemplateItem } from '../services/templates';
 import {
   saveInspectionDraft,
@@ -11,6 +11,10 @@ import {
   type InspectionDraft,
 } from '../services/localStorage';
 import { isOnline } from '../services/networkStatus';
+import {
+  mergeAllResponses,
+  type ConflictResolutionStrategy,
+} from '../services/conflictResolution';
 
 // Local response state (before saving to DB)
 export interface LocalResponse {
@@ -206,36 +210,44 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
       // Fetch existing responses from server
       const responsesResult = await reportsService.fetchReportResponses(reportId);
 
-      // Initialize responses map - merge server data with local draft
+      // Collect all template items for conflict resolution
+      const allTemplateItems = templateResult.data.template_sections.flatMap(
+        (section) => section.template_items.map((item) => ({
+          id: item.id,
+          label: item.label,
+          item_type: item.item_type,
+        }))
+      );
+
+      // Use field-level conflict resolution to merge local and server data
+      const { merged, conflictCount } = mergeAllResponses(
+        localDraft?.responses || [],
+        responsesResult.data,
+        allTemplateItems,
+        'newest-wins' as ConflictResolutionStrategy
+      );
+
+      if (conflictCount > 0) {
+        console.log(`Resolved ${conflictCount} conflicts using newest-wins strategy`);
+      }
+
+      // Initialize responses map from merged data
       const responses = new Map<string, LocalResponse>();
       templateResult.data.template_sections.forEach((section) => {
         section.template_items.forEach((item) => {
-          const serverResponse = responsesResult.data.find(
-            (r) => r.template_item_id === item.id
-          );
+          const mergedResponse = merged.find((m) => m.templateItemId === item.id);
           const localResponse = localDraft?.responses.find(
             (r) => r.templateItemId === item.id
           );
-
-          // Prefer local draft if it's newer (for offline work recovery)
-          const useLocal =
-            localDraft &&
-            localResponse &&
-            localResponse.responseValue !== null &&
-            (!serverResponse || new Date(localDraft.lastUpdated) > new Date());
 
           responses.set(item.id, {
             templateItemId: item.id,
             itemLabel: item.label,
             itemType: item.item_type,
-            responseValue: useLocal
-              ? localResponse.responseValue
-              : serverResponse?.response_value || null,
-            severity: useLocal
-              ? (localResponse.severity as 'low' | 'medium' | 'high' | null)
-              : serverResponse?.severity || null,
-            notes: useLocal ? localResponse.notes : serverResponse?.notes || null,
-            photos: localResponse?.photos || [],
+            responseValue: mergedResponse?.responseValue || null,
+            severity: (mergedResponse?.severity as 'low' | 'medium' | 'high' | null) || null,
+            notes: mergedResponse?.notes || null,
+            photos: mergedResponse?.photos || localResponse?.photos || [],
             videos: (localResponse as { videos?: string[] })?.videos || [],
           });
         });
@@ -293,9 +305,11 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
           photos: r.photos,
           notes: r.notes,
           severity: r.severity,
+          fieldUpdatedAt: new Date().toISOString(),
         })),
         currentSectionIndex: get().currentSectionIndex,
         lastUpdated: new Date().toISOString(),
+        version: 1,
       };
       saveInspectionDraft(draft).catch(console.error);
     }
@@ -379,9 +393,11 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
           photos: r.photos,
           notes: r.notes,
           severity: r.severity,
+          fieldUpdatedAt: new Date().toISOString(),
         })),
         currentSectionIndex: get().currentSectionIndex,
         lastUpdated: new Date().toISOString(),
+        version: 1,
       };
       await saveInspectionDraft(draft).catch(console.error);
     }
@@ -392,7 +408,11 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
     if (!online) {
       // Queue responses for later sync
       responses.forEach((response) => {
-        if (response.responseValue !== null) {
+        const hasValue = response.responseValue !== null;
+        const hasPhotos = response.photos && response.photos.length > 0;
+        const hasVideos = response.videos && response.videos.length > 0;
+
+        if (hasValue || hasPhotos || hasVideos) {
           addToSyncQueue('response', {
             reportId: report.id,
             templateItemId: response.templateItemId,
@@ -408,18 +428,32 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
     }
 
     try {
-      // Save each response that has a value
+      // Save each response that has a value OR has photos/videos
       const savePromises: Promise<unknown>[] = [];
 
       responses.forEach((response) => {
-        if (response.responseValue !== null) {
+        // Check if response has content (value, photos, or videos)
+        const hasValue = response.responseValue !== null;
+        const hasPhotos = response.photos && response.photos.length > 0;
+        const hasVideos = response.videos && response.videos.length > 0;
+
+        if (hasValue || hasPhotos || hasVideos) {
+          // For photo/video items without responseValue, set a placeholder
+          // The actual storage paths will be set after upload in submitInspection
+          let responseValue = response.responseValue;
+          if (!responseValue && hasPhotos) {
+            responseValue = `${response.photos.length} photo(s) pending upload`;
+          } else if (!responseValue && hasVideos) {
+            responseValue = `${response.videos.length} video(s) pending upload`;
+          }
+
           savePromises.push(
             reportsService.upsertResponse({
               report_id: report.id,
               template_item_id: response.templateItemId,
               item_label: response.itemLabel,
               item_type: response.itemType,
-              response_value: response.responseValue,
+              response_value: responseValue,
               severity: response.severity,
               notes: response.notes,
             })
@@ -433,7 +467,11 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
     } catch (err) {
       // If save fails, queue for later
       responses.forEach((response) => {
-        if (response.responseValue !== null) {
+        const hasValue = response.responseValue !== null;
+        const hasPhotos = response.photos && response.photos.length > 0;
+        const hasVideos = response.videos && response.videos.length > 0;
+
+        if (hasValue || hasPhotos || hasVideos) {
           addToSyncQueue('response', {
             reportId: report.id,
             templateItemId: response.templateItemId,
@@ -451,7 +489,7 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
   },
 
   submitInspection: async () => {
-    const { report } = get();
+    const { report, responses } = get();
     if (!report) return { error: 'No active inspection' };
 
     set({ isSaving: true });
@@ -462,6 +500,73 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
       if (saveResult.error) {
         set({ isSaving: false });
         return saveResult;
+      }
+
+      // Upload all photos and videos before submitting
+      // Note: Photos/videos are uploaded to storage with reportId/templateItemId path
+      // The reports service handles compression for photos
+      // Track storage paths by template item ID so we can update response records
+      const mediaPathsByItem = new Map<string, { photoPaths: string[]; videoPaths: string[] }>();
+
+      for (const response of responses.values()) {
+        const photoPaths: string[] = [];
+        const videoPaths: string[] = [];
+
+        // Upload photos (reports service handles compression)
+        for (const photoUri of response.photos) {
+          const result = await reportsService.uploadMediaFile(report.id, response.templateItemId, photoUri, 'photo');
+          if (result.error) {
+            console.error('Failed to upload photo:', result.error);
+          } else if (result.data) {
+            photoPaths.push(result.data);
+          }
+        }
+
+        // Upload videos
+        for (const videoUri of response.videos) {
+          const result = await reportsService.uploadMediaFile(report.id, response.templateItemId, videoUri, 'video');
+          if (result.error) {
+            console.error('Failed to upload video:', result.error);
+          } else if (result.data) {
+            videoPaths.push(result.data);
+          }
+        }
+
+        // Store paths for this item if we uploaded anything
+        if (photoPaths.length > 0 || videoPaths.length > 0) {
+          mediaPathsByItem.set(response.templateItemId, { photoPaths, videoPaths });
+        }
+      }
+
+      // Update response records with actual storage paths
+      for (const [templateItemId, paths] of mediaPathsByItem) {
+        const response = responses.get(templateItemId);
+        if (response) {
+          let responseValue: string | null = null;
+          if (paths.photoPaths.length > 0) {
+            // Store the first photo path (or all paths as JSON if multiple)
+            responseValue = paths.photoPaths.length === 1
+              ? paths.photoPaths[0]
+              : JSON.stringify(paths.photoPaths);
+          } else if (paths.videoPaths.length > 0) {
+            // Store the first video path (or all paths as JSON if multiple)
+            responseValue = paths.videoPaths.length === 1
+              ? paths.videoPaths[0]
+              : JSON.stringify(paths.videoPaths);
+          }
+
+          if (responseValue) {
+            await reportsService.upsertResponse({
+              report_id: report.id,
+              template_item_id: templateItemId,
+              item_label: response.itemLabel,
+              item_type: response.itemType,
+              response_value: responseValue,
+              severity: response.severity,
+              notes: response.notes,
+            });
+          }
+        }
       }
 
       // Then submit the report

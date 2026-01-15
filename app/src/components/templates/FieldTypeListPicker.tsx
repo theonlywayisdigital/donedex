@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Modal,
   ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
 import { FIELD_TYPE_CONFIG, isCompositeFieldType, COMPOSITE_DEFINITIONS } from '../../constants/fieldTypes';
@@ -32,6 +33,9 @@ export function FieldTypeListPicker({
   onBack,
   onSelectType,
 }: FieldTypeListPickerProps) {
+  const { width: windowWidth } = useWindowDimensions();
+  const modalMaxWidth = Math.min(400, windowWidth - spacing.lg * 2);
+
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [selectedProFeature, setSelectedProFeature] = useState('');
   const isFieldTypeAllowed = useBillingStore((state) => state.isFieldTypeAllowed);
@@ -60,7 +64,7 @@ export function FieldTypeListPicker({
           activeOpacity={1}
           onPress={onClose}
         >
-          <View style={styles.container} onStartShouldSetResponder={() => true}>
+          <View style={[styles.container, { maxWidth: modalMaxWidth }]} onStartShouldSetResponder={() => true}>
             {/* Header with Back Button */}
             <View style={styles.header}>
               <TouchableOpacity

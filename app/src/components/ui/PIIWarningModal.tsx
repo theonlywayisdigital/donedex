@@ -6,6 +6,7 @@ import {
   Modal,
   TouchableOpacity,
   ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { Icon } from './Icon';
 import { Button } from './Button';
@@ -61,6 +62,9 @@ export function PIIWarningModal({
   onProceed,
   loading = false,
 }: PIIWarningModalProps) {
+  const { width: windowWidth } = useWindowDimensions();
+  const modalMaxWidth = Math.min(400, windowWidth - spacing.lg * 2);
+
   // Normalize detections to array of matches
   const allMatches = React.useMemo(() => {
     if (detections instanceof Map) {
@@ -115,7 +119,7 @@ export function PIIWarningModal({
       onRequestClose={onCancel}
     >
       <View style={styles.overlay}>
-        <View style={styles.modal}>
+        <View style={[styles.modal, { maxWidth: modalMaxWidth }]}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.iconContainer}>

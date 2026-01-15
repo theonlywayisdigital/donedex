@@ -9,7 +9,7 @@ import {
   ScrollView,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '../ui/DateTimePicker';
 import type { DateTimePickerEvent } from '../ui/DateTimePicker/types';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
@@ -410,6 +410,7 @@ function SignatureInput({
   const [signerName, setSignerName] = useState('');
   const [saving, setSaving] = useState(false);
   const signatureRef = useRef<SignatureCanvasRef>(null);
+  const insets = useSafeAreaInsets();
 
   const handleSignature = async (signature: string) => {
     if (!signature || signature === 'data:,') {
@@ -477,7 +478,7 @@ function SignatureInput({
       )}
 
       <Modal visible={showModal} animationType="slide" presentationStyle="fullScreen">
-        <SafeAreaView style={styles.signatureModal}>
+        <View style={[styles.signatureModal, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <View style={styles.signatureModalHeader}>
             <TouchableOpacity onPress={() => setShowModal(false)} style={styles.signatureModalClose}>
               <Text style={styles.signatureModalCloseText}>Cancel</Text>
@@ -521,7 +522,7 @@ function SignatureInput({
               <Text style={styles.signatureClearActionText}>Clear Signature</Text>
             </TouchableOpacity>
           </View>
-        </SafeAreaView>
+        </View>
       </Modal>
     </View>
   );

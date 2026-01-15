@@ -8,6 +8,7 @@ import {
   Modal,
   ScrollView,
   Switch,
+  useWindowDimensions,
 } from 'react-native';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
 import { ItemType, PhotoRule, DatetimeMode, ConditionOperator, RatingStyle, UnitType, InstructionStyle, SubItem } from '../../services/templates';
@@ -116,6 +117,10 @@ export function ItemEditor({
   currentSectionId,
   onMoveToSection,
 }: ItemEditorProps) {
+  // Get window dimensions for responsive modal sizing
+  const { width: windowWidth } = useWindowDimensions();
+  const modalMaxWidth = Math.min(400, windowWidth - spacing.lg * 2);
+
   // Billing check for Pro features
   const { isOnFreePlan } = useBillingStore();
   const isPro = !isOnFreePlan();
@@ -789,7 +794,7 @@ export function ItemEditor({
           activeOpacity={1}
           onPress={() => setShowConditionFieldModal(false)}
         >
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { maxWidth: modalMaxWidth }]}>
             <Text style={styles.modalTitle}>Select Field</Text>
             <ScrollView style={styles.modalList}>
               {availableConditionFields.map((field) => (
@@ -829,7 +834,7 @@ export function ItemEditor({
           activeOpacity={1}
           onPress={() => setShowConditionOperatorModal(false)}
         >
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { maxWidth: modalMaxWidth }]}>
             <Text style={styles.modalTitle}>Select Condition</Text>
             {CONDITION_OPERATORS.map((operator) => (
               <TouchableOpacity
@@ -884,7 +889,7 @@ export function ItemEditor({
           activeOpacity={1}
           onPress={() => setShowPhotoModal(false)}
         >
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { maxWidth: modalMaxWidth }]}>
             <Text style={styles.modalTitle}>Photo Requirement</Text>
             {PHOTO_RULES.map((rule) => (
               <TouchableOpacity
@@ -916,7 +921,7 @@ export function ItemEditor({
       {/* Options Modal */}
       <Modal visible={showOptionsModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, styles.optionsModalContent]}>
+          <View style={[styles.modalContent, styles.optionsModalContent, { maxWidth: modalMaxWidth }]}>
             <Text style={styles.modalTitle}>Configure Options</Text>
             <Text style={styles.optionsHint}>Enter one option per line</Text>
             <TextInput
@@ -949,7 +954,7 @@ export function ItemEditor({
       {/* Custom Options Modal (for Condition/Severity) */}
       <Modal visible={showCustomOptionsModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, styles.optionsModalContent]}>
+          <View style={[styles.modalContent, styles.optionsModalContent, { maxWidth: modalMaxWidth }]}>
             <Text style={styles.modalTitle}>
               {item.item_type === 'condition' ? 'Custom Condition Options' : 'Custom Severity Options'}
             </Text>
@@ -996,7 +1001,7 @@ export function ItemEditor({
       {/* Move to Section Modal */}
       <Modal visible={showMoveToSectionModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, styles.moveSectionModalContent]}>
+          <View style={[styles.modalContent, styles.moveSectionModalContent, { maxWidth: modalMaxWidth }]}>
             <Text style={styles.modalTitle}>Move to Section</Text>
             <Text style={styles.moveSectionHint}>Select the target section</Text>
             <ScrollView style={styles.sectionList}>

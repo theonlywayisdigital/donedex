@@ -15,3 +15,12 @@ export {
 } from './useResponsive';
 
 export { useDebounce, useDebouncedCallback } from './useDebounce';
+
+export {
+  useMountTime,
+  useScreenFocusTime,
+  useTimedAsync,
+  useOperationTimer,
+  useRenderCount,
+  useSlowRenderWarning,
+} from './usePerformance';

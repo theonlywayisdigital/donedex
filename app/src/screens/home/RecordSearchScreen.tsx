@@ -14,6 +14,8 @@ import {
   TextInput,
   ActivityIndicator,
   RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -142,6 +144,10 @@ export function RecordSearchScreen() {
   };
 
   return (
+    <KeyboardAvoidingView
+      style={styles.keyboardAvoid}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
     <SafeAreaView style={styles.container} edges={['bottom']}>
       {/* Search Bar */}
       <View style={styles.searchContainer}>
@@ -197,6 +203,7 @@ export function RecordSearchScreen() {
           ListFooterComponent={renderFooter}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.3}
+          keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
               refreshing={list.isLoading && list.records.length > 0}
@@ -207,10 +214,14 @@ export function RecordSearchScreen() {
         />
       )}
     </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardAvoid: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background,

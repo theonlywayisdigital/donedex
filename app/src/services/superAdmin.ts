@@ -816,22 +816,28 @@ export async function createOrganisation(
   // If owner email provided, create invite or user
   if (params.ownerEmail) {
     // Create an invitation for the owner
-    const { error: inviteError } = await (supabase
+    const { data: invitation, error: inviteError } = await (supabase
       .from('invitations') as any)
       .insert({
         organisation_id: orgData.id,
         email: params.ownerEmail,
         role: 'owner',
         invited_by: null, // Super admin created
-      });
+      })
+      .select()
+      .single();
 
     if (inviteError) {
       console.error('Error creating owner invitation:', inviteError);
       // Don't fail the org creation, just log
+    } else if (params.sendInvite && invitation) {
+      // Send invite email via edge function
+      const inviteResult = await sendInviteEmail((invitation as { id: string }).id);
+      if (inviteResult.error) {
+        console.error('Error sending invite email:', inviteResult.error.message);
+        // Don't fail the org creation, just log
+      }
     }
-
-    // TODO: Send invite email if params.sendInvite is true
-    // This would typically be done via a Supabase Edge Function
   }
 
   // Log the action
@@ -846,6 +852,239 @@ export async function createOrganisation(
   );
 
   return { data: orgData, error: null };
+}
+
+// ============================================
+// USER INVITATIONS
+// ============================================
+
+/**
+ * Send an invitation email for an existing invitation record
+ */
+export async function sendInviteEmail(invitationId: string): Promise<ServiceResult<null>> {
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData?.session?.access_token;
+
+    if (!accessToken) {
+      return { data: null, error: { message: 'Not authenticated' } };
+    }
+
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/send-invite`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ invitationId }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      return { data: null, error: { message: errorData.error || 'Failed to send invite' } };
+    }
+
+    return { data: null, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to send invite email';
+    return { data: null, error: { message } };
+  }
+}
+
+/**
+ * Invite a user to an organisation (super admin only)
+ */
+export async function inviteUserToOrganisation(
+  organisationId: string,
+  email: string,
+  role: 'owner' | 'admin' | 'user' = 'user',
+  sendEmail: boolean = true
+): Promise<ServiceResult<{ invitationId: string }>> {
+  // Check permission
+  const canManage = await hasPermission('edit_all_organisations');
+  if (!canManage) {
+    return { data: null, error: { message: 'Permission denied' } };
+  }
+
+  // Check if invitation already exists (we can't check existing users without admin API)
+  const { data: existingInvite } = await (supabase
+    .from('invitations') as any)
+    .select('id')
+    .eq('organisation_id', organisationId)
+    .eq('email', email)
+    .is('accepted_at', null)
+    .is('revoked_at', null)
+    .maybeSingle();
+
+  if (existingInvite) {
+    return { data: null, error: { message: 'An invitation already exists for this email' } };
+  }
+
+  // Get current super admin ID for audit
+  const superAdminId = await getCurrentSuperAdminId();
+
+  // Create invitation
+  const { data: invitation, error: inviteError } = await (supabase
+    .from('invitations') as any)
+    .insert({
+      organisation_id: organisationId,
+      email,
+      role,
+      invited_by: null, // Super admin doesn't have a user profile in this org
+    })
+    .select()
+    .single();
+
+  if (inviteError || !invitation) {
+    return { data: null, error: { message: inviteError?.message || 'Failed to create invitation' } };
+  }
+
+  const invitationData = invitation as { id: string };
+
+  // Log the action
+  await logAction(
+    'invite_user',
+    'user_management',
+    'invitations',
+    invitationData.id,
+    organisationId,
+    undefined,
+    { email, role }
+  );
+
+  // Send invitation email if requested
+  if (sendEmail) {
+    const emailResult = await sendInviteEmail(invitationData.id);
+    if (emailResult.error) {
+      console.error('Failed to send invite email:', emailResult.error.message);
+      // Don't fail the invite creation, just log
+    }
+  }
+
+  return { data: { invitationId: invitationData.id }, error: null };
+}
+
+/**
+ * Resend an invitation email
+ */
+export async function resendInviteEmail(invitationId: string): Promise<ServiceResult<null>> {
+  // Check permission
+  const canManage = await hasPermission('edit_all_organisations');
+  if (!canManage) {
+    return { data: null, error: { message: 'Permission denied' } };
+  }
+
+  // Verify invitation exists and is not accepted/revoked
+  const { data: invitation, error: checkError } = await (supabase
+    .from('invitations') as any)
+    .select('id, email, organisation_id')
+    .eq('id', invitationId)
+    .is('accepted_at', null)
+    .is('revoked_at', null)
+    .single();
+
+  if (checkError || !invitation) {
+    return { data: null, error: { message: 'Invitation not found or already used' } };
+  }
+
+  const inviteData = invitation as { id: string; email: string; organisation_id: string };
+
+  // Send the email
+  const emailResult = await sendInviteEmail(invitationId);
+  if (emailResult.error) {
+    return emailResult;
+  }
+
+  // Log the action
+  await logAction(
+    'resend_invite',
+    'user_management',
+    'invitations',
+    invitationId,
+    inviteData.organisation_id,
+    undefined,
+    { email: inviteData.email }
+  );
+
+  return { data: null, error: null };
+}
+
+/**
+ * Revoke an invitation
+ */
+export async function revokeInvitation(invitationId: string): Promise<ServiceResult<null>> {
+  // Check permission
+  const canManage = await hasPermission('edit_all_organisations');
+  if (!canManage) {
+    return { data: null, error: { message: 'Permission denied' } };
+  }
+
+  // Get invitation details for logging
+  const { data: invitation } = await (supabase
+    .from('invitations') as any)
+    .select('email, organisation_id')
+    .eq('id', invitationId)
+    .single();
+
+  const inviteData = invitation as { email: string; organisation_id: string } | null;
+
+  // Mark invitation as revoked
+  const { error } = await (supabase
+    .from('invitations') as any)
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('id', invitationId);
+
+  if (error) {
+    return { data: null, error: { message: error.message } };
+  }
+
+  // Log the action
+  if (inviteData) {
+    await logAction(
+      'revoke_invite',
+      'user_management',
+      'invitations',
+      invitationId,
+      inviteData.organisation_id,
+      { email: inviteData.email },
+      undefined
+    );
+  }
+
+  return { data: null, error: null };
+}
+
+/**
+ * Fetch pending invitations for an organisation
+ */
+export async function fetchPendingInvitations(
+  organisationId: string
+): Promise<ServiceResult<Array<{
+  id: string;
+  email: string;
+  role: string;
+  created_at: string;
+}>>> {
+  const canView = await hasPermission('view_all_organisations');
+  if (!canView) {
+    return { data: null, error: { message: 'Permission denied' } };
+  }
+
+  const { data, error } = await (supabase
+    .from('invitations') as any)
+    .select('id, email, role, created_at')
+    .eq('organisation_id', organisationId)
+    .is('accepted_at', null)
+    .is('revoked_at', null)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    return { data: null, error: { message: error.message } };
+  }
+
+  return { data: data || [], error: null };
 }
 
 // ============================================

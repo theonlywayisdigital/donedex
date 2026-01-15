@@ -8,6 +8,8 @@ import {
   TextInput,
   ActivityIndicator,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { showNotification } from '../../utils/alert';
 import { useNavigation } from '@react-navigation/native';
@@ -247,7 +249,10 @@ export function AddRecordTypeScreen() {
 
   const renderCustomModal = () => (
     <Modal visible={showCustom} animationType="slide" presentationStyle="pageSheet">
-      <View style={styles.previewContainer}>
+      <KeyboardAvoidingView
+        style={styles.previewContainer}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <View style={styles.previewHeader}>
           <TouchableOpacity onPress={() => setShowCustom(false)}>
             <Text style={styles.previewCancel}>Cancel</Text>
@@ -268,7 +273,7 @@ export function AddRecordTypeScreen() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.previewContent}>
+        <ScrollView style={styles.previewContent} keyboardShouldPersistTaps="handled">
           <View style={styles.formField}>
             <Text style={styles.formLabel}>Name (plural) *</Text>
             <TextInput
@@ -302,7 +307,7 @@ export function AddRecordTypeScreen() {
             </Text>
           </View>
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 
@@ -316,7 +321,7 @@ export function AddRecordTypeScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       {/* Library Types */}
       <Text style={styles.sectionTitle}>Start with a Template</Text>
       <Text style={styles.sectionSubtitle}>

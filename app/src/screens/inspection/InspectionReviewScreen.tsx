@@ -5,13 +5,17 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Image,
 } from 'react-native';
 import { showNotification, showConfirm } from '../../utils/alert';
+import { Icon } from '../../components/ui';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Card, Button } from '../../components/ui';
 import { useInspectionStore } from '../../store/inspectionStore';
+import { useNetworkStatus } from '../../services/networkStatus';
+import { useResponsive } from '../../hooks/useResponsive';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
 import type { HomeStackParamList } from '../../navigation/MainNavigator';
 
@@ -38,9 +42,29 @@ function formatResponseValue(itemType: string, value: string | null): string {
       } catch {
         return value;
       }
+    case 'signature':
+      // Signature is stored as base64 - just show status text
+      return 'Captured';
+    case 'photo':
+      // Photo value might be a URL or count
+      return 'Captured';
+    case 'video':
+      // Video value might be a URL or count
+      return 'Captured';
     default:
       return value;
   }
+}
+
+// Check if a value is a media type that should show preview
+function isMediaType(itemType: string): boolean {
+  return ['signature', 'photo', 'video'].includes(itemType);
+}
+
+// Check if value is a base64 image
+function isBase64Image(value: string | null): boolean {
+  if (!value) return false;
+  return value.startsWith('data:image/');
 }
 
 // Get status color based on response
@@ -68,6 +92,8 @@ function getStatusColor(itemType: string, value: string | null): string {
 export function InspectionReviewScreen() {
   const navigation = useNavigation<InspectionReviewNavigationProp>();
   const route = useRoute<InspectionReviewRouteProp>();
+  const { isOnline } = useNetworkStatus();
+  const { isMobile } = useResponsive();
 
   const {
     report,
@@ -91,11 +117,19 @@ export function InspectionReviewScreen() {
   template?.template_sections.forEach((section) => {
     section.template_items.forEach((item) => {
       const response = responses.get(item.id);
-      if (response && response.responseValue !== null) {
+
+      // Check if item is completed based on type
+      // Photos and videos are stored in separate arrays, not responseValue
+      const hasResponseValue = response && response.responseValue !== null;
+      const hasPhotos = response && item.item_type === 'photo' && response.photos && response.photos.length > 0;
+      const hasVideos = response && item.item_type === 'video' && response.videos && response.videos.length > 0;
+      const isCompleted = hasResponseValue || hasPhotos || hasVideos;
+
+      if (isCompleted) {
         completedItems++;
 
         // Check for issues
-        const value = response.responseValue;
+        const value = response?.responseValue;
         if (
           value === 'fail' ||
           value === 'no' ||
@@ -122,9 +156,14 @@ export function InspectionReviewScreen() {
       return;
     }
 
+    const confirmTitle = isOnline ? 'Submit Inspection' : 'Submit Inspection (Offline)';
+    const confirmMessage = isOnline
+      ? 'Once submitted, this inspection cannot be edited. Are you sure you want to submit?'
+      : 'You are currently offline. Your inspection will be saved locally and automatically submitted when you reconnect to the internet. Are you sure you want to submit?';
+
     showConfirm(
-      'Submit Inspection',
-      'Once submitted, this inspection cannot be edited. Are you sure you want to submit?',
+      confirmTitle,
+      confirmMessage,
       async () => {
         const result = await submitInspection();
         if (result.error) {
@@ -157,7 +196,23 @@ export function InspectionReviewScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={[
+          styles.contentContainer,
+          isMobile && styles.contentContainerMobile,
+        ]}
+      >
+        {/* Offline Banner */}
+        {!isOnline && (
+          <View style={styles.offlineBanner}>
+            <Icon name="wifi-off" size={18} color={colors.white} />
+            <Text style={styles.offlineBannerText}>
+              You're offline. Data will sync when you reconnect.
+            </Text>
+          </View>
+        )}
+
         {/* Summary Card */}
         <Card style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Inspection Summary</Text>
@@ -203,6 +258,8 @@ export function InspectionReviewScreen() {
               const value = response?.responseValue || null;
               const statusColor = getStatusColor(item.item_type, value);
               const isMissing = value === null && item.is_required;
+              const hasSignatureImage = item.item_type === 'signature' && isBase64Image(value);
+              const hasPhotoOrVideo = (item.item_type === 'photo' || item.item_type === 'video') && value;
 
               return (
                 <View key={item.id} style={styles.itemRow}>
@@ -210,9 +267,33 @@ export function InspectionReviewScreen() {
                     {item.label}
                     {item.is_required && <Text style={styles.requiredMark}> *</Text>}
                   </Text>
-                  <Text style={[styles.itemValue, { color: statusColor }, isMissing && styles.itemMissing]}>
-                    {isMissing ? 'Required' : formatResponseValue(item.item_type, value)}
-                  </Text>
+                  <View style={styles.itemValueContainer}>
+                    {hasSignatureImage && value ? (
+                      <View style={styles.signaturePreviewContainer}>
+                        <Image
+                          source={{ uri: value }}
+                          style={styles.signaturePreview}
+                          resizeMode="contain"
+                        />
+                        <Icon name="check-circle" size={16} color={colors.success} />
+                      </View>
+                    ) : hasPhotoOrVideo ? (
+                      <View style={styles.mediaIndicator}>
+                        <Icon
+                          name={item.item_type === 'photo' ? 'camera' : 'video'}
+                          size={16}
+                          color={colors.success}
+                        />
+                        <Text style={[styles.itemValue, { color: colors.success }]}>
+                          Captured
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={[styles.itemValue, { color: statusColor }, isMissing && styles.itemMissing]}>
+                        {isMissing ? 'Required' : formatResponseValue(item.item_type, value)}
+                      </Text>
+                    )}
+                  </View>
                 </View>
               );
             })}
@@ -221,7 +302,7 @@ export function InspectionReviewScreen() {
       </ScrollView>
 
       {/* Footer */}
-      <View style={styles.footer}>
+      <View style={[styles.footer, isMobile && styles.footerMobile]}>
         <Button
           title="Back to Edit"
           onPress={() => navigation.goBack()}
@@ -244,6 +325,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.warning,
+    padding: spacing.sm,
+    borderRadius: borderRadius.md,
+    gap: spacing.sm,
+  },
+  offlineBannerText: {
+    flex: 1,
+    color: colors.white,
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.medium,
   },
   errorContainer: {
     flex: 1,
@@ -337,6 +432,9 @@ const styles = StyleSheet.create({
   requiredMark: {
     color: colors.danger,
   },
+  itemValueContainer: {
+    alignItems: 'flex-end',
+  },
   itemValue: {
     fontSize: fontSize.body,
     fontWeight: fontWeight.medium,
@@ -345,6 +443,24 @@ const styles = StyleSheet.create({
   },
   itemMissing: {
     fontStyle: 'italic',
+  },
+  signaturePreviewContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  signaturePreview: {
+    width: 60,
+    height: 30,
+    backgroundColor: colors.neutral[100],
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+  },
+  mediaIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   footer: {
     flexDirection: 'row',
@@ -356,5 +472,14 @@ const styles = StyleSheet.create({
   },
   footerButton: {
     flex: 1,
+  },
+  // Mobile-specific styles (screens < 768px)
+  contentContainerMobile: {
+    padding: spacing.sm,
+    gap: spacing.sm,
+  },
+  footerMobile: {
+    padding: spacing.sm,
+    gap: spacing.sm,
   },
 });

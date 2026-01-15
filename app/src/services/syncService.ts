@@ -13,6 +13,7 @@ import {
   SyncQueueItem,
 } from './localStorage';
 import { compressImage } from './imageCompression';
+import { deletePersistedFile } from './filePersistence';
 
 const MAX_RETRIES = 3;
 let isSyncing = false;
@@ -48,6 +49,8 @@ async function processSyncItem(item: SyncQueueItem): Promise<boolean> {
         return await syncResponse(item.data);
       case 'photo':
         return await syncPhoto(item.data);
+      case 'video':
+        return await syncVideo(item.data);
       case 'report_submit':
         return await syncReportSubmit(item.data);
       default:
@@ -134,9 +137,62 @@ async function syncPhoto(data: Record<string, unknown>): Promise<boolean> {
       return false;
     }
 
+    // Clean up the locally persisted file after successful upload
+    await deletePersistedFile(photoUri as string);
+
     return true;
   } catch (error) {
     console.error('Error syncing photo:', error);
+    return false;
+  }
+}
+
+/**
+ * Sync a video to the server
+ */
+async function syncVideo(data: Record<string, unknown>): Promise<boolean> {
+  const { reportId, responseId, videoUri } = data;
+
+  try {
+    // Generate unique filename
+    const filename = `${reportId}/${responseId}/${Date.now()}.mp4`;
+
+    // Fetch the video as a blob
+    const response = await fetch(videoUri as string);
+    const blob = await response.blob();
+
+    // Upload to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from('report-videos')
+      .upload(filename, blob, {
+        contentType: 'video/mp4',
+      });
+
+    if (uploadError) {
+      console.error('Error uploading video during sync:', uploadError);
+      return false;
+    }
+
+    // Create video record in database (using report_photos table for now)
+    // TODO: Create separate report_videos table if needed
+    const { error: dbError } = await supabase
+      .from('report_photos')
+      .insert({
+        report_response_id: responseId,
+        storage_path: filename,
+      } as never);
+
+    if (dbError) {
+      console.error('Error creating video record during sync:', dbError);
+      return false;
+    }
+
+    // Clean up the locally persisted file after successful upload
+    await deletePersistedFile(videoUri as string);
+
+    return true;
+  } catch (error) {
+    console.error('Error syncing video:', error);
     return false;
   }
 }

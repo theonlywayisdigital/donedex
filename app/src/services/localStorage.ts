@@ -96,19 +96,25 @@ export async function clearAllStorage(): Promise<void> {
 // Inspection Draft Storage
 // ============================================================================
 
+export interface InspectionDraftResponse {
+  templateItemId: string;
+  responseValue: string | null;
+  photos: string[];
+  notes: string | null;
+  severity: string | null;
+  /** Timestamp when this specific response was last modified locally */
+  fieldUpdatedAt: string;
+}
+
 export interface InspectionDraft {
   reportId: string;
   templateId: string;
   recordId: string;
-  responses: Array<{
-    templateItemId: string;
-    responseValue: string | null;
-    photos: string[];
-    notes: string | null;
-    severity: string | null;
-  }>;
+  responses: InspectionDraftResponse[];
   currentSectionIndex: number;
   lastUpdated: string;
+  /** Version number for optimistic locking (incremented on each save) */
+  version: number;
 }
 
 /**
@@ -170,7 +176,7 @@ export async function getAllInspectionDrafts(): Promise<InspectionDraft[]> {
 
 export interface SyncQueueItem {
   id: string;
-  type: 'response' | 'photo' | 'report_submit';
+  type: 'response' | 'photo' | 'video' | 'report_submit';
   data: Record<string, unknown>;
   createdAt: string;
   retryCount: number;
@@ -187,7 +193,7 @@ export async function addToSyncQueue(
   const queue = (await loadFromStorage<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE)) || [];
 
   queue.push({
-    id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
     type,
     data,
     createdAt: new Date().toISOString(),

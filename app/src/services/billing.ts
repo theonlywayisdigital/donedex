@@ -26,19 +26,23 @@ export async function fetchPlans(): Promise<{
   data: SubscriptionPlan[] | null;
   error: string | null;
 }> {
-  const { data, error } = await supabase
-    .from('subscription_plans')
-    .select('*')
-    .eq('is_active', true)
-    .eq('is_public', true)
-    .order('display_order', { ascending: true });
+  try {
+    const { data, error } = await supabase
+      .from('subscription_plans')
+      .select('*')
+      .eq('is_active', true)
+      .eq('is_public', true)
+      .order('display_order', { ascending: true });
 
-  if (error) {
-    console.error('Error fetching plans:', error);
-    return { data: null, error: error.message };
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch plans';
+    return { data: null, error: message };
   }
-
-  return { data, error: null };
 }
 
 /**
@@ -48,18 +52,22 @@ export async function fetchPlanById(planId: string): Promise<{
   data: SubscriptionPlan | null;
   error: string | null;
 }> {
-  const { data, error } = await supabase
-    .from('subscription_plans')
-    .select('*')
-    .eq('id', planId)
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from('subscription_plans')
+      .select('*')
+      .eq('id', planId)
+      .single();
 
-  if (error) {
-    console.error('Error fetching plan:', error);
-    return { data: null, error: error.message };
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch plan';
+    return { data: null, error: message };
   }
-
-  return { data, error: null };
 }
 
 /**
@@ -69,18 +77,22 @@ export async function fetchPlanBySlug(slug: string): Promise<{
   data: SubscriptionPlan | null;
   error: string | null;
 }> {
-  const { data, error } = await supabase
-    .from('subscription_plans')
-    .select('*')
-    .eq('slug', slug)
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from('subscription_plans')
+      .select('*')
+      .eq('slug', slug)
+      .single();
 
-  if (error) {
-    console.error('Error fetching plan by slug:', error);
-    return { data: null, error: error.message };
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch plan by slug';
+    return { data: null, error: message };
   }
-
-  return { data, error: null };
 }
 
 // ============================================
@@ -103,55 +115,50 @@ export async function fetchBillingStatus(orgId: string): Promise<{
   data: OrganisationBilling | null;
   error: string | null;
 }> {
-  // First fetch organisation billing data
-  const { data: orgData, error: orgError } = await supabase
-    .from('organisations')
-    .select(`
-      stripe_customer_id,
-      subscription_status,
-      trial_ends_at,
-      subscription_ends_at,
-      current_plan_id
-    `)
-    .eq('id', orgId)
-    .single() as unknown as { data: OrgBillingQueryResult | null; error: { message: string } | null };
+  try {
+    // First fetch organisation billing data
+    const { data: orgData, error: orgError } = await supabase
+      .from('organisations')
+      .select(`
+        stripe_customer_id,
+        subscription_status,
+        trial_ends_at,
+        subscription_ends_at,
+        current_plan_id
+      `)
+      .eq('id', orgId)
+      .single() as unknown as { data: OrgBillingQueryResult | null; error: { message: string } | null };
 
-  if (orgError || !orgData) {
-    console.error('Error fetching organisation billing:', orgError);
-    return { data: null, error: orgError?.message || 'Organisation not found' };
-  }
+    if (orgError || !orgData) {
+      return { data: null, error: orgError?.message || 'Organisation not found' };
+    }
 
-  // Fetch plan separately if current_plan_id exists
-  let currentPlan: SubscriptionPlan | null = null;
-  if (orgData.current_plan_id) {
-    const { data: planData, error: planError } = await supabase
-      .from('subscription_plans')
-      .select('*')
-      .eq('id', orgData.current_plan_id)
-      .single() as unknown as { data: SubscriptionPlan | null; error: { message: string } | null };
+    // Fetch plan separately if current_plan_id exists
+    let currentPlan: SubscriptionPlan | null = null;
+    if (orgData.current_plan_id) {
+      const { data: planData } = await supabase
+        .from('subscription_plans')
+        .select('*')
+        .eq('id', orgData.current_plan_id)
+        .single() as unknown as { data: SubscriptionPlan | null; error: { message: string } | null };
 
-    if (planError) {
-      console.error('Error fetching current plan:', planError);
-      // Don't fail entirely - just log the error and continue without plan
-    } else {
       currentPlan = planData;
     }
+
+    return {
+      data: {
+        stripe_customer_id: orgData.stripe_customer_id,
+        subscription_status: (orgData.subscription_status as OrganisationBilling['subscription_status']) || 'incomplete',
+        trial_ends_at: orgData.trial_ends_at,
+        subscription_ends_at: orgData.subscription_ends_at,
+        current_plan: currentPlan,
+      },
+      error: null,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch billing status';
+    return { data: null, error: message };
   }
-
-  console.log('[fetchBillingStatus] orgId:', orgId);
-  console.log('[fetchBillingStatus] current_plan_id:', orgData.current_plan_id);
-  console.log('[fetchBillingStatus] currentPlan:', currentPlan?.name || 'null');
-
-  return {
-    data: {
-      stripe_customer_id: orgData.stripe_customer_id,
-      subscription_status: (orgData.subscription_status as OrganisationBilling['subscription_status']) || 'incomplete',
-      trial_ends_at: orgData.trial_ends_at,
-      subscription_ends_at: orgData.subscription_ends_at,
-      current_plan: currentPlan,
-    },
-    error: null,
-  };
 }
 
 /**
@@ -161,17 +168,21 @@ export async function fetchBillingSummary(orgId: string): Promise<{
   data: BillingSummary | null;
   error: string | null;
 }> {
-  // Use type assertion for RPC call since types aren't generated
-  const { data, error } = await (supabase.rpc as Function)('get_billing_summary', {
-    org_id: orgId,
-  });
+  try {
+    // Use type assertion for RPC call since types aren't generated
+    const { data, error } = await (supabase.rpc as Function)('get_billing_summary', {
+      org_id: orgId,
+    });
 
-  if (error) {
-    console.error('Error fetching billing summary:', error);
-    return { data: null, error: error.message };
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: data as BillingSummary, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch billing summary';
+    return { data: null, error: message };
   }
-
-  return { data: data as BillingSummary, error: null };
 }
 
 // ============================================
@@ -185,62 +196,75 @@ export async function fetchUsageLimits(orgId: string): Promise<{
   data: UsageLimits | null;
   error: string | null;
 }> {
-  // Use type assertion for RPC call since types aren't generated
-  const { data, error } = await (supabase.rpc as Function)('check_org_limits', {
-    org_id: orgId,
-  });
+  try {
+    // Use type assertion for RPC call since types aren't generated
+    const { data, error } = await (supabase.rpc as Function)('check_org_limits', {
+      org_id: orgId,
+    });
 
-  if (error) {
-    console.error('Error fetching usage limits:', error);
-    return { data: null, error: error.message };
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: data as UsageLimits, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch usage limits';
+    return { data: null, error: message };
   }
-
-  return { data: data as UsageLimits, error: null };
 }
 
 /**
  * Check if a specific action is allowed
  */
 export async function canAddRecord(orgId: string): Promise<boolean> {
-  // Use type assertion for RPC call since types aren't generated
-  const { data, error } = await (supabase.rpc as Function)('can_add_record', {
-    org_id: orgId,
-  });
+  try {
+    // Use type assertion for RPC call since types aren't generated
+    const { data, error } = await (supabase.rpc as Function)('can_add_record', {
+      org_id: orgId,
+    });
 
-  if (error) {
-    console.error('Error checking record limit:', error);
+    if (error) {
+      return false;
+    }
+
+    return data as boolean;
+  } catch {
     return false;
   }
-
-  return data as boolean;
 }
 
 export async function canAddReport(orgId: string): Promise<boolean> {
-  // Use type assertion for RPC call since types aren't generated
-  const { data, error } = await (supabase.rpc as Function)('can_add_report', {
-    org_id: orgId,
-  });
+  try {
+    // Use type assertion for RPC call since types aren't generated
+    const { data, error } = await (supabase.rpc as Function)('can_add_report', {
+      org_id: orgId,
+    });
 
-  if (error) {
-    console.error('Error checking report limit:', error);
+    if (error) {
+      return false;
+    }
+
+    return data as boolean;
+  } catch {
     return false;
   }
-
-  return data as boolean;
 }
 
 export async function canAddUser(orgId: string): Promise<boolean> {
-  // Use type assertion for RPC call since types aren't generated
-  const { data, error } = await (supabase.rpc as Function)('can_add_user', {
-    org_id: orgId,
-  });
+  try {
+    // Use type assertion for RPC call since types aren't generated
+    const { data, error } = await (supabase.rpc as Function)('can_add_user', {
+      org_id: orgId,
+    });
 
-  if (error) {
-    console.error('Error checking user limit:', error);
+    if (error) {
+      return false;
+    }
+
+    return data as boolean;
+  } catch {
     return false;
   }
-
-  return data as boolean;
 }
 
 // ============================================
@@ -257,19 +281,23 @@ export async function fetchInvoices(
   data: Invoice[] | null;
   error: string | null;
 }> {
-  const { data, error } = await supabase
-    .from('invoices')
-    .select('*')
-    .eq('organisation_id', orgId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  try {
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('organisation_id', orgId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
-  if (error) {
-    console.error('Error fetching invoices:', error);
-    return { data: null, error: error.message };
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch invoices';
+    return { data: null, error: message };
   }
-
-  return { data, error: null };
 }
 
 /**
@@ -279,18 +307,22 @@ export async function fetchInvoiceById(invoiceId: string): Promise<{
   data: Invoice | null;
   error: string | null;
 }> {
-  const { data, error } = await supabase
-    .from('invoices')
-    .select('*')
-    .eq('id', invoiceId)
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('id', invoiceId)
+      .single();
 
-  if (error) {
-    console.error('Error fetching invoice:', error);
-    return { data: null, error: error.message };
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch invoice';
+    return { data: null, error: message };
   }
-
-  return { data, error: null };
 }
 
 // ============================================
@@ -310,22 +342,26 @@ export async function createCheckoutSession(
   data: CheckoutSessionResponse | null;
   error: string | null;
 }> {
-  const { data, error } = await supabase.functions.invoke('create-checkout-session', {
-    body: {
-      organisationId,
-      planId,
-      billingInterval,
-      successUrl,
-      cancelUrl,
-    },
-  });
+  try {
+    const { data, error } = await supabase.functions.invoke('create-checkout-session', {
+      body: {
+        organisationId,
+        planId,
+        billingInterval,
+        successUrl,
+        cancelUrl,
+      },
+    });
 
-  if (error) {
-    console.error('Error creating checkout session:', error);
-    return { data: null, error: error.message };
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: data as CheckoutSessionResponse, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to create checkout session';
+    return { data: null, error: message };
   }
-
-  return { data: data as CheckoutSessionResponse, error: null };
 }
 
 /**
@@ -338,19 +374,23 @@ export async function createCustomerPortal(
   data: CustomerPortalResponse | null;
   error: string | null;
 }> {
-  const { data, error } = await supabase.functions.invoke('create-customer-portal', {
-    body: {
-      organisationId,
-      returnUrl,
-    },
-  });
+  try {
+    const { data, error } = await supabase.functions.invoke('create-customer-portal', {
+      body: {
+        organisationId,
+        returnUrl,
+      },
+    });
 
-  if (error) {
-    console.error('Error creating customer portal:', error);
-    return { data: null, error: error.message };
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: data as CustomerPortalResponse, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to create customer portal';
+    return { data: null, error: message };
   }
-
-  return { data: data as CustomerPortalResponse, error: null };
 }
 
 // ============================================
@@ -364,21 +404,25 @@ export async function fetchSubscriptionHistory(orgId: string): Promise<{
   data: unknown[] | null;
   error: string | null;
 }> {
-  const { data, error } = await supabase
-    .from('subscription_history')
-    .select(`
-      *,
-      subscription_plans (*)
-    `)
-    .eq('organisation_id', orgId)
-    .order('started_at', { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from('subscription_history')
+      .select(`
+        *,
+        subscription_plans (*)
+      `)
+      .eq('organisation_id', orgId)
+      .order('started_at', { ascending: false });
 
-  if (error) {
-    console.error('Error fetching subscription history:', error);
-    return { data: null, error: error.message };
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch subscription history';
+    return { data: null, error: message };
   }
-
-  return { data, error: null };
 }
 
 // ============================================
@@ -392,31 +436,35 @@ export async function isFeatureAvailable(
   orgId: string,
   feature: string
 ): Promise<boolean> {
-  const { data: billing } = await fetchBillingStatus(orgId);
+  try {
+    const { data: billing } = await fetchBillingStatus(orgId);
 
-  if (!billing?.current_plan) {
-    return false;
-  }
-
-  const plan = billing.current_plan;
-
-  switch (feature) {
-    case 'ai_templates':
-      return plan.feature_ai_templates;
-    case 'pdf_export':
-      return plan.feature_pdf_export;
-    case 'api_access':
-      return plan.feature_api_access;
-    case 'custom_branding':
-      return plan.feature_custom_branding;
-    case 'priority_support':
-      return plan.feature_priority_support;
-    case 'white_label':
-      return plan.feature_white_label;
-    case 'advanced_analytics':
-      return plan.feature_advanced_analytics;
-    default:
+    if (!billing?.current_plan) {
       return false;
+    }
+
+    const plan = billing.current_plan;
+
+    switch (feature) {
+      case 'ai_templates':
+        return plan.feature_ai_templates;
+      case 'pdf_export':
+        return plan.feature_pdf_export;
+      case 'api_access':
+        return plan.feature_api_access;
+      case 'custom_branding':
+        return plan.feature_custom_branding;
+      case 'priority_support':
+        return plan.feature_priority_support;
+      case 'white_label':
+        return plan.feature_white_label;
+      case 'advanced_analytics':
+        return plan.feature_advanced_analytics;
+      default:
+        return false;
+    }
+  } catch {
+    return false;
   }
 }
 

@@ -28,6 +28,7 @@ export interface ReportResponse {
   severity: 'low' | 'medium' | 'high' | null;
   notes: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 export interface ReportPhoto {
@@ -442,4 +443,109 @@ export async function uploadSignature(
 export function getSignatureUrl(storagePath: string): string {
   const { data } = supabase.storage.from('report-signatures').getPublicUrl(storagePath);
   return data.publicUrl;
+}
+
+/**
+ * Upload a video for a response
+ * @param reportId - The report ID
+ * @param responseId - The response ID
+ * @param videoUri - Local URI to the video file
+ * @returns Storage path for the uploaded video
+ */
+export async function uploadResponseVideo(
+  reportId: string,
+  responseId: string,
+  videoUri: string
+): Promise<{ data: string | null; error: { message: string } | null }> {
+  try {
+    // Generate unique filename
+    const filename = `${reportId}/${responseId}/${Date.now()}.mp4`;
+
+    // Fetch the video as a blob
+    const response = await fetch(videoUri);
+    const blob = await response.blob();
+
+    // Upload to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from('report-videos')
+      .upload(filename, blob, {
+        contentType: 'video/mp4',
+      });
+
+    if (uploadError) {
+      console.error('Error uploading video:', uploadError);
+      return { data: null, error: { message: uploadError.message } };
+    }
+
+    return { data: filename, error: null };
+  } catch (err) {
+    console.error('Error in uploadResponseVideo:', err);
+    return { data: null, error: { message: 'Failed to upload video' } };
+  }
+}
+
+/**
+ * Get public URL for a video
+ * This URL can be used directly in HTML5 video elements or React Native Video
+ */
+export function getVideoUrl(storagePath: string): string {
+  const { data } = supabase.storage.from('report-videos').getPublicUrl(storagePath);
+  return data.publicUrl;
+}
+
+/**
+ * Upload a media file (photo or video) for a response
+ * Simplified upload that stores files by reportId/templateItemId path
+ * @param reportId - The report ID
+ * @param templateItemId - The template item ID (used for path organization)
+ * @param fileUri - Local URI to the file
+ * @param mediaType - Type of media ('photo' or 'video')
+ * @returns Storage path for the uploaded file
+ */
+export async function uploadMediaFile(
+  reportId: string,
+  templateItemId: string,
+  fileUri: string,
+  mediaType: 'photo' | 'video'
+): Promise<{ data: string | null; error: { message: string } | null }> {
+  try {
+    const bucket = mediaType === 'photo' ? 'report-photos' : 'report-videos';
+    const extension = mediaType === 'photo' ? 'jpg' : 'mp4';
+    const contentType = mediaType === 'photo' ? 'image/jpeg' : 'video/mp4';
+
+    // Generate unique filename using reportId and templateItemId
+    const filename = `${reportId}/${templateItemId}/${Date.now()}.${extension}`;
+
+    let fileBlob: Blob;
+
+    if (mediaType === 'photo') {
+      // Compress image before upload
+      const compressed = await compressImage(fileUri, {
+        maxWidth: 2000,
+        maxHeight: 2000,
+        quality: 0.8,
+      });
+      const response = await fetch(compressed.uri);
+      fileBlob = await response.blob();
+    } else {
+      // Videos uploaded as-is
+      const response = await fetch(fileUri);
+      fileBlob = await response.blob();
+    }
+
+    // Upload to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from(bucket)
+      .upload(filename, fileBlob, { contentType });
+
+    if (uploadError) {
+      console.error(`Error uploading ${mediaType}:`, uploadError);
+      return { data: null, error: { message: uploadError.message } };
+    }
+
+    return { data: filename, error: null };
+  } catch (err) {
+    console.error(`Error in uploadMediaFile (${mediaType}):`, err);
+    return { data: null, error: { message: `Failed to upload ${mediaType}` } };
+  }
 }

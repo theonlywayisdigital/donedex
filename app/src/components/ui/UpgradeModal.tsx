@@ -6,6 +6,7 @@ import {
   Modal,
   TouchableOpacity,
   TouchableWithoutFeedback,
+  useWindowDimensions,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
@@ -30,6 +31,8 @@ export function UpgradeModal({
   description,
 }: UpgradeModalProps) {
   const navigation = useNavigation<any>();
+  const { width: windowWidth } = useWindowDimensions();
+  const modalMaxWidth = Math.min(400, windowWidth - spacing.md * 2);
 
   const handleUpgrade = () => {
     onClose();
@@ -47,7 +50,7 @@ export function UpgradeModal({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback>
-            <View style={styles.container}>
+            <View style={[styles.container, { maxWidth: modalMaxWidth }]}>
               {/* Close button */}
               <TouchableOpacity style={styles.closeButton} onPress={onClose}>
                 <Icon name="x" size={24} color={colors.text.secondary} />

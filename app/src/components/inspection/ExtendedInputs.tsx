@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   Animated,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '../ui/DateTimePicker';
 import type { DateTimePickerEvent } from '../ui/DateTimePicker/types';
 import Slider from '../ui/Slider';
@@ -686,6 +687,7 @@ export function WitnessInput({ value, onChange, onSignatureCapture }: WitnessInp
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const signatureRef = useRef<SignatureCanvasRef>(null);
+  const insets = useSafeAreaInsets();
 
   const parseValue = () => {
     if (!value) return { name: '', signaturePath: null };
@@ -759,7 +761,7 @@ export function WitnessInput({ value, onChange, onSignatureCapture }: WitnessInp
       )}
 
       <Modal visible={showSignatureModal} animationType="slide" presentationStyle="fullScreen">
-        <View style={styles.signatureModal}>
+        <View style={[styles.signatureModal, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <View style={styles.signatureModalHeader}>
             <TouchableOpacity onPress={() => setShowSignatureModal(false)} style={styles.signatureModalClose}>
               <Text style={styles.signatureModalCloseText}>Cancel</Text>

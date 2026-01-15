@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Modal,
+  useWindowDimensions,
 } from 'react-native';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
 import { Icon, IconName, ProBadge, UpgradeModal } from '../ui';
@@ -83,6 +84,9 @@ export function FieldTypeCategoryPicker({
   onClose,
   onSelectCategory,
 }: FieldTypeCategoryPickerProps) {
+  const { width: windowWidth } = useWindowDimensions();
+  const modalMaxWidth = Math.min(400, windowWidth - spacing.lg * 2);
+
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [selectedProFeature, setSelectedProFeature] = useState('');
   const isCategoryAllowed = useBillingStore((state) => state.isCategoryAllowed);
@@ -104,7 +108,7 @@ export function FieldTypeCategoryPicker({
           activeOpacity={1}
           onPress={onClose}
         >
-          <View style={styles.container} onStartShouldSetResponder={() => true}>
+          <View style={[styles.container, { maxWidth: modalMaxWidth }]} onStartShouldSetResponder={() => true}>
             <Text style={styles.title}>Select Field Type</Text>
             <Text style={styles.subtitle}>Choose a category</Text>
 

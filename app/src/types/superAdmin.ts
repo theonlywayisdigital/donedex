@@ -77,6 +77,7 @@ export interface AuditLogEntry {
 export type AuditLogCategory =
   | 'organisation'
   | 'user'
+  | 'user_management'
   | 'report'
   | 'template'
   | 'record'
