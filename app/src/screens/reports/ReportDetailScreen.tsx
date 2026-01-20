@@ -739,8 +739,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   signatureImage: {
-    width: 150,
-    height: 60,
+    width: 250,
+    height: 100,
     backgroundColor: colors.neutral[100],
     borderRadius: borderRadius.sm,
     borderWidth: 1,
