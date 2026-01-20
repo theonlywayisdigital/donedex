@@ -1,9 +1,9 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
+  ScrollView,
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
@@ -13,41 +13,98 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SitesStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
 import { Icon } from '../../components/ui';
-import { fetchRecords, archiveRecord } from '../../services/records';
-import type { Record as RecordModel } from '../../types';
+import { fetchRecordsWithRecordType, archiveRecord, RecordWithRecordType } from '../../services/records';
+import { fetchRecordTypes } from '../../services/recordTypes';
+import type { RecordType, Record as RecordModel } from '../../types';
 
 type NavigationProp = NativeStackNavigationProp<SitesStackParamList, 'SiteList'>;
 
-interface RecordWithCount extends RecordModel {
-  templateCount?: number;
+interface RecordTypeGroup {
+  recordType: RecordType;
+  records: RecordWithRecordType[];
 }
 
 export function SiteListScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const [records, setRecords] = useState<RecordWithCount[]>([]);
+  const [records, setRecords] = useState<RecordWithRecordType[]>([]);
+  const [recordTypes, setRecordTypes] = useState<RecordType[]>([]);
+  const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadRecords = useCallback(async () => {
-    const { data, error } = await fetchRecords();
-    if (error) {
-      console.error('Error loading records:', error.message);
+  const loadData = useCallback(async () => {
+    const [recordsResult, typesResult] = await Promise.all([
+      fetchRecordsWithRecordType(),
+      fetchRecordTypes(),
+    ]);
+
+    if (recordsResult.error) {
+      console.error('Error loading records:', recordsResult.error.message);
     } else {
-      setRecords(data);
+      // Filter out records with archived record types
+      const activeRecords = recordsResult.data.filter(
+        (r) => r.record_type && !r.record_type.archived
+      );
+      setRecords(activeRecords);
     }
+
+    if (typesResult.error) {
+      console.error('Error loading record types:', typesResult.error.message);
+    } else {
+      setRecordTypes(typesResult.data);
+      // Expand all types by default on first load
+      if (expandedTypes.size === 0) {
+        setExpandedTypes(new Set(typesResult.data.map((t) => t.id)));
+      }
+    }
+
     setLoading(false);
     setRefreshing(false);
-  }, []);
+  }, [expandedTypes.size]);
 
   useFocusEffect(
     useCallback(() => {
-      loadRecords();
-    }, [loadRecords])
+      loadData();
+    }, [loadData])
   );
+
+  // Group records by record type
+  const groupedRecords = useMemo(() => {
+    const groups: RecordTypeGroup[] = [];
+    const recordsByType = new Map<string, RecordWithRecordType[]>();
+
+    // Group records by record_type_id
+    records.forEach((record) => {
+      const typeId = record.record_type_id;
+      if (!recordsByType.has(typeId)) {
+        recordsByType.set(typeId, []);
+      }
+      recordsByType.get(typeId)!.push(record);
+    });
+
+    // Create groups for each record type (including those with no records)
+    recordTypes.forEach((type) => {
+      const typeRecords = recordsByType.get(type.id) || [];
+      groups.push({
+        recordType: type,
+        records: typeRecords,
+      });
+    });
+
+    // Sort groups by record type name (default types first)
+    groups.sort((a, b) => {
+      if (a.recordType.is_default !== b.recordType.is_default) {
+        return a.recordType.is_default ? -1 : 1;
+      }
+      return a.recordType.name.localeCompare(b.recordType.name);
+    });
+
+    return groups;
+  }, [records, recordTypes]);
 
   const handleRefresh = () => {
     setRefreshing(true);
-    loadRecords();
+    loadData();
   };
 
   const handleCreateRecord = () => {
@@ -71,7 +128,7 @@ export function SiteListScreen() {
         if (error) {
           showNotification('Error', error.message);
         } else {
-          loadRecords();
+          loadData();
         }
       },
       undefined,
@@ -80,8 +137,20 @@ export function SiteListScreen() {
     );
   };
 
-  const renderRecord = ({ item }: { item: RecordWithCount }) => (
-    <View style={styles.recordCard}>
+  const toggleExpanded = (typeId: string) => {
+    setExpandedTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(typeId)) {
+        next.delete(typeId);
+      } else {
+        next.add(typeId);
+      }
+      return next;
+    });
+  };
+
+  const renderRecord = (item: RecordWithRecordType) => (
+    <View key={item.id} style={styles.recordCard}>
       <TouchableOpacity
         style={styles.recordContent}
         onPress={() => handleViewRecord(item.id)}
@@ -118,6 +187,52 @@ export function SiteListScreen() {
     </View>
   );
 
+  const renderRecordTypeFolder = (group: RecordTypeGroup) => {
+    const { recordType, records: typeRecords } = group;
+    const isExpanded = expandedTypes.has(recordType.id);
+    const iconName = recordType.icon || 'folder';
+    const iconColor = recordType.color || colors.primary.DEFAULT;
+
+    return (
+      <View key={recordType.id} style={styles.folderContainer}>
+        <TouchableOpacity
+          style={styles.folderHeader}
+          onPress={() => toggleExpanded(recordType.id)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.folderIcon, { backgroundColor: iconColor + '20' }]}>
+            <Icon name={iconName as any} size={20} color={iconColor} />
+          </View>
+          <View style={styles.folderInfo}>
+            <Text style={styles.folderName}>{recordType.name}</Text>
+            <Text style={styles.folderCount}>
+              {typeRecords.length} {typeRecords.length === 1 ? recordType.name_singular || 'record' : 'records'}
+            </Text>
+          </View>
+          <Icon
+            name={isExpanded ? 'chevron-down' : 'chevron-right'}
+            size={20}
+            color={colors.text.secondary}
+          />
+        </TouchableOpacity>
+
+        {isExpanded && (
+          <View style={styles.folderContent}>
+            {typeRecords.length === 0 ? (
+              <View style={styles.emptyFolder}>
+                <Text style={styles.emptyFolderText}>
+                  No {recordType.name.toLowerCase()} yet
+                </Text>
+              </View>
+            ) : (
+              typeRecords.map(renderRecord)
+            )}
+          </View>
+        )}
+      </View>
+    );
+  };
+
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyTitle}>No records yet</Text>
@@ -138,19 +253,27 @@ export function SiteListScreen() {
     );
   }
 
+  const totalRecords = records.length;
+
   return (
     <View style={styles.container}>
-      <FlatList
-        data={records}
-        keyExtractor={(item) => item.id}
-        renderItem={renderRecord}
-        contentContainerStyle={styles.listContent}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[
+          styles.listContent,
+          totalRecords === 0 && recordTypes.length === 0 && styles.listContentEmpty,
+        ]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
-        ListEmptyComponent={renderEmpty}
-      />
-      {records.length > 0 && (
+      >
+        {recordTypes.length === 0 ? (
+          renderEmpty()
+        ) : (
+          groupedRecords.map(renderRecordTypeFolder)
+        )}
+      </ScrollView>
+      {(totalRecords > 0 || recordTypes.length > 0) && (
         <TouchableOpacity style={styles.fab} onPress={handleCreateRecord}>
           <Text style={styles.fabText}>+</Text>
         </TouchableOpacity>
@@ -164,6 +287,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  scrollView: {
+    flex: 1,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -176,16 +302,68 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: spacing.md,
+  },
+  listContentEmpty: {
     flexGrow: 1,
   },
-  recordCard: {
+  // Folder styles
+  folderContainer: {
+    marginBottom: spacing.md,
     backgroundColor: colors.white,
     borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border.DEFAULT,
+    overflow: 'hidden',
     ...shadows.card,
+  },
+  folderHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  folderIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  folderInfo: {
+    flex: 1,
+  },
+  folderName: {
+    fontSize: fontSize.bodyLarge,
+    fontWeight: fontWeight.semibold,
+    color: colors.text.primary,
+  },
+  folderCount: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+    marginTop: 2,
+  },
+  folderContent: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border.light,
+    padding: spacing.sm,
+    paddingTop: spacing.md,
+  },
+  emptyFolder: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+  },
+  emptyFolderText: {
+    fontSize: fontSize.body,
+    color: colors.text.tertiary,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  // Record card styles
+  recordCard: {
+    backgroundColor: colors.neutral[50],
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
   },
   recordContent: {
     flexDirection: 'row',
@@ -195,12 +373,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   recordName: {
-    fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
     color: colors.text.primary,
   },
   recordAddress: {
-    fontSize: fontSize.body,
+    fontSize: fontSize.caption,
     color: colors.text.secondary,
     marginTop: spacing.xs,
   },
@@ -219,7 +397,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.sm,
-    backgroundColor: colors.neutral[50],
+    backgroundColor: colors.white,
     gap: spacing.xs,
   },
   actionButtonText: {
