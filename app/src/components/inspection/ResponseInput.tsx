@@ -52,6 +52,7 @@ interface ResponseInputProps {
   options?: string[] | null;
   photoRule?: PhotoRule;
   onAddPhoto?: () => void;
+  onPickFromLibrary?: () => void;
   photoCount?: number;
   photos?: string[];  // Local URIs for photo thumbnails
   onRemovePhoto?: (index: number) => void;
@@ -365,6 +366,7 @@ function MultiSelectInput({
 // Photo capture button with thumbnails and delete option
 function PhotoInput({
   onAddPhoto,
+  onPickFromLibrary,
   photoCount,
   photos,
   onRemovePhoto,
@@ -372,17 +374,26 @@ function PhotoInput({
   onUpgradePress,
 }: {
   onAddPhoto?: () => void;
+  onPickFromLibrary?: () => void;
   photoCount?: number;
   photos?: string[];
   onRemovePhoto?: (index: number) => void;
   disabled?: boolean;
   onUpgradePress?: () => void;
 }) {
-  const handlePress = () => {
+  const handleCameraPress = () => {
     if (disabled && onUpgradePress) {
       onUpgradePress();
     } else if (onAddPhoto) {
       onAddPhoto();
+    }
+  };
+
+  const handleLibraryPress = () => {
+    if (disabled && onUpgradePress) {
+      onUpgradePress();
+    } else if (onPickFromLibrary) {
+      onPickFromLibrary();
     }
   };
 
@@ -414,18 +425,35 @@ function PhotoInput({
         </View>
       )}
 
-      {/* Add photo button */}
-      <TouchableOpacity
-        style={[styles.photoButton, disabled && styles.photoButtonDisabled]}
-        onPress={handlePress}
-        activeOpacity={0.7}
-      >
-        <Icon name="camera" size={20} color={disabled ? colors.neutral[300] : colors.text.secondary} />
-        <Text style={[styles.photoButtonText, disabled && styles.photoButtonTextDisabled]}>
-          {hasPhotos ? 'Add Another Photo' : 'Take Photo'}
-        </Text>
-        {disabled && <ProBadge size="sm" style={styles.photoProBadge} />}
-      </TouchableOpacity>
+      {/* Photo action buttons */}
+      <View style={styles.photoButtonsRow}>
+        {/* Camera button (primary) */}
+        <TouchableOpacity
+          style={[styles.photoButton, styles.photoButtonPrimary, disabled && styles.photoButtonDisabled]}
+          onPress={handleCameraPress}
+          activeOpacity={0.7}
+        >
+          <Icon name="camera" size={20} color={disabled ? colors.neutral[300] : colors.primary.DEFAULT} />
+          <Text style={[styles.photoButtonText, styles.photoButtonTextPrimary, disabled && styles.photoButtonTextDisabled]}>
+            {hasPhotos ? 'Take Another' : 'Take Photo'}
+          </Text>
+          {disabled && <ProBadge size="sm" style={styles.photoProBadge} />}
+        </TouchableOpacity>
+
+        {/* Gallery button (secondary) */}
+        {onPickFromLibrary && (
+          <TouchableOpacity
+            style={[styles.photoButton, styles.photoButtonSecondary, disabled && styles.photoButtonDisabled]}
+            onPress={handleLibraryPress}
+            activeOpacity={0.7}
+          >
+            <Icon name="image" size={20} color={disabled ? colors.neutral[300] : colors.text.secondary} />
+            <Text style={[styles.photoButtonText, disabled && styles.photoButtonTextDisabled]}>
+              Library
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
@@ -782,6 +810,7 @@ export function ResponseInput({
   options,
   photoRule,
   onAddPhoto,
+  onPickFromLibrary,
   photoCount,
   photos,
   onRemovePhoto,
@@ -856,6 +885,7 @@ export function ResponseInput({
         return (
           <PhotoInput
             onAddPhoto={onAddPhoto}
+            onPickFromLibrary={onPickFromLibrary}
             photoCount={photoCount}
             photos={photos}
             onRemovePhoto={onRemovePhoto}
@@ -980,6 +1010,7 @@ export function ResponseInput({
         return (
           <PhotoInput
             onAddPhoto={onAddPhoto}
+            onPickFromLibrary={onPickFromLibrary}
             photoCount={photoCount}
             photos={photos}
             onRemovePhoto={onRemovePhoto}
@@ -1003,6 +1034,7 @@ export function ResponseInput({
         return (
           <PhotoInput
             onAddPhoto={onAddPhoto}
+            onPickFromLibrary={onPickFromLibrary}
             photoCount={photoCount}
             photos={photos}
             onRemovePhoto={onRemovePhoto}
@@ -1084,6 +1116,7 @@ export function ResponseInput({
           <View style={styles.photoSection}>
             <PhotoInput
               onAddPhoto={onAddPhoto}
+              onPickFromLibrary={onPickFromLibrary}
               photoCount={photoCount}
               photos={photos}
               onRemovePhoto={onRemovePhoto}
@@ -1245,6 +1278,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.white,
   },
+  photoButtonsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
   photoButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1275,6 +1312,17 @@ const styles = StyleSheet.create({
     fontSize: fontSize.body,
     color: colors.text.secondary,
     fontWeight: fontWeight.medium,
+  },
+  photoButtonPrimary: {
+    flex: 2,
+    borderColor: colors.primary.DEFAULT,
+    backgroundColor: colors.primary.light,
+  },
+  photoButtonSecondary: {
+    flex: 1,
+  },
+  photoButtonTextPrimary: {
+    color: colors.primary.DEFAULT,
   },
   unsupportedText: {
     fontSize: fontSize.body,

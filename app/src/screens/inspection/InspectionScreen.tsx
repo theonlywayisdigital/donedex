@@ -118,7 +118,7 @@ export function InspectionScreen() {
     setResponse(item.id, item, value);
   };
 
-  // Handle photo capture for an item
+  // Handle photo capture for an item - opens camera directly
   const handleAddPhoto = useCallback(async (templateItemId: string) => {
     // Request camera permissions first
     const hasPermission = await requestCameraPermissions();
@@ -138,32 +138,18 @@ export function InspectionScreen() {
       return;
     }
 
-    // Show options to take photo or choose from library
-    showConfirm(
-      'Add Photo',
-      'How would you like to add a photo?',
-      async () => {
-        // Take photo with camera
-        const result = await launchCamera({
-          quality: 0.8,
-          allowsEditing: false,
-        });
+    // Open camera directly
+    const result = await launchCamera({
+      quality: 0.8,
+      allowsEditing: false,
+    });
 
-        if (!result.canceled && result.assets && result.assets.length > 0) {
-          const photo = result.assets[0];
-          // Persist photo to documents directory so it survives until synced
-          const persistedUri = await persistFile(photo.uri, 'photo');
-          addPhoto(templateItemId, persistedUri);
-          showNotification('Photo Added', 'Photo captured successfully');
-        }
-      },
-      async () => {
-        // Choose from library
-        handlePickFromLibrary(templateItemId);
-      },
-      'Take Photo',
-      'Choose from Library'
-    );
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const photo = result.assets[0];
+      // Persist photo to documents directory so it survives until synced
+      const persistedUri = await persistFile(photo.uri, 'photo');
+      addPhoto(templateItemId, persistedUri);
+    }
   }, [addPhoto]);
 
   // Handle picking photo from library
@@ -376,6 +362,7 @@ export function InspectionScreen() {
                 photoCount={response?.photos.length}
                 photos={response?.photos}
                 onAddPhoto={() => handleAddPhoto(item.id)}
+                onPickFromLibrary={() => handlePickFromLibrary(item.id)}
                 onRemovePhoto={(index) => removePhoto(item.id, index)}
                 videoCount={response?.videos?.length}
                 onAddVideo={() => handleAddVideo(item.id)}
