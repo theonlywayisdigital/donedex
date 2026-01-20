@@ -26,3 +26,16 @@ export interface ResponseDisplay {
   photoUrls?: string[];
   videoUrls?: string[];
 }
+
+/**
+ * Map of image URLs to base64 data URIs
+ * Used for embedding images directly in PDF HTML
+ */
+export type ImageDataMap = Map<string, string>;
+
+/**
+ * Extended export options with pre-loaded image data
+ */
+export interface ExportOptionsWithImages extends ExportOptions {
+  imageDataMap?: ImageDataMap;
+}

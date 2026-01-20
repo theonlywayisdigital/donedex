@@ -4,7 +4,7 @@
  */
 
 import { getSignatureUrl, getPhotoUrl, getVideoUrl } from '../reports';
-import type { ExportOptions, ResponseDisplay } from './types';
+import type { ExportOptions, ExportOptionsWithImages, ResponseDisplay, ImageDataMap } from './types';
 import { DEFAULT_BRANDING, BrandingContext } from '../../types/branding';
 
 /**
@@ -339,10 +339,80 @@ export function escapeHtml(text: string): string {
 }
 
 /**
+ * Collect all image URLs from the export options
+ * Used to pre-load images as base64 before generating PDF
+ */
+export function collectImageUrls(options: ExportOptions): string[] {
+  const urls: string[] = [];
+  const { template, responses, branding } = options;
+
+  // Add logo URL if present
+  if (branding?.logoUrl) {
+    urls.push(branding.logoUrl);
+  }
+
+  // Collect URLs from all responses
+  for (const section of template.template_sections) {
+    for (const item of section.template_items) {
+      const response = responses.get(item.id);
+      if (!response?.response_value) continue;
+
+      const value = response.response_value;
+
+      // Handle signature
+      if (item.item_type === 'signature') {
+        try {
+          const parsed = JSON.parse(value);
+          if (parsed.path) {
+            urls.push(getSignatureUrl(parsed.path));
+          }
+        } catch {
+          if (!value.startsWith('data:') && !value.startsWith('blob:')) {
+            urls.push(getSignatureUrl(value));
+          }
+        }
+      }
+
+      // Handle witness signature
+      if (item.item_type === 'witness') {
+        try {
+          const parsed = JSON.parse(value);
+          if (parsed.signaturePath) {
+            urls.push(getSignatureUrl(parsed.signaturePath));
+          }
+        } catch {
+          // Not JSON, skip
+        }
+      }
+
+      // Handle photos
+      if (['photo', 'photo_before_after', 'annotated_photo'].includes(item.item_type)) {
+        const paths = getMediaPaths(value);
+        for (const path of paths) {
+          urls.push(getPhotoUrl(path));
+        }
+      }
+    }
+  }
+
+  return urls;
+}
+
+/**
+ * Get image source - use base64 from map if available, otherwise use URL
+ */
+function getImageSrc(url: string, imageDataMap?: ImageDataMap): string {
+  if (imageDataMap?.has(url)) {
+    return imageDataMap.get(url)!;
+  }
+  return url;
+}
+
+/**
  * Generate HTML content for the PDF
  */
-export function generateHtml(options: ExportOptions): string {
-  const { report, template, responses, branding } = options;
+export function generateHtml(options: ExportOptionsWithImages): string {
+  const { report, template, responses, branding, imageDataMap } = options;
 
   // Use custom branding or fall back to defaults
   const brand: BrandingContext = branding || DEFAULT_BRANDING;
@@ -392,9 +462,10 @@ export function generateHtml(options: ExportOptions): string {
           // Handle signature images
           let signatureHtml = '';
           if (display.isSignature && display.signatureUrl) {
+            const signatureSrc = getImageSrc(display.signatureUrl, imageDataMap);
             signatureHtml = `
               <div class="signature-container">
-                <img src="${display.signatureUrl}" alt="Signature" class="signature-image" />
+                <img src="${signatureSrc}" alt="Signature" class="signature-image" />
               </div>
             `;
           }
@@ -405,7 +476,7 @@ export function generateHtml(options: ExportOptions): string {
             photoGalleryHtml = `
               <div class="photo-gallery">
                 ${display.photoUrls.map((url) => `
-                  <img src="${url}" alt="Photo" class="photo-image" />
+                  <img src="${getImageSrc(url, imageDataMap)}" alt="Photo" class="photo-image" />
                 `).join('')}
               </div>
             `;
@@ -669,7 +740,7 @@ export function generateHtml(options: ExportOptions): string {
     <body>
       <div class="header">
         <div class="header-with-logo">
-          ${logoUrl ? `<img src="${logoUrl}" alt="${escapeHtml(brandName)} logo" class="logo" />` : ''}
+          ${logoUrl ? `<img src="${getImageSrc(logoUrl, imageDataMap)}" alt="${escapeHtml(brandName)} logo" class="logo" />` : ''}
           <div class="header-left">
             <h1>${escapeHtml(report.template?.name || 'Inspection Report')}</h1>
             <div class="subtitle">${escapeHtml(report.record?.name || 'Unknown Record')}</div>
