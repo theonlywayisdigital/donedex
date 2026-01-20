@@ -531,6 +531,11 @@ export function generateHtml(options: ExportOptionsWithImages): string {
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Inspection Report</title>
       <style>
+        @page {
+          size: A4;
+          margin: 15mm 12mm 20mm 12mm;
+        }
+
         * {
           margin: 0;
           padding: 0;
@@ -539,26 +544,26 @@ export function generateHtml(options: ExportOptionsWithImages): string {
 
         body {
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          font-size: 12px;
-          line-height: 1.5;
+          font-size: 11px;
+          line-height: 1.4;
           color: #111827;
-          padding: 20px;
+          background: #FFFFFF;
         }
 
         .header {
           display: flex;
           justify-content: space-between;
           align-items: flex-start;
-          margin-bottom: 24px;
-          padding-bottom: 16px;
+          margin-bottom: 16px;
+          padding-bottom: 12px;
           border-bottom: 2px solid ${primaryColor};
         }
 
         .logo {
-          max-height: 48px;
-          max-width: 150px;
+          max-height: 40px;
+          max-width: 120px;
           object-fit: contain;
-          margin-right: 16px;
+          margin-right: 12px;
         }
 
         .header-with-logo {
@@ -567,34 +572,36 @@ export function generateHtml(options: ExportOptionsWithImages): string {
         }
 
         .header-left h1 {
-          font-size: 24px;
+          font-size: 18px;
           font-weight: 700;
           color: #111827;
-          margin-bottom: 4px;
+          margin-bottom: 2px;
         }
 
         .header-left .subtitle {
-          font-size: 14px;
+          font-size: 12px;
           color: #6B7280;
         }
 
         .status-badge {
-          padding: 6px 12px;
-          border-radius: 6px;
-          font-size: 12px;
+          padding: 4px 10px;
+          border-radius: 4px;
+          font-size: 10px;
           font-weight: 600;
           background-color: ${statusColor}20;
           color: ${statusColor};
+          white-space: nowrap;
         }
 
         .info-grid {
           display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 12px;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 8px;
           background-color: #F9FAFB;
-          padding: 16px;
-          border-radius: 8px;
-          margin-bottom: 24px;
+          padding: 10px 12px;
+          border-radius: 6px;
+          margin-bottom: 16px;
+          border: 1px solid #E5E7EB;
         }
 
         .info-item {
@@ -603,136 +610,178 @@ export function generateHtml(options: ExportOptionsWithImages): string {
         }
 
         .info-label {
-          font-size: 11px;
+          font-size: 9px;
           color: #6B7280;
           text-transform: uppercase;
-          letter-spacing: 0.5px;
-          margin-bottom: 2px;
+          letter-spacing: 0.3px;
+          margin-bottom: 1px;
         }
 
         .info-value {
-          font-size: 13px;
+          font-size: 11px;
           font-weight: 500;
           color: #111827;
         }
 
         .section {
-          margin-bottom: 20px;
+          margin-bottom: 16px;
+          page-break-inside: auto;
         }
 
         .section-title {
-          font-size: 16px;
+          font-size: 13px;
           font-weight: 600;
-          color: #111827;
-          padding-bottom: 8px;
-          border-bottom: 1px solid #E5E7EB;
-          margin-bottom: 12px;
+          color: ${primaryColor};
+          padding: 6px 8px;
+          background-color: ${primaryColor}10;
+          border-left: 3px solid ${primaryColor};
+          margin-bottom: 8px;
+          page-break-after: avoid;
         }
 
         .item {
           background-color: #FFFFFF;
           border: 1px solid #E5E7EB;
-          border-radius: 6px;
-          padding: 12px;
-          margin-bottom: 8px;
+          border-radius: 4px;
+          padding: 8px 10px;
+          margin-bottom: 6px;
+          page-break-inside: avoid;
         }
 
         .item-row {
           display: flex;
           justify-content: space-between;
-          align-items: center;
+          align-items: flex-start;
+          gap: 12px;
         }
 
         .item-label {
-          font-size: 13px;
+          font-size: 11px;
           color: #111827;
+          flex: 1;
         }
 
         .required {
           color: #DC2626;
           margin-left: 2px;
+          font-size: 10px;
         }
 
         .item-value {
-          font-size: 13px;
+          font-size: 11px;
           font-weight: 600;
+          text-align: right;
+          flex-shrink: 0;
         }
 
         .notes {
-          margin-top: 8px;
-          padding: 8px;
+          margin-top: 6px;
+          padding: 6px 8px;
           background-color: #F9FAFB;
-          border-radius: 4px;
-          font-size: 12px;
+          border-radius: 3px;
+          font-size: 10px;
           color: #374151;
+          border-left: 2px solid #D1D5DB;
         }
 
         .severity {
-          margin-top: 8px;
-          font-size: 12px;
+          margin-top: 6px;
+          font-size: 10px;
         }
 
         .signature-container {
-          margin-top: 8px;
-          padding: 8px;
+          margin-top: 6px;
+          padding: 6px;
           background-color: #F9FAFB;
           border-radius: 4px;
-          text-align: center;
+          text-align: left;
+          border: 1px solid #E5E7EB;
         }
 
         .signature-image {
-          max-width: 200px;
-          max-height: 80px;
+          max-width: 180px;
+          max-height: 70px;
           object-fit: contain;
         }
 
         .photo-gallery {
           display: flex;
           flex-wrap: wrap;
-          gap: 8px;
-          margin-top: 8px;
+          gap: 6px;
+          margin-top: 6px;
         }
 
         .photo-image {
-          max-width: 150px;
-          max-height: 120px;
-          border-radius: 6px;
+          width: 100px;
+          height: 75px;
+          border-radius: 4px;
           border: 1px solid #E5E7EB;
           object-fit: cover;
         }
 
         .video-info {
-          margin-top: 8px;
-          padding: 8px 12px;
+          margin-top: 6px;
+          padding: 6px 10px;
           background-color: #F0FDF4;
-          border-radius: 4px;
-          font-size: 12px;
+          border-radius: 3px;
+          font-size: 10px;
           color: #059669;
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 6px;
         }
 
         .video-icon {
-          font-size: 16px;
+          font-size: 12px;
         }
 
         .footer {
-          margin-top: 32px;
-          padding-top: 16px;
+          margin-top: 20px;
+          padding-top: 10px;
           border-top: 1px solid #E5E7EB;
           text-align: center;
-          font-size: 11px;
+          font-size: 9px;
           color: #9CA3AF;
         }
 
         @media print {
           body {
-            padding: 0;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          .header {
+            page-break-after: avoid;
+          }
+
+          .info-grid {
+            page-break-after: avoid;
           }
 
           .section {
+            page-break-inside: auto;
+          }
+
+          .section-title {
+            page-break-after: avoid;
+          }
+
+          .item {
             page-break-inside: avoid;
+            orphans: 3;
+            widows: 3;
+          }
+
+          .photo-gallery {
+            page-break-inside: avoid;
+          }
+
+          .signature-container {
+            page-break-inside: avoid;
+          }
+
+          .footer {
+            page-break-before: avoid;
           }
         }
       </style>
