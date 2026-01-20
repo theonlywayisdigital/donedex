@@ -31,7 +31,6 @@ interface Props {
 export function OrganisationDetailsScreen({ navigation }: Props) {
   const {
     organisationName,
-    contactEmail,
     contactPhone,
     addressLine1,
     addressLine2,
@@ -45,7 +44,6 @@ export function OrganisationDetailsScreen({ navigation }: Props) {
   // Local state for form
   const [formData, setFormData] = useState({
     organisationName: organisationName || '',
-    contactEmail: contactEmail || '',
     contactPhone: contactPhone || '',
     addressLine1: addressLine1 || '',
     addressLine2: addressLine2 || '',
@@ -67,14 +65,6 @@ export function OrganisationDetailsScreen({ navigation }: Props) {
       setError('Organisation name must be at least 2 characters');
       return false;
     }
-    if (!formData.contactEmail.trim()) {
-      setError('Please enter a contact email');
-      return false;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.contactEmail.trim())) {
-      setError('Please enter a valid email address');
-      return false;
-    }
     return true;
   };
 
@@ -85,10 +75,9 @@ export function OrganisationDetailsScreen({ navigation }: Props) {
       return;
     }
 
-    // Update store
+    // Update store (contactEmail not needed - will use the user's auth email)
     setOrganisationDetails({
       organisationName: formData.organisationName.trim(),
-      contactEmail: formData.contactEmail.trim(),
       contactPhone: formData.contactPhone.trim(),
       addressLine1: formData.addressLine1.trim(),
       addressLine2: formData.addressLine2.trim(),
@@ -148,16 +137,6 @@ export function OrganisationDetailsScreen({ navigation }: Props) {
               value={formData.organisationName}
               onChangeText={(val) => updateField('organisationName', val)}
               autoCapitalize="words"
-            />
-
-            <Input
-              label="Contact Email *"
-              placeholder="contact@company.com"
-              value={formData.contactEmail}
-              onChangeText={(val) => updateField('contactEmail', val)}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
             />
 
             <Input

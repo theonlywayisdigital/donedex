@@ -47,7 +47,7 @@ interface OnboardingStoreState extends OnboardingState {
   // Data updates
   setOrganisationDetails: (details: {
     organisationName: string;
-    contactEmail: string;
+    contactEmail?: string;
     contactPhone?: string;
     billingEmail?: string;
     addressLine1?: string;
@@ -249,12 +249,15 @@ export const useOnboardingStore = create<OnboardingStoreState>((set, get) => ({
       ? generateSlug(details.organisationName)
       : '';
 
+    // contactEmail is optional - will use user's auth email if not provided
+    const contactEmail = details.contactEmail || get().contactEmail;
+
     set({
       organisationName: details.organisationName,
       organisationSlug: slug,
-      contactEmail: details.contactEmail,
+      contactEmail: contactEmail,
       contactPhone: details.contactPhone || '',
-      billingEmail: details.billingEmail || details.contactEmail,
+      billingEmail: details.billingEmail || contactEmail,
       addressLine1: details.addressLine1 || '',
       addressLine2: details.addressLine2 || '',
       city: details.city || '',
