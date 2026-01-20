@@ -8,8 +8,9 @@ import {
   Image,
 } from 'react-native';
 import { showNotification, showConfirm } from '../../utils/alert';
-import { Icon } from '../../components/ui';
+import { Icon, VideoPlayer } from '../../components/ui';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { getPhotoUrl, getVideoUrl, getSignatureUrl } from '../../services/reports';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Card, Button } from '../../components/ui';
@@ -257,9 +258,38 @@ export function InspectionReviewScreen() {
               const response = responses.get(item.id);
               const value = response?.responseValue || null;
               const statusColor = getStatusColor(item.item_type, value);
-              const isMissing = value === null && item.is_required;
-              const hasSignatureImage = item.item_type === 'signature' && isBase64Image(value);
-              const hasPhotoOrVideo = (item.item_type === 'photo' || item.item_type === 'video') && value;
+
+              // Check for photos and videos from response arrays
+              const photos = response?.photos || [];
+              const videos = response?.videos || [];
+              const hasPhotos = photos.length > 0;
+              const hasVideos = videos.length > 0;
+
+              // Check for signature (could be base64 or storage path in JSON)
+              let signatureUri: string | null = null;
+              if (item.item_type === 'signature' && value) {
+                if (isBase64Image(value)) {
+                  signatureUri = value;
+                } else {
+                  // Try parsing as JSON with path
+                  try {
+                    const parsed = JSON.parse(value);
+                    if (parsed.path) {
+                      signatureUri = getSignatureUrl(parsed.path);
+                    }
+                  } catch {
+                    // Not JSON, might be direct storage path
+                    if (!value.startsWith('data:') && !value.startsWith('blob:')) {
+                      signatureUri = getSignatureUrl(value);
+                    }
+                  }
+                }
+              }
+
+              const isPhotoType = ['photo', 'photo_before_after', 'annotated_photo'].includes(item.item_type);
+              const isVideoType = item.item_type === 'video';
+              const hasMedia = isPhotoType ? hasPhotos : isVideoType ? hasVideos : false;
+              const isMissing = value === null && !hasMedia && item.is_required;
 
               return (
                 <View key={item.id} style={styles.itemRow}>
@@ -268,25 +298,45 @@ export function InspectionReviewScreen() {
                     {item.is_required && <Text style={styles.requiredMark}> *</Text>}
                   </Text>
                   <View style={styles.itemValueContainer}>
-                    {hasSignatureImage && value ? (
+                    {signatureUri ? (
                       <View style={styles.signaturePreviewContainer}>
                         <Image
-                          source={{ uri: value }}
+                          source={{ uri: signatureUri }}
                           style={styles.signaturePreview}
                           resizeMode="contain"
                         />
                         <Icon name="check-circle" size={16} color={colors.success} />
                       </View>
-                    ) : hasPhotoOrVideo ? (
-                      <View style={styles.mediaIndicator}>
-                        <Icon
-                          name={item.item_type === 'photo' ? 'camera' : 'video'}
-                          size={16}
-                          color={colors.success}
-                        />
-                        <Text style={[styles.itemValue, { color: colors.success }]}>
-                          Captured
-                        </Text>
+                    ) : isPhotoType && hasPhotos ? (
+                      <View style={styles.photoGallery}>
+                        {photos.slice(0, 3).map((photo, index) => (
+                          <Image
+                            key={photo.id || index}
+                            source={{ uri: getPhotoUrl(photo.storage_path) }}
+                            style={styles.photoThumbnail}
+                            resizeMode="cover"
+                          />
+                        ))}
+                        {photos.length > 3 && (
+                          <View style={styles.morePhotosIndicator}>
+                            <Text style={styles.morePhotosText}>+{photos.length - 3}</Text>
+                          </View>
+                        )}
+                        <Icon name="check-circle" size={16} color={colors.success} />
+                      </View>
+                    ) : isVideoType && hasVideos ? (
+                      <View style={styles.videoGallery}>
+                        {videos.slice(0, 2).map((video, index) => (
+                          <View key={video.id || index} style={styles.videoThumbnailWrapper}>
+                            <VideoPlayer uri={getVideoUrl(video.storage_path)} thumbnailMode small />
+                          </View>
+                        ))}
+                        {videos.length > 2 && (
+                          <View style={styles.morePhotosIndicator}>
+                            <Text style={styles.morePhotosText}>+{videos.length - 2}</Text>
+                          </View>
+                        )}
+                        <Icon name="check-circle" size={16} color={colors.success} />
                       </View>
                     ) : (
                       <Text style={[styles.itemValue, { color: statusColor }, isMissing && styles.itemMissing]}>
@@ -434,6 +484,7 @@ const styles = StyleSheet.create({
   },
   itemValueContainer: {
     alignItems: 'flex-end',
+    maxWidth: '60%',
   },
   itemValue: {
     fontSize: fontSize.body,
@@ -450,12 +501,51 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   signaturePreview: {
-    width: 60,
-    height: 30,
+    width: 120,
+    height: 60,
     backgroundColor: colors.neutral[100],
     borderRadius: borderRadius.sm,
     borderWidth: 1,
     borderColor: colors.border.DEFAULT,
+  },
+  photoGallery: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flexWrap: 'wrap',
+  },
+  photoThumbnail: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.neutral[100],
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+  },
+  videoGallery: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flexWrap: 'wrap',
+  },
+  videoThumbnailWrapper: {
+    width: 64,
+    height: 48,
+    borderRadius: borderRadius.sm,
+    overflow: 'hidden',
+  },
+  morePhotosIndicator: {
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.neutral[200],
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  morePhotosText: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.medium,
+    color: colors.text.secondary,
   },
   mediaIndicator: {
     flexDirection: 'row',
