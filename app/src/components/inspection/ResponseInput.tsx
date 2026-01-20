@@ -8,6 +8,7 @@ import {
   Modal,
   ScrollView,
   Platform,
+  Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '../ui/DateTimePicker';
@@ -52,6 +53,8 @@ interface ResponseInputProps {
   photoRule?: PhotoRule;
   onAddPhoto?: () => void;
   photoCount?: number;
+  photos?: string[];  // Local URIs for photo thumbnails
+  onRemovePhoto?: (index: number) => void;
   // New props for enhanced fields
   helpText?: string | null;
   placeholder?: string | null;
@@ -359,15 +362,19 @@ function MultiSelectInput({
   );
 }
 
-// Photo capture button with gating for Free plan
+// Photo capture button with thumbnails and delete option
 function PhotoInput({
   onAddPhoto,
   photoCount,
+  photos,
+  onRemovePhoto,
   disabled = false,
   onUpgradePress,
 }: {
   onAddPhoto?: () => void;
   photoCount?: number;
+  photos?: string[];
+  onRemovePhoto?: (index: number) => void;
   disabled?: boolean;
   onUpgradePress?: () => void;
 }) {
@@ -379,18 +386,47 @@ function PhotoInput({
     }
   };
 
+  const handleRemove = (index: number) => {
+    if (onRemovePhoto) {
+      onRemovePhoto(index);
+    }
+  };
+
+  const hasPhotos = photos && photos.length > 0;
+
   return (
-    <TouchableOpacity
-      style={[styles.photoButton, disabled && styles.photoButtonDisabled]}
-      onPress={handlePress}
-      activeOpacity={0.7}
-    >
-      <Icon name="camera" size={20} color={disabled ? colors.neutral[300] : colors.text.secondary} />
-      <Text style={[styles.photoButtonText, disabled && styles.photoButtonTextDisabled]}>
-        {photoCount ? `${photoCount} photo(s) taken` : 'Take Photo'}
-      </Text>
-      {disabled && <ProBadge size="sm" style={styles.photoProBadge} />}
-    </TouchableOpacity>
+    <View style={styles.photoInputContainer}>
+      {/* Photo thumbnails */}
+      {hasPhotos && (
+        <View style={styles.photoThumbnailsContainer}>
+          {photos.map((uri, index) => (
+            <View key={`${uri}-${index}`} style={styles.photoThumbnailWrapper}>
+              <Image source={{ uri }} style={styles.photoThumbnail} resizeMode="cover" />
+              <TouchableOpacity
+                style={styles.photoDeleteButton}
+                onPress={() => handleRemove(index)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Icon name="x" size={14} color={colors.white} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Add photo button */}
+      <TouchableOpacity
+        style={[styles.photoButton, disabled && styles.photoButtonDisabled]}
+        onPress={handlePress}
+        activeOpacity={0.7}
+      >
+        <Icon name="camera" size={20} color={disabled ? colors.neutral[300] : colors.text.secondary} />
+        <Text style={[styles.photoButtonText, disabled && styles.photoButtonTextDisabled]}>
+          {hasPhotos ? 'Add Another Photo' : 'Take Photo'}
+        </Text>
+        {disabled && <ProBadge size="sm" style={styles.photoProBadge} />}
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -747,6 +783,8 @@ export function ResponseInput({
   photoRule,
   onAddPhoto,
   photoCount,
+  photos,
+  onRemovePhoto,
   helpText,
   placeholder,
   datetimeMode,
@@ -819,6 +857,8 @@ export function ResponseInput({
           <PhotoInput
             onAddPhoto={onAddPhoto}
             photoCount={photoCount}
+            photos={photos}
+            onRemovePhoto={onRemovePhoto}
             disabled={!photosAllowed}
             onUpgradePress={handleUpgradePress}
           />
@@ -941,6 +981,8 @@ export function ResponseInput({
           <PhotoInput
             onAddPhoto={onAddPhoto}
             photoCount={photoCount}
+            photos={photos}
+            onRemovePhoto={onRemovePhoto}
             disabled={!photosAllowed}
             onUpgradePress={handleUpgradePress}
           />
@@ -962,6 +1004,8 @@ export function ResponseInput({
           <PhotoInput
             onAddPhoto={onAddPhoto}
             photoCount={photoCount}
+            photos={photos}
+            onRemovePhoto={onRemovePhoto}
             disabled={!photosAllowed}
             onUpgradePress={handleUpgradePress}
           />
@@ -1041,6 +1085,8 @@ export function ResponseInput({
             <PhotoInput
               onAddPhoto={onAddPhoto}
               photoCount={photoCount}
+              photos={photos}
+              onRemovePhoto={onRemovePhoto}
               disabled={!photosAllowed}
               onUpgradePress={handleUpgradePress}
             />
@@ -1166,6 +1212,38 @@ const styles = StyleSheet.create({
   },
   photoSection: {
     marginTop: spacing.md,
+  },
+  photoInputContainer: {
+    gap: spacing.sm,
+  },
+  photoThumbnailsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  photoThumbnailWrapper: {
+    position: 'relative',
+  },
+  photoThumbnail: {
+    width: 72,
+    height: 72,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.neutral[100],
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+  },
+  photoDeleteButton: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.white,
   },
   photoButton: {
     flexDirection: 'row',

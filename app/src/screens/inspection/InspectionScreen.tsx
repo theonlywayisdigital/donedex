@@ -47,6 +47,7 @@ export function InspectionScreen() {
     loadInspection,
     setResponse,
     addPhoto,
+    removePhoto,
     addVideo,
     nextSection,
     previousSection,
@@ -373,7 +374,9 @@ export function InspectionScreen() {
                 options={item.options}
                 photoRule={item.photo_rule}
                 photoCount={response?.photos.length}
+                photos={response?.photos}
                 onAddPhoto={() => handleAddPhoto(item.id)}
+                onRemovePhoto={(index) => removePhoto(item.id, index)}
                 videoCount={response?.videos?.length}
                 onAddVideo={() => handleAddVideo(item.id)}
                 helpText={item.help_text}
