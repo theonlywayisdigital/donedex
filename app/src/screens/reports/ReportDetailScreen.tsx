@@ -196,10 +196,16 @@ export function ReportDetailScreen() {
         return { text: '__SIGNATURE__', color: colors.success, icon: 'check-circle' };
 
       case 'photo':
+      case 'photo_before_after':
+      case 'annotated_photo':
         return { text: 'Photo captured', color: colors.success, icon: 'camera' };
 
       case 'video':
         return { text: 'Video captured', color: colors.success, icon: 'video' };
+
+      case 'witness':
+        // Mark for special rendering (has name + signature)
+        return { text: '__WITNESS__', color: colors.success, icon: 'check-circle' };
 
       default:
         return { text: value, color: colors.text.primary };
@@ -283,8 +289,46 @@ export function ReportDetailScreen() {
       );
     }
 
-    // Handle photo with actual image display
-    if (itemType === 'photo' && response?.response_value) {
+    // Handle witness type (name + signature)
+    if (itemType === 'witness' && response?.response_value) {
+      try {
+        const parsed = JSON.parse(response.response_value);
+        const hasSignature = !!parsed.signaturePath;
+        const signatureUri = hasSignature ? getSignatureUrl(parsed.signaturePath) : null;
+
+        return (
+          <View style={styles.witnessContainer}>
+            {parsed.name && (
+              <Text style={styles.witnessName}>{parsed.name}</Text>
+            )}
+            {signatureUri && (
+              <View style={styles.signatureContainer}>
+                <Image
+                  source={{ uri: signatureUri }}
+                  style={styles.signatureImage}
+                  resizeMode="contain"
+                />
+              </View>
+            )}
+            {!signatureUri && !parsed.name && (
+              <View style={styles.responseValueContainer}>
+                <Text style={[styles.responseValue, { color: colors.text.tertiary }]}>Not completed</Text>
+              </View>
+            )}
+          </View>
+        );
+      } catch {
+        return (
+          <View style={styles.responseValueContainer}>
+            <Text style={[styles.responseValue, { color: colors.text.primary }]}>{response.response_value}</Text>
+          </View>
+        );
+      }
+    }
+
+    // Handle photo types (photo, photo_before_after, annotated_photo)
+    const isPhotoType = ['photo', 'photo_before_after', 'annotated_photo'].includes(itemType);
+    if (isPhotoType && response?.response_value) {
       const paths = getMediaPaths(response.response_value);
       if (paths.length > 0) {
         return (
@@ -701,6 +745,15 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
     borderWidth: 1,
     borderColor: colors.border.DEFAULT,
+    marginBottom: spacing.xs,
+  },
+  witnessContainer: {
+    alignItems: 'flex-start',
+  },
+  witnessName: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.text.primary,
     marginBottom: spacing.xs,
   },
   videoContainer: {
