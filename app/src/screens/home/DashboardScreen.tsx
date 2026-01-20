@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,36 +9,86 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Card, Icon, EmptyState, LoadingSpinner } from '../../components/ui';
+import { Card, Icon, EmptyState } from '../../components/ui';
 import { NotificationBell } from '../../components/notifications';
 import { useAuthStore } from '../../store/authStore';
 import { useRecordsStore } from '../../store/recordsStore';
-import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
+import { useQuickStartStore } from '../../store/quickStartStore';
+import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
 import type { HomeStackParamList } from '../../navigation/MainNavigator';
-import type { Record as RecordModel } from '../../types';
 
 type DashboardNavigationProp = NativeStackNavigationProp<HomeStackParamList, 'Dashboard'>;
 
 export function DashboardScreen() {
   const navigation = useNavigation<DashboardNavigationProp>();
-  const { profile, organisation, isAdmin } = useAuthStore();
-  const { records, isLoading, fetchRecords } = useRecordsStore();
+  const { profile, organisation, user } = useAuthStore();
+  const { records, isLoading: recordsLoading, fetchRecords } = useRecordsStore();
+  const {
+    drafts,
+    recentCombinations,
+    isLoading: quickStartLoading,
+    fetchQuickStartData,
+    clearCache,
+  } = useQuickStartStore();
 
+  const isLoading = recordsLoading || quickStartLoading;
+
+  // Initial data load
   useEffect(() => {
     fetchRecords();
+    if (user?.id) {
+      fetchQuickStartData(user.id);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleStartInspection = () => {
-    // NEW: Use the new record type select flow
+  // Refresh data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      // Always refresh records to ensure we have latest data
+      fetchRecords();
+      if (user?.id) {
+        clearCache();
+        fetchQuickStartData(user.id);
+      }
+    }, [user?.id, clearCache, fetchQuickStartData, fetchRecords])
+  );
+
+  const handleRefresh = () => {
+    fetchRecords();
+    if (user?.id) {
+      clearCache();
+      fetchQuickStartData(user.id);
+    }
+  };
+
+  const handleStartTemplateFirst = () => {
+    navigation.navigate('TemplatePicker');
+  };
+
+  const handleStartRecordFirst = () => {
     navigation.navigate('RecordTypeSelect');
   };
 
+  const handleContinueDraft = (reportId: string) => {
+    navigation.navigate('Inspection', { reportId });
+  };
+
+  const handleStartRecent = (templateId: string, templateName: string, recordId: string, recordTypeId?: string) => {
+    // Navigate directly to inspection start with these params
+    // For now, navigate to RecordForTemplate with pre-selection
+    navigation.navigate('RecordForTemplate', {
+      templateId,
+      templateName,
+      recordTypeId,
+    });
+  };
+
   const handleViewRecords = () => {
-    // Keep legacy behavior for "View Records" button
-    navigation.navigate('SiteList');
+    // Navigate to Records tab (cross-tab navigation)
+    (navigation as any).navigate('SitesTab');
   };
 
   const greeting = () => {
@@ -48,13 +98,15 @@ export function DashboardScreen() {
     return 'Good evening';
   };
 
+  const hasQuickStartItems = drafts.length > 0 || recentCombinations.length > 0;
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl refreshing={isLoading} onRefresh={fetchRecords} />
+          <RefreshControl refreshing={isLoading} onRefresh={handleRefresh} />
         }
       >
         {/* Header */}
@@ -67,37 +119,115 @@ export function DashboardScreen() {
                 <Text style={styles.orgName}>{organisation.name}</Text>
               )}
             </View>
-            {/* Only show bell on mobile since web has it in sidebar */}
             {Platform.OS !== 'web' && (
               <NotificationBell size={24} color={colors.text.primary} />
             )}
           </View>
         </View>
 
-        {/* Quick Actions */}
+        {/* Quick Start Section */}
+        {hasQuickStartItems && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Quick Start</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.quickStartScroll}
+            >
+              {/* Draft Reports */}
+              {drafts.map((draft) => (
+                <TouchableOpacity
+                  key={draft.id}
+                  style={styles.quickStartCard}
+                  onPress={() => handleContinueDraft(draft.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.quickStartBadge}>
+                    <Icon name="edit" size={14} color={colors.warning} />
+                    <Text style={styles.quickStartBadgeText}>Draft</Text>
+                  </View>
+                  <Text style={styles.quickStartRecord} numberOfLines={1}>
+                    {draft.record_name}
+                  </Text>
+                  <Text style={styles.quickStartTemplate} numberOfLines={1}>
+                    {draft.template_name}
+                  </Text>
+                  <View style={styles.quickStartAction}>
+                    <Text style={styles.quickStartActionText}>Continue</Text>
+                    <Icon name="arrow-right" size={14} color={colors.primary.DEFAULT} />
+                  </View>
+                </TouchableOpacity>
+              ))}
+
+              {/* Recent Combinations */}
+              {recentCombinations.map((combo, index) => (
+                <TouchableOpacity
+                  key={`${combo.template_id}-${combo.record_id}-${index}`}
+                  style={styles.quickStartCard}
+                  onPress={() =>
+                    handleStartRecent(
+                      combo.template_id,
+                      combo.template_name,
+                      combo.record_id,
+                      combo.record_type_id
+                    )
+                  }
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.quickStartBadge, styles.quickStartBadgeRecent]}>
+                    <Icon name="clock" size={14} color={colors.primary.DEFAULT} />
+                    <Text style={[styles.quickStartBadgeText, styles.quickStartBadgeTextRecent]}>
+                      Recent
+                    </Text>
+                  </View>
+                  <Text style={styles.quickStartRecord} numberOfLines={1}>
+                    {combo.record_name}
+                  </Text>
+                  <Text style={styles.quickStartTemplate} numberOfLines={1}>
+                    {combo.template_name}
+                  </Text>
+                  <View style={styles.quickStartAction}>
+                    <Text style={styles.quickStartActionText}>Start</Text>
+                    <Icon name="arrow-right" size={14} color={colors.primary.DEFAULT} />
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Start New Inspection */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <View style={styles.actionsGrid}>
+          <Text style={styles.sectionTitle}>Start New Inspection</Text>
+          <View style={styles.startOptionsGrid}>
+            {/* Template-First Option */}
             <TouchableOpacity
-              style={styles.actionCard}
-              onPress={handleStartInspection}
+              style={styles.startOptionCard}
+              onPress={handleStartTemplateFirst}
               activeOpacity={0.7}
             >
-              <View style={[styles.actionIcon, { backgroundColor: colors.primary.light }]}>
-                <Icon name="plus" size={28} color={colors.primary.DEFAULT} />
+              <View style={[styles.startOptionIcon, { backgroundColor: colors.primary.light }]}>
+                <Icon name="file-text" size={28} color={colors.primary.DEFAULT} />
               </View>
-              <Text style={styles.actionLabel}>Start Inspection</Text>
+              <Text style={styles.startOptionTitle}>Choose a Template</Text>
+              <Text style={styles.startOptionDescription}>
+                Browse templates by type, then select a record
+              </Text>
             </TouchableOpacity>
 
+            {/* Record-First Option */}
             <TouchableOpacity
-              style={styles.actionCard}
-              onPress={handleViewRecords}
+              style={styles.startOptionCard}
+              onPress={handleStartRecordFirst}
               activeOpacity={0.7}
             >
-              <View style={[styles.actionIcon, { backgroundColor: colors.neutral[100] }]}>
-                <Icon name="clipboard-list" size={28} color={colors.neutral[700]} />
+              <View style={[styles.startOptionIcon, { backgroundColor: colors.neutral[100] }]}>
+                <Icon name="folder" size={28} color={colors.neutral[700]} />
               </View>
-              <Text style={styles.actionLabel}>View Records</Text>
+              <Text style={styles.startOptionTitle}>Choose a Record</Text>
+              <Text style={styles.startOptionDescription}>
+                Find a record first, then select a template
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -114,13 +244,9 @@ export function DashboardScreen() {
           {records.length === 0 ? (
             <Card>
               <EmptyState
-                icon="clipboard-list"
+                icon="folder"
                 title="No records yet"
-                description={
-                  isAdmin
-                    ? 'Create your first record to get started with inspections.'
-                    : 'No records have been assigned to you yet.'
-                }
+                description="Records will appear here once they are created or assigned to you."
               />
             </Card>
           ) : (
@@ -129,32 +255,25 @@ export function DashboardScreen() {
                 <TouchableOpacity
                   key={record.id}
                   activeOpacity={0.7}
-                  onPress={() => navigation.navigate('TemplateSelect', { siteId: record.id })}
+                  onPress={() => navigation.navigate('RecordDetail', { recordId: record.id })}
                 >
                   <Card style={styles.recordCard}>
-                    <Text style={styles.recordName}>{record.name}</Text>
-                    {record.address && (
-                      <Text style={styles.recordAddress} numberOfLines={1}>
-                        {record.address}
-                      </Text>
-                    )}
+                    <View style={styles.recordContent}>
+                      <View style={styles.recordInfo}>
+                        <Text style={styles.recordName}>{record.name}</Text>
+                        {record.address && (
+                          <Text style={styles.recordAddress} numberOfLines={1}>
+                            {record.address}
+                          </Text>
+                        )}
+                      </View>
+                      <Icon name="chevron-right" size={20} color={colors.text.tertiary} />
+                    </View>
                   </Card>
                 </TouchableOpacity>
               ))}
             </View>
           )}
-        </View>
-
-        {/* Recent Activity - Placeholder */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Activity</Text>
-          <Card>
-            <EmptyState
-              icon="clipboard"
-              title="No recent inspections"
-              description="Complete your first inspection to see activity here."
-            />
-          </Card>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -219,41 +338,102 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.medium,
     marginBottom: spacing.md,
   },
-  actionsGrid: {
+  // Quick Start styles
+  quickStartScroll: {
+    paddingRight: spacing.lg,
+    gap: spacing.md,
+  },
+  quickStartCard: {
+    width: 160,
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    ...shadows.card,
+  },
+  quickStartBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  quickStartBadgeRecent: {},
+  quickStartBadgeText: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.medium,
+    color: colors.warning,
+  },
+  quickStartBadgeTextRecent: {
+    color: colors.primary.DEFAULT,
+  },
+  quickStartRecord: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.semibold,
+    color: colors.text.primary,
+    marginBottom: spacing.xs,
+  },
+  quickStartTemplate: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+    marginBottom: spacing.md,
+  },
+  quickStartAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  quickStartActionText: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.medium,
+    color: colors.primary.DEFAULT,
+  },
+  // Start Options Grid
+  startOptionsGrid: {
     flexDirection: 'row',
     gap: spacing.md,
   },
-  actionCard: {
+  startOptionCard: {
     flex: 1,
     backgroundColor: colors.white,
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
-    alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.border.light,
+    ...shadows.card,
   },
-  actionIcon: {
+  startOptionIcon: {
     width: 56,
     height: 56,
     borderRadius: borderRadius.full,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
-  actionIconText: {
-    fontSize: 24,
-  },
-  actionLabel: {
-    fontSize: fontSize.body,
-    fontWeight: fontWeight.medium,
+  startOptionTitle: {
+    fontSize: fontSize.bodyLarge,
+    fontWeight: fontWeight.semibold,
     color: colors.text.primary,
-    textAlign: 'center',
+    marginBottom: spacing.xs,
   },
+  startOptionDescription: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+    lineHeight: 18,
+  },
+  // Records list
   recordsList: {
     gap: spacing.sm,
   },
   recordCard: {
     padding: spacing.md,
+  },
+  recordContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  recordInfo: {
+    flex: 1,
   },
   recordName: {
     fontSize: fontSize.bodyLarge,
@@ -264,14 +444,5 @@ const styles = StyleSheet.create({
     fontSize: fontSize.caption,
     color: colors.text.secondary,
     marginTop: spacing.xs,
-  },
-  emptyCard: {
-    padding: spacing.lg,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: fontSize.body,
-    color: colors.text.secondary,
-    textAlign: 'center',
   },
 });

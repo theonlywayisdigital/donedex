@@ -1,9 +1,10 @@
 /**
  * RecordDetailScreen
  * Detailed view of a single record with tabs for Reports, Documents, and Details
+ * Enhanced with search, filtering, month grouping, and pagination for reports
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,9 +14,11 @@ import {
   RefreshControl,
   ActivityIndicator,
   FlatList,
+  SectionList,
   Alert,
   Linking,
-  Platform,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -24,9 +27,10 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Card, Icon, EmptyState, StatusBadge, TabBar, type Tab } from '../../components/ui';
 import {
   fetchRecordWithType,
-  fetchRecordReportsSummary,
+  fetchRecordReportsFiltered,
   type RecordWithRecordType,
-  type ReportSummary,
+  type ReportSummaryExtended,
+  type ReportFilters,
 } from '../../services/records';
 import {
   fetchRecordDocuments,
@@ -38,8 +42,10 @@ import {
   DOCUMENT_CATEGORIES,
   type DocumentWithUploader,
 } from '../../services/documents';
+import { fetchTemplates, type Template } from '../../services/templates';
+import { fetchTeamMembers, type TeamMember } from '../../services/team';
 import { useAuthStore } from '../../store/authStore';
-import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
+import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
 import type { HomeStackParamList } from '../../navigation/MainNavigator';
 
 type NavigationProp = NativeStackNavigationProp<HomeStackParamList, 'RecordDetail'>;
@@ -52,6 +58,42 @@ const TABS: Tab[] = [
   { key: 'details', label: 'Details', icon: 'info' },
 ];
 
+// Report section for month grouping
+interface ReportSection {
+  title: string;
+  monthKey: string;
+  data: ReportSummaryExtended[];
+}
+
+// Group reports by month
+function groupReportsByMonth(reports: ReportSummaryExtended[]): ReportSection[] {
+  const groups = new Map<string, ReportSummaryExtended[]>();
+
+  reports.forEach((report) => {
+    const date = new Date(report.submitted_at || report.started_at);
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const existing = groups.get(monthKey) || [];
+    groups.set(monthKey, [...existing, report]);
+  });
+
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => b.localeCompare(a)) // Newest first
+    .map(([monthKey, data]) => ({
+      title: formatMonthTitle(monthKey),
+      monthKey,
+      data,
+    }));
+}
+
+// Format month key to display title
+function formatMonthTitle(monthKey: string): string {
+  const [year, month] = monthKey.split('-');
+  const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+  return date.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' }).toUpperCase();
+}
+
+const PAGE_SIZE = 20;
+
 export function RecordDetailScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
@@ -59,8 +101,9 @@ export function RecordDetailScreen() {
 
   const { organisation, isAdmin } = useAuthStore();
 
+  // Core state
   const [record, setRecord] = useState<RecordWithRecordType | null>(null);
-  const [reports, setReports] = useState<ReportSummary[]>([]);
+  const [reports, setReports] = useState<ReportSummaryExtended[]>([]);
   const [documents, setDocuments] = useState<DocumentWithUploader[]>([]);
   const [activeTab, setActiveTab] = useState('reports');
   const [isLoading, setIsLoading] = useState(true);
@@ -68,59 +111,232 @@ export function RecordDetailScreen() {
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadData = useCallback(async (showRefreshing = false) => {
-    if (showRefreshing) {
-      setIsRefreshing(true);
-    } else {
-      setIsLoading(true);
+  // Reports filter state
+  const [filters, setFilters] = useState<ReportFilters>({
+    templateId: null,
+    status: 'all',
+    dateFrom: null,
+    dateTo: null,
+    userId: null,
+  });
+  const [tempFilters, setTempFilters] = useState<ReportFilters>({
+    templateId: null,
+    status: 'all',
+    dateFrom: null,
+    dateTo: null,
+    userId: null,
+  });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showFilterModal, setShowFilterModal] = useState(false);
+
+  // Pagination state
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [totalReportCount, setTotalReportCount] = useState<number | null>(null);
+  const cursorRef = useRef<string | null>(null);
+
+  // Filter options
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+
+  // Debounce search
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Group reports by month
+  const reportSections = useMemo(() => groupReportsByMonth(reports), [reports]);
+
+  // Count active filters
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.templateId) count++;
+    if (filters.status && filters.status !== 'all') count++;
+    if (filters.dateFrom) count++;
+    if (filters.dateTo) count++;
+    if (filters.userId) count++;
+    return count;
+  }, [filters]);
+
+  // Sync tempFilters with filters when modal opens
+  useEffect(() => {
+    if (showFilterModal) {
+      setTempFilters(filters);
     }
-    setError(null);
+  }, [showFilterModal, filters]);
 
-    try {
-      // Fetch record, reports, and documents in parallel
-      const [recordResult, reportsResult, documentsResult] = await Promise.all([
-        fetchRecordWithType(recordId),
-        fetchRecordReportsSummary(recordId),
-        fetchRecordDocuments({ recordId }),
-      ]);
+  // Load filter options (templates and team members)
+  const loadFilterOptions = useCallback(async () => {
+    if (!organisation) return;
 
-      if (recordResult.error) {
-        setError(recordResult.error.message);
-        return;
+    const [templatesResult, teamResult] = await Promise.all([
+      fetchTemplates(),
+      fetchTeamMembers(organisation.id),
+    ]);
+
+    if (!templatesResult.error) {
+      setTemplates(templatesResult.data);
+    }
+    if (!teamResult.error) {
+      setTeamMembers(teamResult.data);
+    }
+  }, [organisation]);
+
+  // Load reports with filters and pagination
+  const loadReports = useCallback(
+    async (append = false) => {
+      if (!append) {
+        cursorRef.current = null;
       }
 
-      setRecord(recordResult.data);
-      setReports(reportsResult.data);
-      setDocuments(documentsResult.data);
+      const result = await fetchRecordReportsFiltered(
+        recordId,
+        { ...filters, search: searchQuery },
+        { limit: PAGE_SIZE, cursor: append ? cursorRef.current || undefined : undefined }
+      );
 
-      // Update navigation title
-      if (recordResult.data) {
-        navigation.setOptions({ title: recordResult.data.name });
+      if (append) {
+        setReports((prev) => [...prev, ...result.data]);
+      } else {
+        setReports(result.data);
       }
-    } catch (err) {
-      console.error('[RecordDetail] Error loading data:', err);
-      setError('Failed to load record');
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, [recordId, navigation]);
+
+      cursorRef.current = result.pageInfo.endCursor || null;
+      setHasMore(result.pageInfo.hasNextPage);
+      setTotalReportCount(result.pageInfo.totalCount ?? null);
+      setLoadingMore(false);
+    },
+    [recordId, filters, searchQuery]
+  );
+
+  // Load initial data
+  const loadData = useCallback(
+    async (showRefreshing = false) => {
+      if (showRefreshing) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
+      setError(null);
+
+      try {
+        // Fetch record first
+        const recordResult = await fetchRecordWithType(recordId);
+
+        if (recordResult.error) {
+          setError(recordResult.error.message);
+          return;
+        }
+
+        setRecord(recordResult.data);
+
+        // Fetch documents separately - table may not exist yet
+        try {
+          const documentsResult = await fetchRecordDocuments({ recordId });
+          if (!documentsResult.error) {
+            setDocuments(documentsResult.data);
+          } else {
+            console.warn('[Documents] Error fetching documents:', documentsResult.error);
+            setDocuments([]);
+          }
+        } catch (docErr) {
+          console.warn('[Documents] Documents feature not available:', docErr);
+          setDocuments([]);
+        }
+
+        // Update navigation title
+        if (recordResult.data) {
+          navigation.setOptions({ title: recordResult.data.name });
+        }
+
+        // Load reports separately (uses filter state)
+        await loadReports();
+      } catch (err) {
+        console.error('[RecordDetail] Error loading data:', err);
+        setError('Failed to load record');
+      } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+    },
+    [recordId, navigation, loadReports]
+  );
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    loadFilterOptions();
+  }, [loadData, loadFilterOptions]);
+
+  // Reload reports when filters change
+  useEffect(() => {
+    if (!isLoading) {
+      loadReports();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters]);
+
+  const handleSearchChange = useCallback(
+    (text: string) => {
+      setSearchQuery(text);
+
+      // Debounce search
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+
+      searchTimeoutRef.current = setTimeout(() => {
+        loadReports();
+      }, 300);
+    },
+    [loadReports]
+  );
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery('');
+    loadReports();
+  }, [loadReports]);
+
+  const handleLoadMore = useCallback(() => {
+    if (loadingMore || !hasMore || isLoading) return;
+    setLoadingMore(true);
+    loadReports(true);
+  }, [loadingMore, hasMore, isLoading, loadReports]);
 
   const handleStartInspection = () => {
     navigation.navigate('TemplateSelect', { siteId: recordId });
   };
 
-  const handleViewReport = (reportId: string) => {
-    const report = reports.find((r) => r.id === reportId);
-    if (report?.status === 'draft') {
-      navigation.navigate('Inspection', { reportId });
+  const handleEditRecord = () => {
+    // Navigate to SiteEditor in the Sites tab (cross-tab navigation)
+    (navigation as any).navigate('SitesTab', {
+      screen: 'SiteEditor',
+      params: {
+        siteId: recordId,
+        recordTypeId: record?.record_type_id,
+      },
+    });
+  };
+
+  const handleViewReport = (report: ReportSummaryExtended) => {
+    if (report.status === 'draft') {
+      navigation.navigate('Inspection', { reportId: report.id });
     } else {
-      navigation.navigate('InspectionReview', { reportId });
+      navigation.navigate('InspectionReview', { reportId: report.id });
     }
+  };
+
+  const handleApplyFilters = (newFilters: ReportFilters) => {
+    setFilters(newFilters);
+    setShowFilterModal(false);
+  };
+
+  const handleResetFilters = () => {
+    setFilters({
+      templateId: null,
+      status: 'all',
+      dateFrom: null,
+      dateTo: null,
+      userId: null,
+    });
+    setShowFilterModal(false);
   };
 
   const handleUploadDocument = async () => {
@@ -165,7 +381,6 @@ export function RecordDetailScreen() {
       if (uploadResult.error) {
         Alert.alert('Upload Failed', uploadResult.error.message);
       } else {
-        // Refresh documents list
         const docsResult = await fetchRecordDocuments({ recordId });
         setDocuments(docsResult.data);
       }
@@ -185,7 +400,6 @@ export function RecordDetailScreen() {
         return;
       }
 
-      // Open in browser/external viewer
       const supported = await Linking.canOpenURL(url);
       if (supported) {
         await Linking.openURL(url);
@@ -229,57 +443,339 @@ export function RecordDetailScreen() {
     });
   };
 
+  // Render report card
+  const renderReportCard = ({ item }: { item: ReportSummaryExtended }) => (
+    <TouchableOpacity activeOpacity={0.7} onPress={() => handleViewReport(item)}>
+      <Card style={styles.reportCard}>
+        <View style={styles.reportHeader}>
+          <Text style={styles.reportTemplate}>{item.template_name}</Text>
+          <StatusBadge
+            status={item.status === 'submitted' ? 'complete' : 'pending'}
+            customLabel={item.status === 'submitted' ? 'Completed' : 'Draft'}
+          />
+        </View>
+        <View style={styles.reportMeta}>
+          <View style={styles.reportMetaItem}>
+            <Icon name="calendar" size={14} color={colors.text.tertiary} />
+            <Text style={styles.reportMetaText}>
+              {formatDate(item.submitted_at || item.started_at)}
+            </Text>
+          </View>
+          {item.user_name && (
+            <View style={styles.reportMetaItem}>
+              <Icon name="user" size={14} color={colors.text.tertiary} />
+              <Text style={styles.reportMetaText}>{item.user_name}</Text>
+            </View>
+          )}
+        </View>
+      </Card>
+    </TouchableOpacity>
+  );
+
+  // Render month section header
+  const renderSectionHeader = ({ section }: { section: ReportSection }) => (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionHeaderText}>{section.title}</Text>
+    </View>
+  );
+
+  // Render reports footer (loading more indicator)
+  const renderReportsFooter = () => {
+    if (!loadingMore) return null;
+    return (
+      <View style={styles.loadingMore}>
+        <ActivityIndicator size="small" color={colors.primary.DEFAULT} />
+        <Text style={styles.loadingMoreText}>Loading more...</Text>
+      </View>
+    );
+  };
+
+  // Render filter modal
+  const renderFilterModal = () => {
+    const selectedTemplate = templates.find((t) => t.id === tempFilters.templateId);
+    const selectedUser = teamMembers.find((m) => m.user_id === tempFilters.userId);
+
+    return (
+      <Modal visible={showFilterModal} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowFilterModal(false)}
+        >
+          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Filter Reports</Text>
+              <TouchableOpacity onPress={() => setShowFilterModal(false)}>
+                <Icon name="x" size={24} color={colors.text.secondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Template Filter */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Template</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    !tempFilters.templateId && styles.filterChipActive,
+                  ]}
+                  onPress={() => setTempFilters({ ...tempFilters, templateId: null })}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      !tempFilters.templateId && styles.filterChipTextActive,
+                    ]}
+                  >
+                    All Templates
+                  </Text>
+                </TouchableOpacity>
+                {templates.slice(0, 5).map((template) => (
+                  <TouchableOpacity
+                    key={template.id}
+                    style={[
+                      styles.filterChip,
+                      tempFilters.templateId === template.id && styles.filterChipActive,
+                    ]}
+                    onPress={() => setTempFilters({ ...tempFilters, templateId: template.id })}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        tempFilters.templateId === template.id && styles.filterChipTextActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {template.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Status Filter */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Status</Text>
+              <View style={styles.filterChipRow}>
+                {(['all', 'submitted', 'draft'] as const).map((status) => (
+                  <TouchableOpacity
+                    key={status}
+                    style={[
+                      styles.filterChip,
+                      tempFilters.status === status && styles.filterChipActive,
+                    ]}
+                    onPress={() => setTempFilters({ ...tempFilters, status })}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        tempFilters.status === status && styles.filterChipTextActive,
+                      ]}
+                    >
+                      {status === 'all' ? 'All' : status === 'submitted' ? 'Completed' : 'Draft'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* User Filter */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Inspector</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    !tempFilters.userId && styles.filterChipActive,
+                  ]}
+                  onPress={() => setTempFilters({ ...tempFilters, userId: null })}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      !tempFilters.userId && styles.filterChipTextActive,
+                    ]}
+                  >
+                    All Users
+                  </Text>
+                </TouchableOpacity>
+                {teamMembers.slice(0, 5).map((member) => (
+                  <TouchableOpacity
+                    key={member.user_id}
+                    style={[
+                      styles.filterChip,
+                      tempFilters.userId === member.user_id && styles.filterChipActive,
+                    ]}
+                    onPress={() => setTempFilters({ ...tempFilters, userId: member.user_id })}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        tempFilters.userId === member.user_id && styles.filterChipTextActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {member.user_profile?.full_name || 'Unknown'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.resetButton}
+                onPress={() => {
+                  setTempFilters({
+                    templateId: null,
+                    status: 'all',
+                    dateFrom: null,
+                    dateTo: null,
+                    userId: null,
+                  });
+                }}
+              >
+                <Text style={styles.resetButtonText}>Reset</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.applyButton}
+                onPress={() => handleApplyFilters(tempFilters)}
+              >
+                <Text style={styles.applyButtonText}>Apply Filters</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    );
+  };
+
+  // Render reports tab
   const renderReportsTab = () => {
-    if (reports.length === 0) {
+    const hasFiltersOrSearch = activeFilterCount > 0 || searchQuery.trim().length > 0;
+
+    // Empty state
+    if (reports.length === 0 && !isLoading) {
       return (
         <View style={styles.tabContent}>
+          {/* Search and Filter Bar */}
+          <View style={styles.searchFilterBar}>
+            <View style={styles.searchInputContainer}>
+              <Icon name="search" size={20} color={colors.text.tertiary} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search reports..."
+                placeholderTextColor={colors.text.tertiary}
+                value={searchQuery}
+                onChangeText={handleSearchChange}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={handleClearSearch}>
+                  <Icon name="x" size={18} color={colors.text.tertiary} />
+                </TouchableOpacity>
+              )}
+            </View>
+            <TouchableOpacity
+              style={[styles.filterButton, activeFilterCount > 0 && styles.filterButtonActive]}
+              onPress={() => setShowFilterModal(true)}
+            >
+              <Icon
+                name="filter"
+                size={20}
+                color={activeFilterCount > 0 ? colors.white : colors.text.secondary}
+              />
+              {activeFilterCount > 0 && (
+                <Text style={styles.filterBadge}>{activeFilterCount}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
           <Card>
             <EmptyState
-              icon="file-text"
-              title="No reports yet"
-              description="Start an inspection to create your first report for this record."
+              icon={hasFiltersOrSearch ? 'search' : 'file-text'}
+              title={hasFiltersOrSearch ? 'No matching reports' : 'No reports yet'}
+              description={
+                hasFiltersOrSearch
+                  ? 'Try adjusting your search or filters'
+                  : 'Start an inspection to create your first report for this record.'
+              }
             />
+            {hasFiltersOrSearch && (
+              <TouchableOpacity
+                style={styles.clearFiltersButton}
+                onPress={() => {
+                  handleClearSearch();
+                  handleResetFilters();
+                }}
+              >
+                <Text style={styles.clearFiltersText}>Clear all filters</Text>
+              </TouchableOpacity>
+            )}
           </Card>
         </View>
       );
     }
 
     return (
-      <FlatList
-        data={reports}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.reportsList}
-        renderItem={({ item }) => (
+      <View style={styles.reportsTabContainer}>
+        {/* Search and Filter Bar */}
+        <View style={styles.searchFilterBar}>
+          <View style={styles.searchInputContainer}>
+            <Icon name="search" size={20} color={colors.text.tertiary} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search reports..."
+              placeholderTextColor={colors.text.tertiary}
+              value={searchQuery}
+              onChangeText={handleSearchChange}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={handleClearSearch}>
+                <Icon name="x" size={18} color={colors.text.tertiary} />
+              </TouchableOpacity>
+            )}
+          </View>
           <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => handleViewReport(item.id)}
+            style={[styles.filterButton, activeFilterCount > 0 && styles.filterButtonActive]}
+            onPress={() => setShowFilterModal(true)}
           >
-            <Card style={styles.reportCard}>
-              <View style={styles.reportHeader}>
-                <Text style={styles.reportTemplate}>{item.template_name}</Text>
-                <StatusBadge
-                  status={item.status === 'submitted' ? 'complete' : 'pending'}
-                  customLabel={item.status === 'submitted' ? 'Submitted' : 'Draft'}
-                />
-              </View>
-              <View style={styles.reportMeta}>
-                <View style={styles.reportMetaItem}>
-                  <Icon name="calendar" size={14} color={colors.text.tertiary} />
-                  <Text style={styles.reportMetaText}>
-                    {formatDate(item.submitted_at || item.started_at)}
-                  </Text>
-                </View>
-                {item.user_name && (
-                  <View style={styles.reportMetaItem}>
-                    <Icon name="user" size={14} color={colors.text.tertiary} />
-                    <Text style={styles.reportMetaText}>{item.user_name}</Text>
-                  </View>
-                )}
-              </View>
-            </Card>
+            <Icon
+              name="filter"
+              size={20}
+              color={activeFilterCount > 0 ? colors.white : colors.text.secondary}
+            />
+            {activeFilterCount > 0 && (
+              <Text style={styles.filterBadge}>{activeFilterCount}</Text>
+            )}
           </TouchableOpacity>
+        </View>
+
+        {/* Result count */}
+        {totalReportCount !== null && (
+          <Text style={styles.resultCount}>
+            {totalReportCount} {totalReportCount === 1 ? 'report' : 'reports'}
+            {(activeFilterCount > 0 || searchQuery.trim()) ? ' found' : ''}
+          </Text>
         )}
-      />
+
+        {/* Reports List grouped by month */}
+        <SectionList
+          sections={reportSections}
+          keyExtractor={(item) => item.id}
+          renderItem={renderReportCard}
+          renderSectionHeader={renderSectionHeader}
+          contentContainerStyle={styles.reportsList}
+          ListFooterComponent={renderReportsFooter}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
+          stickySectionHeadersEnabled={false}
+        />
+      </View>
     );
   };
 
@@ -327,7 +823,6 @@ export function RecordDetailScreen() {
               <TouchableOpacity
                 style={styles.documentCard}
                 onPress={() => handleViewDocument(item)}
-                onLongPress={isAdmin ? () => handleDeleteDocument(item) : undefined}
                 activeOpacity={0.7}
               >
                 <View style={styles.documentIcon}>
@@ -352,22 +847,24 @@ export function RecordDetailScreen() {
                     {item.uploader_name && (
                       <>
                         <Text style={styles.documentMetaDot}>-</Text>
-                        <Text style={styles.documentMetaText}>
-                          {item.uploader_name}
-                        </Text>
+                        <Text style={styles.documentMetaText}>{item.uploader_name}</Text>
                       </>
                     )}
                   </View>
                 </View>
+                {isAdmin && (
+                  <TouchableOpacity
+                    style={styles.documentDeleteButton}
+                    onPress={() => handleDeleteDocument(item)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Icon name="trash-2" size={18} color={colors.danger} />
+                  </TouchableOpacity>
+                )}
                 <Icon name="chevron-right" size={20} color={colors.text.tertiary} />
               </TouchableOpacity>
             )}
           />
-        )}
-
-        {/* Hint for admins about long press to delete */}
-        {isAdmin && documents.length > 0 && (
-          <Text style={styles.hintText}>Long press a document to delete it</Text>
         )}
       </View>
     );
@@ -498,7 +995,7 @@ export function RecordDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      {/* Header with record info and CTA */}
+      {/* Header with record info and actions */}
       <View style={styles.header}>
         <View style={styles.headerInfo}>
           <Text style={styles.recordName}>{record.name}</Text>
@@ -508,14 +1005,25 @@ export function RecordDetailScreen() {
             </Text>
           )}
         </View>
-        <TouchableOpacity
-          style={styles.startButton}
-          onPress={handleStartInspection}
-          activeOpacity={0.7}
-        >
-          <Icon name="play-circle" size={20} color={colors.white} />
-          <Text style={styles.startButtonText}>Inspect</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          {isAdmin && (
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={handleEditRecord}
+              activeOpacity={0.7}
+            >
+              <Icon name="edit" size={18} color={colors.primary.DEFAULT} />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.startButton}
+            onPress={handleStartInspection}
+            activeOpacity={0.7}
+          >
+            <Icon name="play-circle" size={20} color={colors.white} />
+            <Text style={styles.startButtonText}>Inspect</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Tab Bar */}
@@ -524,7 +1032,7 @@ export function RecordDetailScreen() {
           ...tab,
           badge:
             tab.key === 'reports'
-              ? reports.length
+              ? totalReportCount ?? reports.length
               : tab.key === 'documents'
                 ? documents.length
                 : undefined,
@@ -535,18 +1043,22 @@ export function RecordDetailScreen() {
 
       {/* Tab Content */}
       <View style={styles.contentContainer}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={() => loadData(true)}
-            />
-          }
-        >
-          {renderTabContent()}
-        </ScrollView>
+        {activeTab === 'reports' ? (
+          renderTabContent()
+        ) : (
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={
+              <RefreshControl refreshing={isRefreshing} onRefresh={() => loadData(true)} />
+            }
+          >
+            {renderTabContent()}
+          </ScrollView>
+        )}
       </View>
+
+      {/* Filter Modal */}
+      {renderFilterModal()}
     </SafeAreaView>
   );
 }
@@ -604,6 +1116,11 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: spacing.md,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   recordName: {
     fontSize: fontSize.sectionTitle,
     fontWeight: fontWeight.semibold,
@@ -613,6 +1130,14 @@ const styles = StyleSheet.create({
     fontSize: fontSize.caption,
     color: colors.text.secondary,
     marginTop: spacing.xs,
+  },
+  editButton: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary.light,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   startButton: {
     flexDirection: 'row',
@@ -638,9 +1163,84 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: spacing.lg,
   },
+  // Reports tab styles
+  reportsTabContainer: {
+    flex: 1,
+  },
+  searchFilterBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+    gap: spacing.sm,
+  },
+  searchInputContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.neutral[50],
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    height: 44,
+    fontSize: fontSize.body,
+    color: colors.text.primary,
+  },
+  filterButton: {
+    width: 44,
+    height: 44,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.neutral[50],
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+  },
+  filterButtonActive: {
+    backgroundColor: colors.primary.DEFAULT,
+    borderColor: colors.primary.DEFAULT,
+  },
+  filterBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: colors.danger,
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: fontWeight.bold,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    textAlign: 'center',
+    lineHeight: 18,
+    overflow: 'hidden',
+  },
+  resultCount: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+  },
   reportsList: {
     padding: spacing.lg,
-    gap: spacing.sm,
+    paddingTop: spacing.sm,
+  },
+  sectionHeader: {
+    paddingVertical: spacing.sm,
+    paddingTop: spacing.md,
+  },
+  sectionHeaderText: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.semibold,
+    color: colors.text.secondary,
+    letterSpacing: 0.5,
   },
   reportCard: {
     marginBottom: spacing.sm,
@@ -671,6 +1271,127 @@ const styles = StyleSheet.create({
   reportMetaText: {
     fontSize: fontSize.caption,
     color: colors.text.tertiary,
+  },
+  loadingMore: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  loadingMoreText: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+  },
+  clearFiltersButton: {
+    alignSelf: 'center',
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.primary.DEFAULT,
+    borderRadius: borderRadius.md,
+  },
+  clearFiltersText: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.white,
+  },
+  // Filter Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  modalContent: {
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.lg,
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '80%',
+    padding: spacing.lg,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  modalTitle: {
+    fontSize: fontSize.sectionTitle,
+    fontWeight: fontWeight.semibold,
+    color: colors.text.primary,
+  },
+  filterSection: {
+    marginBottom: spacing.lg,
+  },
+  filterLabel: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.medium,
+    color: colors.text.secondary,
+    marginBottom: spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  filterChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  filterChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.neutral[50],
+    marginRight: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+  },
+  filterChipActive: {
+    backgroundColor: colors.primary.DEFAULT,
+    borderColor: colors.primary.DEFAULT,
+  },
+  filterChipText: {
+    fontSize: fontSize.body,
+    color: colors.text.primary,
+  },
+  filterChipTextActive: {
+    color: colors.white,
+    fontWeight: fontWeight.medium,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing.lg,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.light,
+    gap: spacing.md,
+  },
+  resetButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.neutral[100],
+    alignItems: 'center',
+  },
+  resetButtonText: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.text.secondary,
+  },
+  applyButton: {
+    flex: 2,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary.DEFAULT,
+    alignItems: 'center',
+  },
+  applyButtonText: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.white,
   },
   // Documents styles
   uploadButton: {
@@ -734,6 +1455,15 @@ const styles = StyleSheet.create({
     color: colors.text.tertiary,
     marginHorizontal: spacing.xs,
   },
+  documentDeleteButton: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.danger + '10',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.sm,
+  },
   hintText: {
     fontSize: fontSize.caption,
     color: colors.text.tertiary,
@@ -756,9 +1486,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: spacing.sm,
   },
-  detailCard: {
-    // No horizontal margin since we're inside tabContent padding
-  },
+  detailCard: {},
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

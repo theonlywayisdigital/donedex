@@ -7,11 +7,14 @@ import {
   TouchableOpacity,
   RefreshControl,
   Modal,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ReportsStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
+import { Icon } from '../../components/ui';
 import { fetchAllReports, ReportWithDetails } from '../../services/reports';
 import { fetchRecords } from '../../services/records';
 import type { Record as RecordModel } from '../../types';
@@ -26,7 +29,8 @@ export function ReportListScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Filters
+  // Search and Filters
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'submitted' | 'draft'>('all');
   const [showRecordFilter, setShowRecordFilter] = useState(false);
@@ -52,6 +56,17 @@ export function ReportListScreen() {
   const applyFilters = useCallback(() => {
     let filtered = [...reports];
 
+    // Apply text search
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(
+        (r) =>
+          r.template?.name?.toLowerCase().includes(query) ||
+          r.record?.name?.toLowerCase().includes(query) ||
+          r.user_profile?.full_name?.toLowerCase().includes(query)
+      );
+    }
+
     if (selectedRecordId) {
       filtered = filtered.filter((r) => r.record_id === selectedRecordId);
     }
@@ -61,7 +76,7 @@ export function ReportListScreen() {
     }
 
     setFilteredReports(filtered);
-  }, [reports, selectedRecordId, selectedStatus]);
+  }, [reports, searchQuery, selectedRecordId, selectedStatus]);
 
   useFocusEffect(
     useCallback(() => {
@@ -143,52 +158,103 @@ export function ReportListScreen() {
     const selectedRecord = records.find((r) => r.id === selectedRecordId);
 
     return (
-      <View style={styles.filtersContainer}>
-        {/* Record Filter */}
-        <TouchableOpacity
-          style={styles.filterButton}
-          onPress={() => setShowRecordFilter(true)}
-        >
-          <Text style={styles.filterLabel}>Record</Text>
-          <Text style={styles.filterValue} numberOfLines={1}>
-            {selectedRecord?.name || 'All Records'}
-          </Text>
-        </TouchableOpacity>
+      <View style={styles.filtersSection}>
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <View style={styles.searchInputContainer}>
+            <Icon name="search" size={20} color={colors.text.tertiary} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search reports..."
+              placeholderTextColor={colors.text.tertiary}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Icon name="x" size={18} color={colors.text.tertiary} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
 
-        {/* Status Filter */}
-        <View style={styles.statusFilters}>
-          {(['all', 'submitted', 'draft'] as const).map((status) => (
-            <TouchableOpacity
-              key={status}
-              style={[
-                styles.statusFilterButton,
-                selectedStatus === status && styles.statusFilterButtonActive,
-              ]}
-              onPress={() => setSelectedStatus(status)}
-            >
-              <Text
+        <View style={styles.filtersContainer}>
+          {/* Record Filter */}
+          <TouchableOpacity
+            style={styles.filterButton}
+            onPress={() => setShowRecordFilter(true)}
+          >
+            <Text style={styles.filterLabel}>Record</Text>
+            <Text style={styles.filterValue} numberOfLines={1}>
+              {selectedRecord?.name || 'All Records'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Status Filter */}
+          <View style={styles.statusFilters}>
+            {(['all', 'submitted', 'draft'] as const).map((status) => (
+              <TouchableOpacity
+                key={status}
                 style={[
-                  styles.statusFilterText,
-                  selectedStatus === status && styles.statusFilterTextActive,
+                  styles.statusFilterButton,
+                  selectedStatus === status && styles.statusFilterButtonActive,
                 ]}
+                onPress={() => setSelectedStatus(status)}
               >
-                {status === 'all' ? 'All' : status === 'submitted' ? 'Completed' : 'Draft'}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[
+                    styles.statusFilterText,
+                    selectedStatus === status && styles.statusFilterTextActive,
+                  ]}
+                >
+                  {status === 'all' ? 'All' : status === 'submitted' ? 'Completed' : 'Draft'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
       </View>
     );
   };
 
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyTitle}>No reports yet</Text>
-      <Text style={styles.emptySubtitle}>
-        Complete an inspection to see reports here
-      </Text>
-    </View>
-  );
+  const renderEmpty = () => {
+    // Check if filters are applied
+    const hasFilters = searchQuery.trim() || selectedRecordId || selectedStatus !== 'all';
+
+    if (hasFilters) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Icon name="search" size={48} color={colors.text.tertiary} />
+          <Text style={styles.emptyTitle}>No matching reports</Text>
+          <Text style={styles.emptySubtitle}>
+            Try adjusting your search or filters
+          </Text>
+          <TouchableOpacity
+            style={styles.clearFiltersButton}
+            onPress={() => {
+              setSearchQuery('');
+              setSelectedRecordId(null);
+              setSelectedStatus('all');
+            }}
+          >
+            <Text style={styles.clearFiltersText}>Clear all filters</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.emptyContainer}>
+        <Icon name="file-text" size={48} color={colors.text.tertiary} />
+        <Text style={styles.emptyTitle}>No reports yet</Text>
+        <Text style={styles.emptySubtitle}>
+          Complete an inspection to see reports here
+        </Text>
+      </View>
+    );
+  };
 
   const renderRecordFilterModal = () => (
     <Modal visible={showRecordFilter} transparent animationType="fade">
@@ -250,6 +316,7 @@ export function ReportListScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
         <Text style={styles.loadingText}>Loading reports...</Text>
       </View>
     );
@@ -292,16 +359,39 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.background,
+    gap: spacing.md,
   },
   loadingText: {
     fontSize: fontSize.body,
     color: colors.text.secondary,
   },
-  filtersContainer: {
+  filtersSection: {
     backgroundColor: colors.white,
-    padding: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.DEFAULT,
+  },
+  searchContainer: {
+    padding: spacing.md,
+    paddingBottom: 0,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.neutral[50],
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    height: 44,
+    fontSize: fontSize.body,
+    color: colors.text.primary,
+  },
+  filtersContainer: {
+    padding: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
@@ -408,17 +498,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xl,
   },
   emptyTitle: {
     fontSize: fontSize.sectionTitle,
     fontWeight: fontWeight.semibold,
     color: colors.text.primary,
+    marginTop: spacing.md,
     marginBottom: spacing.sm,
   },
   emptySubtitle: {
     fontSize: fontSize.body,
     color: colors.text.secondary,
     textAlign: 'center',
+  },
+  clearFiltersButton: {
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.primary.DEFAULT,
+    borderRadius: borderRadius.md,
+  },
+  clearFiltersText: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.white,
   },
   modalOverlay: {
     flex: 1,

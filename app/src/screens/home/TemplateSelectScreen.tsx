@@ -35,11 +35,11 @@ export function TemplateSelectScreen() {
 
   const {
     currentRecord,
-    recordTemplates,
+    publishedTemplates,
     isLoading,
     error,
     fetchRecordById,
-    fetchRecordTemplates,
+    fetchPublishedTemplates,
   } = useRecordsStore();
 
   const { startInspection, isLoading: isStarting } = useInspectionStore();
@@ -49,7 +49,7 @@ export function TemplateSelectScreen() {
 
   useEffect(() => {
     fetchRecordById(siteId);
-    fetchRecordTemplates(siteId);
+    fetchPublishedTemplates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId]);
 
@@ -116,10 +116,10 @@ export function TemplateSelectScreen() {
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
-      <Text style={styles.emptyTitle}>No Templates</Text>
+      <Text style={styles.emptyTitle}>No Templates Available</Text>
       <Text style={styles.emptyText}>
-        No inspection templates are available. Contact your administrator to
-        create and publish templates.
+        No inspection templates have been published yet. Contact your
+        administrator to create and publish templates.
       </Text>
     </View>
   );
@@ -140,7 +140,7 @@ export function TemplateSelectScreen() {
         <Text style={styles.recordName}>{currentRecord?.name || 'Record'}</Text>
         <Text style={styles.headerTitle}>Select Template</Text>
         <Text style={styles.headerSubtitle}>
-          Choose an inspection template to use
+          Choose a template for this inspection
         </Text>
       </View>
 
@@ -150,7 +150,7 @@ export function TemplateSelectScreen() {
         </View>
       ) : (
         <FlatList
-          data={recordTemplates}
+          data={publishedTemplates}
           keyExtractor={(item) => item.id}
           renderItem={renderTemplate}
           contentContainerStyle={styles.listContent}
@@ -158,14 +158,14 @@ export function TemplateSelectScreen() {
           refreshControl={
             <RefreshControl
               refreshing={isLoading}
-              onRefresh={() => fetchRecordTemplates(siteId)}
+              onRefresh={() => fetchPublishedTemplates()}
             />
           }
           ItemSeparatorComponent={() => <View style={styles.separator} />}
         />
       )}
 
-      {recordTemplates.length > 0 && (
+      {publishedTemplates.length > 0 && (
         <View style={styles.footer}>
           <Button
             title="Start Inspection"

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { showNotification, showDestructiveConfirm } from '../../utils/alert';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
@@ -13,12 +15,14 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SitesStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
 import { Icon, IconName } from '../../components/ui';
-import { fetchRecordsByType, archiveRecord } from '../../services/records';
+import { fetchRecordsPaginated, archiveRecord, type RecordWithRecordType } from '../../services/records';
 import { fetchRecordTypeById } from '../../services/recordTypes';
-import type { Record as RecordModel, RecordType } from '../../types';
+import type { RecordType } from '../../types';
 
 type NavigationProp = NativeStackNavigationProp<SitesStackParamList, 'RecordsList'>;
 type RouteType = RouteProp<SitesStackParamList, 'RecordsList'>;
+
+const PAGE_SIZE = 20;
 
 // Map icon names
 const iconNameMap: Record<string, IconName> = {
@@ -46,50 +50,105 @@ export function RecordsListScreen() {
   const { recordTypeId } = route.params;
 
   const [recordType, setRecordType] = useState<RecordType | null>(null);
-  const [records, setRecords] = useState<RecordModel[]>([]);
+  const [records, setRecords] = useState<RecordWithRecordType[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const loadData = useCallback(async () => {
-    const [typeResult, recordsResult] = await Promise.all([
-      fetchRecordTypeById(recordTypeId),
-      fetchRecordsByType(recordTypeId),
-    ]);
+  // Use ref to track cursor for pagination
+  const nextCursorRef = useRef<string | null>(null);
+  // Debounce search
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    if (typeResult.data) {
-      setRecordType(typeResult.data);
-      // Update navigation title
-      navigation.setOptions({ title: typeResult.data.name });
+  const loadRecordType = useCallback(async () => {
+    const { data } = await fetchRecordTypeById(recordTypeId);
+    if (data) {
+      setRecordType(data);
+      navigation.setOptions({ title: data.name });
+    }
+  }, [recordTypeId, navigation]);
+
+  const loadRecords = useCallback(async (search?: string, append = false) => {
+    if (!append) {
+      setLoading(true);
+      nextCursorRef.current = null;
     }
 
-    if (!recordsResult.error) {
-      setRecords(recordsResult.data);
+    const result = await fetchRecordsPaginated({
+      recordTypeId,
+      search: search || undefined,
+      pagination: {
+        limit: PAGE_SIZE,
+        cursor: append ? nextCursorRef.current || undefined : undefined,
+      },
+    });
+
+    if (append) {
+      setRecords((prev) => [...prev, ...result.data]);
+    } else {
+      setRecords(result.data);
     }
 
+    nextCursorRef.current = result.pageInfo.endCursor || null;
+    setHasMore(result.pageInfo.hasNextPage);
+    setTotalCount(result.pageInfo.totalCount ?? null);
     setLoading(false);
     setRefreshing(false);
-  }, [recordTypeId, navigation]);
+    setLoadingMore(false);
+  }, [recordTypeId]);
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
-    }, [loadData])
+      loadRecordType();
+      loadRecords(searchQuery);
+    }, [loadRecordType, loadRecords, searchQuery])
   );
 
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     setRefreshing(true);
-    loadData();
-  };
+    loadRecords(searchQuery);
+  }, [loadRecords, searchQuery]);
+
+  const handleLoadMore = useCallback(() => {
+    if (loadingMore || !hasMore || loading) return;
+    setLoadingMore(true);
+    loadRecords(searchQuery, true);
+  }, [loadingMore, hasMore, loading, loadRecords, searchQuery]);
+
+  const handleSearchChange = useCallback((text: string) => {
+    setSearchQuery(text);
+
+    // Debounce search
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      loadRecords(text);
+    }, 300);
+  }, [loadRecords]);
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery('');
+    loadRecords('');
+  }, [loadRecords]);
 
   const handleCreateRecord = () => {
     navigation.navigate('SiteEditor', { recordTypeId });
+  };
+
+  const handleViewRecord = (recordId: string) => {
+    navigation.navigate('RecordDetail', { recordId });
   };
 
   const handleEditRecord = (recordId: string) => {
     navigation.navigate('SiteEditor', { siteId: recordId, recordTypeId });
   };
 
-  const handleDeleteRecord = (record: RecordModel) => {
+  const handleDeleteRecord = (record: RecordWithRecordType) => {
     showDestructiveConfirm(
       `Delete ${recordType?.name_singular || 'Record'}`,
       `Are you sure you want to delete "${record.name}"?`,
@@ -98,7 +157,7 @@ export function RecordsListScreen() {
         if (error) {
           showNotification('Error', error.message);
         } else {
-          loadData();
+          loadRecords(searchQuery);
         }
       },
       undefined,
@@ -107,51 +166,82 @@ export function RecordsListScreen() {
     );
   };
 
-  const renderRecord = ({ item }: { item: RecordModel }) => (
-    <TouchableOpacity
-      style={styles.recordCard}
-      onPress={() => handleEditRecord(item.id)}
-      onLongPress={() => handleDeleteRecord(item)}
-    >
-      <View style={styles.recordInfo}>
-        <Text style={styles.recordName}>{item.name}</Text>
-        {item.address && (
-          <Text style={styles.recordAddress} numberOfLines={1}>
-            {item.address}
-          </Text>
-        )}
-      </View>
-      <View style={styles.recordActions}>
+  const renderRecord = ({ item }: { item: RecordWithRecordType }) => (
+    <View style={styles.recordCard}>
+      <TouchableOpacity
+        style={styles.recordContent}
+        onPress={() => handleViewRecord(item.id)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.recordInfo}>
+          <Text style={styles.recordName}>{item.name}</Text>
+          {item.address && (
+            <Text style={styles.recordAddress} numberOfLines={1}>
+              {item.address}
+            </Text>
+          )}
+        </View>
+        <Icon name="chevron-right" size={20} color={colors.text.tertiary} />
+      </TouchableOpacity>
+      <View style={styles.cardActions}>
         <TouchableOpacity
-          style={styles.assignButton}
-          onPress={() => navigation.navigate('SiteAssignTemplates', { siteId: item.id })}
+          style={styles.actionButton}
+          onPress={() => handleEditRecord(item.id)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={styles.assignButtonText}>Templates</Text>
+          <Icon name="edit" size={16} color={colors.primary.DEFAULT} />
+          <Text style={styles.actionButtonText}>Edit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.deleteButton]}
+          onPress={() => handleDeleteRecord(item)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Icon name="trash-2" size={16} color={colors.danger} />
+          <Text style={styles.deleteButtonText}>Delete</Text>
         </TouchableOpacity>
       </View>
-    </TouchableOpacity>
-  );
-
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      {recordType && (
-        <View style={[styles.emptyIcon, { backgroundColor: recordType.color + '20' }]}>
-          <Icon name={getIconName(recordType.icon)} size={48} color={recordType.color} />
-        </View>
-      )}
-      <Text style={styles.emptyTitle}>
-        No {recordType?.name.toLowerCase() || 'records'} yet
-      </Text>
-      <Text style={styles.emptySubtitle}>
-        Add your first {recordType?.name_singular.toLowerCase() || 'record'} to start assigning inspection templates
-      </Text>
-      <TouchableOpacity style={styles.emptyButton} onPress={handleCreateRecord}>
-        <Text style={styles.emptyButtonText}>
-          Add {recordType?.name_singular || 'Record'}
-        </Text>
-      </TouchableOpacity>
     </View>
   );
+
+  const renderEmpty = () => {
+    // Show different empty state for search vs no records
+    if (searchQuery.trim()) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Icon name="search" size={48} color={colors.text.tertiary} />
+          <Text style={styles.emptyTitle}>No results found</Text>
+          <Text style={styles.emptySubtitle}>
+            {`Try a different search term`}
+          </Text>
+          <TouchableOpacity style={styles.clearSearchButton} onPress={handleClearSearch}>
+            <Text style={styles.clearSearchText}>Clear search</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.emptyContainer}>
+        {recordType && (
+          <View style={[styles.emptyIcon, { backgroundColor: recordType.color + '20' }]}>
+            <Icon name={getIconName(recordType.icon)} size={48} color={recordType.color} />
+          </View>
+        )}
+        <Text style={styles.emptyTitle}>
+          No {recordType?.name.toLowerCase() || 'records'} yet
+        </Text>
+        <Text style={styles.emptySubtitle}>
+          Add your first {recordType?.name_singular.toLowerCase() || 'record'} to start assigning inspection templates
+        </Text>
+        <TouchableOpacity style={styles.emptyButton} onPress={handleCreateRecord}>
+          <Text style={styles.emptyButtonText}>
+            Add {recordType?.name_singular || 'Record'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   const renderHeader = () => {
     if (!recordType) return null;
@@ -177,9 +267,20 @@ export function RecordsListScreen() {
     );
   };
 
-  if (loading) {
+  const renderFooter = () => {
+    if (!loadingMore) return null;
+    return (
+      <View style={styles.footerLoader}>
+        <ActivityIndicator size="small" color={colors.primary.DEFAULT} />
+        <Text style={styles.footerLoaderText}>Loading more...</Text>
+      </View>
+    );
+  };
+
+  if (loading && records.length === 0) {
     return (
       <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
         <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
@@ -187,6 +288,33 @@ export function RecordsListScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Search Bar */}
+      <View style={styles.searchSection}>
+        <View style={styles.searchInputContainer}>
+          <Icon name="search" size={20} color={colors.text.tertiary} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder={`Search ${recordType?.name.toLowerCase() || 'records'}...`}
+            placeholderTextColor={colors.text.tertiary}
+            value={searchQuery}
+            onChangeText={handleSearchChange}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={handleClearSearch}>
+              <Icon name="x" size={18} color={colors.text.tertiary} />
+            </TouchableOpacity>
+          )}
+        </View>
+        {totalCount !== null && (
+          <Text style={styles.resultCount}>
+            {totalCount} {totalCount === 1 ? recordType?.name_singular?.toLowerCase() || 'record' : recordType?.name.toLowerCase() || 'records'}
+            {searchQuery.trim() ? ' found' : ''}
+          </Text>
+        )}
+      </View>
+
       <FlatList
         data={records}
         keyExtractor={(item) => item.id}
@@ -196,7 +324,10 @@ export function RecordsListScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
         ListHeaderComponent={renderHeader}
-        ListEmptyComponent={renderEmpty}
+        ListEmptyComponent={!loading ? renderEmpty : null}
+        ListFooterComponent={renderFooter}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
       />
       {records.length > 0 && (
         <TouchableOpacity style={styles.fab} onPress={handleCreateRecord}>
@@ -217,10 +348,38 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.background,
+    gap: spacing.md,
   },
   loadingText: {
     fontSize: fontSize.body,
     color: colors.text.secondary,
+  },
+  searchSection: {
+    backgroundColor: colors.white,
+    padding: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.DEFAULT,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.neutral[50],
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    height: 44,
+    fontSize: fontSize.body,
+    color: colors.text.primary,
+  },
+  resultCount: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+    marginTop: spacing.sm,
   },
   listContent: {
     padding: spacing.md,
@@ -266,9 +425,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border.DEFAULT,
+    ...shadows.card,
+  },
+  recordContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    ...shadows.card,
   },
   recordInfo: {
     flex: 1,
@@ -283,19 +444,36 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginTop: spacing.xs,
   },
-  recordActions: {
-    marginLeft: spacing.md,
+  cardActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.light,
+    gap: spacing.sm,
   },
-  assignButton: {
-    backgroundColor: colors.primary.light,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.neutral[50],
+    gap: spacing.xs,
   },
-  assignButtonText: {
+  actionButtonText: {
     fontSize: fontSize.caption,
     fontWeight: fontWeight.medium,
     color: colors.primary.DEFAULT,
+  },
+  deleteButton: {
+    backgroundColor: colors.danger + '10',
+  },
+  deleteButtonText: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.medium,
+    color: colors.danger,
   },
   emptyContainer: {
     flex: 1,
@@ -316,6 +494,7 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sectionTitle,
     fontWeight: fontWeight.semibold,
     color: colors.text.primary,
+    marginTop: spacing.md,
     marginBottom: spacing.sm,
     textTransform: 'capitalize',
   },
@@ -335,6 +514,28 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: fontSize.body,
     fontWeight: fontWeight.semibold,
+  },
+  clearSearchButton: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.primary.DEFAULT,
+    borderRadius: borderRadius.md,
+  },
+  clearSearchText: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.white,
+  },
+  footerLoader: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  footerLoaderText: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
   },
   fab: {
     position: 'absolute',

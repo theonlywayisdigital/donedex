@@ -117,8 +117,9 @@ export function ItemEditor({
   currentSectionId,
   onMoveToSection,
 }: ItemEditorProps) {
-  // Get window dimensions for responsive modal sizing
+  // Get window dimensions for responsive layout
   const { width: windowWidth } = useWindowDimensions();
+  const isMobile = windowWidth < 768;
   const modalMaxWidth = Math.min(400, windowWidth - spacing.lg * 2);
 
   // Billing check for Pro features
@@ -239,90 +240,9 @@ export function ItemEditor({
     setShowOptionsModal(false);
   };
 
-  return (
-    <View style={[styles.container, isActive && styles.containerActive]}>
-      <View style={styles.row}>
-        {/* Drag Handle */}
-        {drag && <DragHandle drag={drag} isActive={isActive || false} />}
-
-        {/* Item Label */}
-        <TextInput
-          style={styles.labelInput}
-          value={item.label}
-          onChangeText={(text) => onUpdate({ label: text })}
-          placeholder="Item label (e.g., Fire exits clear)"
-          placeholderTextColor={colors.text.tertiary}
-        />
-
-        {/* Move/Delete Actions */}
-        <View style={styles.actions}>
-          {onMoveUp && (
-            <TouchableOpacity style={styles.actionButton} onPress={onMoveUp}>
-              <Icon name="chevron-up" size={20} color={colors.text.secondary} />
-            </TouchableOpacity>
-          )}
-          {onMoveDown && (
-            <TouchableOpacity style={styles.actionButton} onPress={onMoveDown}>
-              <Icon name="chevron-down" size={20} color={colors.text.secondary} />
-            </TouchableOpacity>
-          )}
-          {onDuplicate && (
-            <TouchableOpacity style={styles.actionButton} onPress={onDuplicate}>
-              <Icon name="copy" size={18} color={colors.text.secondary} />
-            </TouchableOpacity>
-          )}
-          {onMoveToSection && allSections.filter(s => s.id !== currentSectionId).length > 0 && (
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => setShowMoveToSectionModal(true)}
-            >
-              <Icon name="folder" size={18} color={colors.text.secondary} />
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity style={styles.actionButton} onPress={onDelete}>
-            <Icon name="x" size={20} color={colors.danger} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.row}>
-        {/* Field Type with Mini Preview */}
-        <TouchableOpacity
-          style={styles.typeSelectButton}
-          onPress={() => setShowCategoryPicker(true)}
-        >
-          <View style={styles.miniPreviewInButton}>
-            <FieldTypeMiniPreview type={item.item_type} size={32} />
-          </View>
-          <View style={styles.typeSelectInfo}>
-            <Text style={styles.selectLabel}>Type</Text>
-            <Text style={styles.selectValue}>{selectedTypeConfig?.label || 'Select'}</Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Photo Rule */}
-        {showPhotoRuleOption && (
-          <TouchableOpacity
-            style={styles.selectButton}
-            onPress={() => setShowPhotoModal(true)}
-          >
-            <Text style={styles.selectLabel}>Photo</Text>
-            <Text style={styles.selectValue}>{selectedPhotoRule?.label || 'Never'}</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Required Toggle */}
-        <View style={styles.toggleContainer}>
-          <Text style={styles.toggleLabel}>Required</Text>
-          <Switch
-            value={item.is_required}
-            onValueChange={(value) => onUpdate({ is_required: value })}
-            trackColor={{ false: colors.neutral[200], true: colors.primary.light }}
-            thumbColor={item.is_required ? colors.primary.DEFAULT : colors.neutral[300]}
-          />
-        </View>
-      </View>
-
+  // Shared type-specific config rows (used by both mobile and tablet)
+  const renderTypeConfigRows = () => (
+    <>
       {/* Options button for select types */}
       {needsOptions && (
         <TouchableOpacity
@@ -534,14 +454,12 @@ export function ItemEditor({
                   value={!!(item.options && item.options.length > 0)}
                   onValueChange={(value) => {
                     if (value) {
-                      // Set default custom options based on type
                       const defaultOptions = item.item_type === 'condition'
                         ? ['Excellent', 'Good', 'Fair', 'Poor', 'N/A']
                         : ['Critical', 'High', 'Medium', 'Low', 'None'];
                       setCustomOptionsText(defaultOptions.join('\n'));
                       setShowCustomOptionsModal(true);
                     } else {
-                      // Clear custom options
                       onUpdate({ options: null });
                     }
                   }}
@@ -570,223 +488,200 @@ export function ItemEditor({
           )}
         </View>
       )}
+    </>
+  );
 
-      {/* Advanced options toggle */}
-      <TouchableOpacity
-        style={styles.advancedToggle}
-        onPress={() => setShowAdvanced(!showAdvanced)}
-      >
-        <Icon
-          name={showAdvanced ? 'chevron-down' : 'chevron-right'}
-          size={14}
-          color={colors.text.secondary}
+  // Shared advanced options panel (used by both mobile and tablet)
+  const renderAdvancedPanel = () => (
+    <View style={styles.advancedPanel}>
+      {/* Help text */}
+      <View style={styles.advancedField}>
+        <Text style={styles.advancedFieldLabel}>Help text</Text>
+        <TextInput
+          style={styles.advancedInput}
+          value={item.help_text || ''}
+          onChangeText={(text) => onUpdate({ help_text: text || null })}
+          placeholder="Guidance shown below field"
+          placeholderTextColor={colors.text.tertiary}
         />
-        <Text style={styles.advancedToggleText}>
-          Advanced Options
-        </Text>
-        {advancedOptionsCount > 0 && (
-          <View style={styles.advancedBadge}>
-            <Text style={styles.advancedBadgeText}>{advancedOptionsCount}</Text>
-          </View>
-        )}
-      </TouchableOpacity>
+      </View>
 
-      {/* Advanced options panel */}
-      {showAdvanced && (
-        <View style={styles.advancedPanel}>
-          {/* Help text */}
-          <View style={styles.advancedField}>
-            <Text style={styles.advancedFieldLabel}>Help text</Text>
-            <TextInput
-              style={styles.advancedInput}
-              value={item.help_text || ''}
-              onChangeText={(text) => onUpdate({ help_text: text || null })}
-              placeholder="Guidance shown below field"
-              placeholderTextColor={colors.text.tertiary}
-            />
-          </View>
-
-          {/* Placeholder text - for text/number/select */}
-          {['text', 'number', 'select'].includes(item.item_type) && (
-            <View style={styles.advancedField}>
-              <Text style={styles.advancedFieldLabel}>Placeholder</Text>
-              <TextInput
-                style={styles.advancedInput}
-                value={item.placeholder_text || ''}
-                onChangeText={(text) => onUpdate({ placeholder_text: text || null })}
-                placeholder="Hint shown in empty input"
-                placeholderTextColor={colors.text.tertiary}
-              />
-            </View>
-          )}
-
-          {/* Default value */}
-          <View style={styles.advancedField}>
-            <Text style={styles.advancedFieldLabel}>Default value</Text>
-            <TextInput
-              style={styles.advancedInput}
-              value={item.default_value || ''}
-              onChangeText={(text) => onUpdate({ default_value: text || null })}
-              placeholder="Pre-filled value"
-              placeholderTextColor={colors.text.tertiary}
-            />
-          </View>
-
-          {/* Min/Max for number type */}
-          {needsNumberConfig && (
-            <View style={styles.advancedFieldRow}>
-              <View style={[styles.advancedField, { flex: 1, marginRight: spacing.xs }]}>
-                <Text style={styles.advancedFieldLabel}>Min value</Text>
-                <TextInput
-                  style={styles.advancedInput}
-                  value={item.min_value?.toString() || ''}
-                  onChangeText={(text) => {
-                    const num = parseFloat(text);
-                    onUpdate({ min_value: isNaN(num) ? null : num });
-                  }}
-                  placeholder="Min"
-                  placeholderTextColor={colors.text.tertiary}
-                  keyboardType="numeric"
-                />
-              </View>
-              <View style={[styles.advancedField, { flex: 1 }]}>
-                <Text style={styles.advancedFieldLabel}>Max value</Text>
-                <TextInput
-                  style={styles.advancedInput}
-                  value={item.max_value?.toString() || ''}
-                  onChangeText={(text) => {
-                    const num = parseFloat(text);
-                    onUpdate({ max_value: isNaN(num) ? null : num });
-                  }}
-                  placeholder="Max"
-                  placeholderTextColor={colors.text.tertiary}
-                  keyboardType="numeric"
-                />
-              </View>
-            </View>
-          )}
-
-          {/* Conditional visibility */}
-          {availableConditionFields.length > 0 && (
-            <View style={styles.advancedField}>
-              <Text style={styles.advancedFieldLabel}>Conditional visibility</Text>
-              <View style={styles.conditionBuilder}>
-                <View style={styles.conditionEnableRow}>
-                  <Text style={styles.conditionEnableLabel}>
-                    Show only when another field has a specific value
-                  </Text>
-                  <Switch
-                    value={hasCondition}
-                    onValueChange={(value) => {
-                      if (value) {
-                        // Enable with first available field
-                        onUpdate({
-                          condition_field_id: availableConditionFields[0]?.id || null,
-                          condition_operator: 'equals',
-                          condition_value: null,
-                        });
-                      } else {
-                        // Clear condition
-                        onUpdate({
-                          condition_field_id: null,
-                          condition_operator: null,
-                          condition_value: null,
-                        });
-                      }
-                    }}
-                    trackColor={{ false: colors.neutral[200], true: colors.primary.light }}
-                    thumbColor={hasCondition ? colors.primary.DEFAULT : colors.neutral[300]}
-                  />
-                </View>
-
-                {hasCondition && (
-                  <View style={styles.conditionConfig}>
-                    {/* Field selector */}
-                    <TouchableOpacity
-                      style={styles.conditionSelect}
-                      onPress={() => setShowConditionFieldModal(true)}
-                    >
-                      <Text style={styles.conditionSelectLabel}>Field</Text>
-                      <Text style={styles.conditionSelectValue}>
-                        {selectedConditionField?.label || 'Select field'}
-                      </Text>
-                    </TouchableOpacity>
-
-                    {/* Operator selector */}
-                    <TouchableOpacity
-                      style={styles.conditionSelect}
-                      onPress={() => setShowConditionOperatorModal(true)}
-                    >
-                      <Text style={styles.conditionSelectLabel}>Condition</Text>
-                      <Text style={styles.conditionSelectValue}>
-                        {selectedConditionOperator?.label || 'Select'}
-                      </Text>
-                    </TouchableOpacity>
-
-                    {/* Value selector (only for equals/not_equals) */}
-                    {item.condition_operator !== 'not_empty' && conditionFieldValues.length > 0 && (
-                      <View style={styles.conditionValueContainer}>
-                        <Text style={styles.conditionSelectLabel}>Value</Text>
-                        <View style={styles.conditionValueOptions}>
-                          {conditionFieldValues.map((value) => (
-                            <TouchableOpacity
-                              key={value}
-                              style={[
-                                styles.conditionValueChip,
-                                item.condition_value === value && styles.conditionValueChipSelected,
-                              ]}
-                              onPress={() => onUpdate({ condition_value: value })}
-                            >
-                              <Text
-                                style={[
-                                  styles.conditionValueChipText,
-                                  item.condition_value === value &&
-                                    styles.conditionValueChipTextSelected,
-                                ]}
-                              >
-                                {value}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </View>
-                    )}
-
-                    {/* Value text input for text/number types */}
-                    {item.condition_operator !== 'not_empty' &&
-                      conditionFieldValues.length === 0 &&
-                      selectedConditionField && (
-                        <View style={styles.conditionValueContainer}>
-                          <Text style={styles.conditionSelectLabel}>Value</Text>
-                          <TextInput
-                            style={styles.advancedInput}
-                            value={item.condition_value || ''}
-                            onChangeText={(text) => onUpdate({ condition_value: text || null })}
-                            placeholder="Enter value"
-                            placeholderTextColor={colors.text.tertiary}
-                            keyboardType={
-                              selectedConditionField.item_type === 'number' ? 'numeric' : 'default'
-                            }
-                          />
-                        </View>
-                      )}
-
-                    {/* Summary */}
-                    {selectedConditionField && selectedConditionOperator && (
-                      <Text style={styles.conditionSummary}>
-                        {item.condition_operator === 'not_empty'
-                          ? `Show when "${selectedConditionField.label}" has a value`
-                          : `Show when "${selectedConditionField.label}" ${selectedConditionOperator.label} "${item.condition_value || '...'}"`}
-                      </Text>
-                    )}
-                  </View>
-                )}
-              </View>
-            </View>
-          )}
+      {/* Placeholder text - for text/number/select */}
+      {['text', 'number', 'select'].includes(item.item_type) && (
+        <View style={styles.advancedField}>
+          <Text style={styles.advancedFieldLabel}>Placeholder</Text>
+          <TextInput
+            style={styles.advancedInput}
+            value={item.placeholder_text || ''}
+            onChangeText={(text) => onUpdate({ placeholder_text: text || null })}
+            placeholder="Hint shown in empty input"
+            placeholderTextColor={colors.text.tertiary}
+          />
         </View>
       )}
 
+      {/* Default value */}
+      <View style={styles.advancedField}>
+        <Text style={styles.advancedFieldLabel}>Default value</Text>
+        <TextInput
+          style={styles.advancedInput}
+          value={item.default_value || ''}
+          onChangeText={(text) => onUpdate({ default_value: text || null })}
+          placeholder="Pre-filled value"
+          placeholderTextColor={colors.text.tertiary}
+        />
+      </View>
+
+      {/* Min/Max for number type */}
+      {needsNumberConfig && (
+        <View style={styles.advancedFieldRow}>
+          <View style={[styles.advancedField, { flex: 1, marginRight: spacing.xs }]}>
+            <Text style={styles.advancedFieldLabel}>Min value</Text>
+            <TextInput
+              style={styles.advancedInput}
+              value={item.min_value?.toString() || ''}
+              onChangeText={(text) => {
+                const num = parseFloat(text);
+                onUpdate({ min_value: isNaN(num) ? null : num });
+              }}
+              placeholder="Min"
+              placeholderTextColor={colors.text.tertiary}
+              keyboardType="numeric"
+            />
+          </View>
+          <View style={[styles.advancedField, { flex: 1 }]}>
+            <Text style={styles.advancedFieldLabel}>Max value</Text>
+            <TextInput
+              style={styles.advancedInput}
+              value={item.max_value?.toString() || ''}
+              onChangeText={(text) => {
+                const num = parseFloat(text);
+                onUpdate({ max_value: isNaN(num) ? null : num });
+              }}
+              placeholder="Max"
+              placeholderTextColor={colors.text.tertiary}
+              keyboardType="numeric"
+            />
+          </View>
+        </View>
+      )}
+
+      {/* Conditional visibility */}
+      {availableConditionFields.length > 0 && (
+        <View style={styles.advancedField}>
+          <Text style={styles.advancedFieldLabel}>Conditional visibility</Text>
+          <View style={styles.conditionBuilder}>
+            <View style={styles.conditionEnableRow}>
+              <Text style={styles.conditionEnableLabel}>
+                Show only when another field has a specific value
+              </Text>
+              <Switch
+                value={hasCondition}
+                onValueChange={(value) => {
+                  if (value) {
+                    onUpdate({
+                      condition_field_id: availableConditionFields[0]?.id || null,
+                      condition_operator: 'equals',
+                      condition_value: null,
+                    });
+                  } else {
+                    onUpdate({
+                      condition_field_id: null,
+                      condition_operator: null,
+                      condition_value: null,
+                    });
+                  }
+                }}
+                trackColor={{ false: colors.neutral[200], true: colors.primary.light }}
+                thumbColor={hasCondition ? colors.primary.DEFAULT : colors.neutral[300]}
+              />
+            </View>
+
+            {hasCondition && (
+              <View style={styles.conditionConfig}>
+                <TouchableOpacity
+                  style={styles.conditionSelect}
+                  onPress={() => setShowConditionFieldModal(true)}
+                >
+                  <Text style={styles.conditionSelectLabel}>Field</Text>
+                  <Text style={styles.conditionSelectValue}>
+                    {selectedConditionField?.label || 'Select field'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.conditionSelect}
+                  onPress={() => setShowConditionOperatorModal(true)}
+                >
+                  <Text style={styles.conditionSelectLabel}>Condition</Text>
+                  <Text style={styles.conditionSelectValue}>
+                    {selectedConditionOperator?.label || 'Select'}
+                  </Text>
+                </TouchableOpacity>
+
+                {item.condition_operator !== 'not_empty' && conditionFieldValues.length > 0 && (
+                  <View style={styles.conditionValueContainer}>
+                    <Text style={styles.conditionSelectLabel}>Value</Text>
+                    <View style={styles.conditionValueOptions}>
+                      {conditionFieldValues.map((value) => (
+                        <TouchableOpacity
+                          key={value}
+                          style={[
+                            styles.conditionValueChip,
+                            item.condition_value === value && styles.conditionValueChipSelected,
+                          ]}
+                          onPress={() => onUpdate({ condition_value: value })}
+                        >
+                          <Text
+                            style={[
+                              styles.conditionValueChipText,
+                              item.condition_value === value && styles.conditionValueChipTextSelected,
+                            ]}
+                          >
+                            {value}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                {item.condition_operator !== 'not_empty' &&
+                  conditionFieldValues.length === 0 &&
+                  selectedConditionField && (
+                    <View style={styles.conditionValueContainer}>
+                      <Text style={styles.conditionSelectLabel}>Value</Text>
+                      <TextInput
+                        style={styles.advancedInput}
+                        value={item.condition_value || ''}
+                        onChangeText={(text) => onUpdate({ condition_value: text || null })}
+                        placeholder="Enter value"
+                        placeholderTextColor={colors.text.tertiary}
+                        keyboardType={
+                          selectedConditionField.item_type === 'number' ? 'numeric' : 'default'
+                        }
+                      />
+                    </View>
+                  )}
+
+                {selectedConditionField && selectedConditionOperator && (
+                  <Text style={styles.conditionSummary}>
+                    {item.condition_operator === 'not_empty'
+                      ? `Show when "${selectedConditionField.label}" has a value`
+                      : `Show when "${selectedConditionField.label}" ${selectedConditionOperator.label} "${item.condition_value || '...'}"`}
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+    </View>
+  );
+
+  // Shared modals (used by both mobile and tablet)
+  const renderModals = () => (
+    <>
       {/* Condition Field Modal */}
       <Modal visible={showConditionFieldModal} transparent animationType="fade">
         <TouchableOpacity
@@ -807,7 +702,7 @@ export function ItemEditor({
                   onPress={() => {
                     onUpdate({
                       condition_field_id: field.id,
-                      condition_value: null, // Reset value when field changes
+                      condition_value: null,
                     });
                     setShowConditionFieldModal(false);
                   }}
@@ -846,8 +741,7 @@ export function ItemEditor({
                 onPress={() => {
                   onUpdate({
                     condition_operator: operator.value,
-                    condition_value:
-                      operator.value === 'not_empty' ? null : item.condition_value,
+                    condition_value: operator.value === 'not_empty' ? null : item.condition_value,
                   });
                   setShowConditionOperatorModal(false);
                 }}
@@ -1033,6 +927,210 @@ export function ItemEditor({
           </View>
         </View>
       </Modal>
+    </>
+  );
+
+  // ==================== MOBILE LAYOUT ====================
+  if (isMobile) {
+    return (
+      <View style={[styles.containerMobile, isActive && styles.containerActiveMobile]}>
+        {/* Row 1: Drag Handle + Label + Delete */}
+        <View style={styles.rowMobile}>
+          {drag && <DragHandle drag={drag} isActive={isActive || false} />}
+          <TextInput
+            style={styles.labelInputMobile}
+            value={item.label}
+            onChangeText={(text) => onUpdate({ label: text })}
+            placeholder="Item label"
+            placeholderTextColor={colors.text.tertiary}
+          />
+          <TouchableOpacity style={styles.deleteButtonMobile} onPress={onDelete}>
+            <Icon name="x" size={20} color={colors.danger} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Row 2: Type Selector (large) + Required Toggle */}
+        <View style={styles.rowMobile}>
+          <TouchableOpacity
+            style={styles.typeSelectMobile}
+            onPress={() => setShowCategoryPicker(true)}
+          >
+            <FieldTypeMiniPreview type={item.item_type} size={40} />
+            <Text style={styles.typeNameMobile} numberOfLines={1}>
+              {selectedTypeConfig?.label || 'Select Type'}
+            </Text>
+            <Icon name="chevron-down" size={16} color={colors.text.secondary} />
+          </TouchableOpacity>
+
+          <View style={styles.requiredToggleMobile}>
+            <Text style={styles.requiredLabelMobile}>Req</Text>
+            <Switch
+              value={item.is_required}
+              onValueChange={(value) => onUpdate({ is_required: value })}
+              trackColor={{ false: colors.neutral[200], true: colors.primary.light }}
+              thumbColor={item.is_required ? colors.primary.DEFAULT : colors.neutral[300]}
+            />
+          </View>
+        </View>
+
+        {/* Row 3: Photo Rule + Advanced Toggle */}
+        <View style={styles.rowMobileBottom}>
+          {showPhotoRuleOption && (
+            <TouchableOpacity
+              style={styles.photoRuleMobile}
+              onPress={() => setShowPhotoModal(true)}
+            >
+              <Icon name="camera" size={16} color={colors.text.secondary} />
+              <Text style={styles.photoRuleTextMobile}>
+                Photo: {selectedPhotoRule?.label || 'Never'}
+              </Text>
+              <Icon name="chevron-down" size={14} color={colors.text.tertiary} />
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            style={styles.advancedToggleMobile}
+            onPress={() => setShowAdvanced(!showAdvanced)}
+          >
+            <Text style={styles.advancedTextMobile}>Advanced</Text>
+            <Icon
+              name={showAdvanced ? 'chevron-up' : 'chevron-down'}
+              size={14}
+              color={colors.text.secondary}
+            />
+            {advancedOptionsCount > 0 && (
+              <View style={styles.advancedBadgeMobile}>
+                <Text style={styles.advancedBadgeTextMobile}>{advancedOptionsCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Type-specific config rows */}
+        {renderTypeConfigRows()}
+
+        {/* Advanced panel */}
+        {showAdvanced && renderAdvancedPanel()}
+
+        {/* All modals */}
+        {renderModals()}
+      </View>
+    );
+  }
+
+  // ==================== TABLET LAYOUT (original) ====================
+  return (
+    <View style={[styles.container, isActive && styles.containerActive]}>
+      <View style={styles.row}>
+        {/* Drag Handle */}
+        {drag && <DragHandle drag={drag} isActive={isActive || false} />}
+
+        {/* Item Label */}
+        <TextInput
+          style={styles.labelInput}
+          value={item.label}
+          onChangeText={(text) => onUpdate({ label: text })}
+          placeholder="Item label (e.g., Fire exits clear)"
+          placeholderTextColor={colors.text.tertiary}
+        />
+
+        {/* Move/Delete Actions */}
+        <View style={styles.actions}>
+          {onMoveUp && (
+            <TouchableOpacity style={styles.actionButton} onPress={onMoveUp}>
+              <Icon name="chevron-up" size={20} color={colors.text.secondary} />
+            </TouchableOpacity>
+          )}
+          {onMoveDown && (
+            <TouchableOpacity style={styles.actionButton} onPress={onMoveDown}>
+              <Icon name="chevron-down" size={20} color={colors.text.secondary} />
+            </TouchableOpacity>
+          )}
+          {onDuplicate && (
+            <TouchableOpacity style={styles.actionButton} onPress={onDuplicate}>
+              <Icon name="copy" size={18} color={colors.text.secondary} />
+            </TouchableOpacity>
+          )}
+          {onMoveToSection && allSections.filter(s => s.id !== currentSectionId).length > 0 && (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => setShowMoveToSectionModal(true)}
+            >
+              <Icon name="folder" size={18} color={colors.text.secondary} />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.actionButton} onPress={onDelete}>
+            <Icon name="x" size={20} color={colors.danger} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.row}>
+        {/* Field Type with Mini Preview */}
+        <TouchableOpacity
+          style={styles.typeSelectButton}
+          onPress={() => setShowCategoryPicker(true)}
+        >
+          <View style={styles.miniPreviewInButton}>
+            <FieldTypeMiniPreview type={item.item_type} size={32} />
+          </View>
+          <View style={styles.typeSelectInfo}>
+            <Text style={styles.selectLabel} numberOfLines={1}>Type</Text>
+            <Text style={styles.selectValue} numberOfLines={1}>{selectedTypeConfig?.label || 'Select'}</Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Photo Rule */}
+        {showPhotoRuleOption && (
+          <TouchableOpacity
+            style={styles.selectButton}
+            onPress={() => setShowPhotoModal(true)}
+          >
+            <Text style={styles.selectLabel} numberOfLines={1}>Photo</Text>
+            <Text style={styles.selectValue} numberOfLines={1}>{selectedPhotoRule?.label || 'Never'}</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Required Toggle */}
+        <View style={styles.toggleContainer}>
+          <Text style={styles.toggleLabel} numberOfLines={1}>Required</Text>
+          <Switch
+            value={item.is_required}
+            onValueChange={(value) => onUpdate({ is_required: value })}
+            trackColor={{ false: colors.neutral[200], true: colors.primary.light }}
+            thumbColor={item.is_required ? colors.primary.DEFAULT : colors.neutral[300]}
+          />
+        </View>
+      </View>
+
+      {/* Type-specific config rows */}
+      {renderTypeConfigRows()}
+
+      {/* Advanced options toggle */}
+      <TouchableOpacity
+        style={styles.advancedToggle}
+        onPress={() => setShowAdvanced(!showAdvanced)}
+      >
+        <Icon
+          name={showAdvanced ? 'chevron-down' : 'chevron-right'}
+          size={14}
+          color={colors.text.secondary}
+        />
+        <Text style={styles.advancedToggleText}>
+          Advanced Options
+        </Text>
+        {advancedOptionsCount > 0 && (
+          <View style={styles.advancedBadge}>
+            <Text style={styles.advancedBadgeText}>{advancedOptionsCount}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+
+      {/* Advanced panel */}
+      {showAdvanced && renderAdvancedPanel()}
+
+      {/* All modals */}
+      {renderModals()}
     </View>
   );
 }
@@ -1091,6 +1189,7 @@ const styles = StyleSheet.create({
     minHeight: 48, // Minimum touch target
     justifyContent: 'center',
     marginRight: spacing.xs,
+    overflow: 'hidden',
   },
   typeSelectButton: {
     flex: 1,
@@ -1104,12 +1203,14 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     minHeight: 48, // Minimum touch target
     marginRight: spacing.xs,
+    overflow: 'hidden',
   },
   miniPreviewInButton: {
     marginRight: spacing.sm,
   },
   typeSelectInfo: {
     flex: 1,
+    overflow: 'hidden',
   },
   selectLabel: {
     fontSize: fontSize.caption,
@@ -1127,9 +1228,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border.DEFAULT,
     borderRadius: borderRadius.sm,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
     minHeight: 48, // Minimum touch target
+    flexShrink: 0, // Don't shrink below content size
   },
   toggleLabel: {
     fontSize: fontSize.caption,
@@ -1265,6 +1367,7 @@ const styles = StyleSheet.create({
   typeConfigRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     marginTop: spacing.xs,
     paddingVertical: spacing.xs,
   },
@@ -1277,6 +1380,7 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   typeConfigOptions: {
+    flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
@@ -1515,6 +1619,127 @@ const styles = StyleSheet.create({
   moveSectionCancelText: {
     fontSize: fontSize.body,
     color: colors.text.secondary,
+    fontWeight: fontWeight.medium,
+  },
+  // ==================== MOBILE STYLES ====================
+  containerMobile: {
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+    ...shadows.card,
+  },
+  containerActiveMobile: {
+    borderWidth: 2,
+    borderColor: colors.primary.DEFAULT,
+    shadowColor: colors.primary.DEFAULT,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  rowMobile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  rowMobileBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  labelInputMobile: {
+    flex: 1,
+    backgroundColor: colors.neutral[50],
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: 48,
+    fontSize: fontSize.body,
+    color: colors.text.primary,
+    marginHorizontal: spacing.sm,
+  },
+  deleteButtonMobile: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.danger + '10',
+    borderRadius: borderRadius.md,
+  },
+  typeSelectMobile: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.neutral[50],
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    minHeight: 52,
+    gap: spacing.sm,
+  },
+  typeNameMobile: {
+    flex: 1,
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.text.primary,
+  },
+  requiredToggleMobile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.neutral[50],
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+    minHeight: 52,
+  },
+  requiredLabelMobile: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+    marginRight: spacing.xs,
+  },
+  photoRuleMobile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.neutral[50],
+    borderRadius: borderRadius.sm,
+  },
+  photoRuleTextMobile: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+  },
+  advancedToggleMobile: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  advancedTextMobile: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+  },
+  advancedBadgeMobile: {
+    backgroundColor: colors.primary.light,
+    borderRadius: 10,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+  },
+  advancedBadgeTextMobile: {
+    fontSize: 10,
+    color: colors.primary.DEFAULT,
     fontWeight: fontWeight.medium,
   },
 });

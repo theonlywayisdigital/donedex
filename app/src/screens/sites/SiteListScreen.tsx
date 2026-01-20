@@ -12,6 +12,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SitesStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
+import { Icon } from '../../components/ui';
 import { fetchRecords, archiveRecord } from '../../services/records';
 import type { Record as RecordModel } from '../../types';
 
@@ -53,6 +54,10 @@ export function SiteListScreen() {
     navigation.navigate('SiteEditor', {});
   };
 
+  const handleViewRecord = (recordId: string) => {
+    navigation.navigate('RecordDetail', { recordId });
+  };
+
   const handleEditRecord = (recordId: string) => {
     navigation.navigate('SiteEditor', { siteId: recordId });
   };
@@ -76,28 +81,41 @@ export function SiteListScreen() {
   };
 
   const renderRecord = ({ item }: { item: RecordWithCount }) => (
-    <TouchableOpacity
-      style={styles.recordCard}
-      onPress={() => handleEditRecord(item.id)}
-      onLongPress={() => handleDeleteRecord(item)}
-    >
-      <View style={styles.recordInfo}>
-        <Text style={styles.recordName}>{item.name}</Text>
-        {item.address && (
-          <Text style={styles.recordAddress} numberOfLines={1}>
-            {item.address}
-          </Text>
-        )}
-      </View>
-      <View style={styles.recordActions}>
+    <View style={styles.recordCard}>
+      <TouchableOpacity
+        style={styles.recordContent}
+        onPress={() => handleViewRecord(item.id)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.recordInfo}>
+          <Text style={styles.recordName}>{item.name}</Text>
+          {item.address && (
+            <Text style={styles.recordAddress} numberOfLines={1}>
+              {item.address}
+            </Text>
+          )}
+        </View>
+        <Icon name="chevron-right" size={20} color={colors.text.tertiary} />
+      </TouchableOpacity>
+      <View style={styles.cardActions}>
         <TouchableOpacity
-          style={styles.assignButton}
-          onPress={() => navigation.navigate('SiteAssignTemplates', { siteId: item.id })}
+          style={styles.actionButton}
+          onPress={() => handleEditRecord(item.id)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={styles.assignButtonText}>Templates</Text>
+          <Icon name="edit" size={16} color={colors.primary.DEFAULT} />
+          <Text style={styles.actionButtonText}>Edit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.deleteButton]}
+          onPress={() => handleDeleteRecord(item)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Icon name="trash-2" size={16} color={colors.danger} />
+          <Text style={styles.deleteButtonText}>Delete</Text>
         </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 
   const renderEmpty = () => (
@@ -167,9 +185,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border.DEFAULT,
+    ...shadows.card,
+  },
+  recordContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    ...shadows.card,
   },
   recordInfo: {
     flex: 1,
@@ -184,19 +204,36 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginTop: spacing.xs,
   },
-  recordActions: {
-    marginLeft: spacing.md,
+  cardActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.light,
+    gap: spacing.sm,
   },
-  assignButton: {
-    backgroundColor: colors.primary.light,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.neutral[50],
+    gap: spacing.xs,
   },
-  assignButtonText: {
+  actionButtonText: {
     fontSize: fontSize.caption,
     fontWeight: fontWeight.medium,
     color: colors.primary.DEFAULT,
+  },
+  deleteButton: {
+    backgroundColor: colors.danger + '10',
+  },
+  deleteButtonText: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.medium,
+    color: colors.danger,
   },
   emptyContainer: {
     flex: 1,

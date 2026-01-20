@@ -35,12 +35,13 @@ export interface RecordsWithRecordTypeResult {
  * Fetch all records the current user has access to
  * - Admins/owners see all organisation records
  * - Regular users see only records assigned to them
+ * - Filters out archived records AND records whose record type is archived
  */
 export async function fetchRecords(): Promise<RecordsResult> {
   try {
     const { data, error } = await supabase
       .from('records')
-      .select('*')
+      .select('*, record_type:record_types(id, archived)')
       .eq('archived', false)
       .order('name', { ascending: true });
 
@@ -48,7 +49,23 @@ export async function fetchRecords(): Promise<RecordsResult> {
       return { data: [], error: { message: error.message } };
     }
 
-    return { data: (data as RecordModel[]) || [], error: null };
+    // Filter out records whose record type is archived or missing
+    // Then strip out the record_type join data
+    const records = (data || [])
+      .filter((r: any) => {
+        // Exclude if record_type is null, undefined, empty, or archived
+        if (!r.record_type) return false;
+        if (typeof r.record_type !== 'object') return false;
+        if (!r.record_type.id) return false; // Empty object check
+        if (r.record_type.archived === true) return false;
+        return true;
+      })
+      .map((r: any) => {
+        const { record_type, ...record } = r;
+        return record as RecordModel;
+      });
+
+    return { data: records, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch records';
     return { data: [], error: { message } };
@@ -219,15 +236,11 @@ export async function deleteRecord(recordId: string): Promise<{ error: { message
 }
 
 /**
- * Fetch templates available for a record
- * Templates are now company-wide - returns ALL published templates for the organisation
+ * Fetch all published templates for the organisation
+ * Templates are organisation-wide (not associated to specific records)
  */
-export async function fetchRecordTemplates(
-  _recordId: string
-): Promise<{ data: Template[]; error: { message: string } | null }> {
+export async function fetchPublishedTemplates(): Promise<{ data: Template[]; error: { message: string } | null }> {
   try {
-    // Templates are company-wide, no need to filter by record type
-    // Just fetch all published templates for the organisation
     const { data, error } = await supabase
       .from('templates')
       .select('*')
@@ -243,6 +256,15 @@ export async function fetchRecordTemplates(
     const message = err instanceof Error ? err.message : 'Failed to fetch templates';
     return { data: [], error: { message } };
   }
+}
+
+/**
+ * @deprecated Use fetchPublishedTemplates() instead - templates are organisation-wide, not record-specific
+ */
+export async function fetchRecordTemplates(
+  _recordId: string
+): Promise<{ data: Template[]; error: { message: string } | null }> {
+  return fetchPublishedTemplates();
 }
 
 // ============================================
@@ -606,6 +628,197 @@ export async function fetchRecordReportsPaginated(
     return result;
   } catch {
     return emptyPaginatedResult();
+  }
+}
+
+// ============================================
+// Filtered Reports for Record Detail Page
+// ============================================
+
+/**
+ * Filter options for fetching reports
+ */
+export interface ReportFilters {
+  templateId?: string | null;
+  status?: 'all' | 'submitted' | 'draft';
+  dateFrom?: string | null; // ISO date string
+  dateTo?: string | null; // ISO date string
+  userId?: string | null;
+  search?: string;
+}
+
+/**
+ * Extended report summary with template_id for filtering
+ */
+export interface ReportSummaryExtended extends ReportSummary {
+  template_id: string;
+  user_id: string | null;
+}
+
+/**
+ * Fetch filtered and paginated reports for a record
+ * Supports filtering by template, status, date range, user, and search
+ */
+export async function fetchRecordReportsFiltered(
+  recordId: string,
+  filters: ReportFilters = {},
+  pagination: PaginationParams = {}
+): Promise<PaginatedResult<ReportSummaryExtended>> {
+  try {
+    const { templateId, status, dateFrom, dateTo, userId, search } = filters;
+    const { cursor } = pagination;
+    const limit = getValidPageSize(pagination.limit);
+    const fetchLimit = limit + 1;
+
+    let query = supabase
+      .from('reports')
+      .select(
+        `
+        id,
+        status,
+        started_at,
+        submitted_at,
+        created_at,
+        template_id,
+        user_id,
+        template:templates (name),
+        user_profile:user_profiles (full_name)
+      `,
+        { count: 'exact' }
+      )
+      .eq('record_id', recordId);
+
+    // Apply template filter
+    if (templateId) {
+      query = query.eq('template_id', templateId);
+    }
+
+    // Apply status filter
+    if (status && status !== 'all') {
+      query = query.eq('status', status);
+    }
+
+    // Apply date range filters
+    if (dateFrom) {
+      query = query.gte('created_at', dateFrom);
+    }
+    if (dateTo) {
+      // Add one day to include the entire end date
+      const endDate = new Date(dateTo);
+      endDate.setDate(endDate.getDate() + 1);
+      query = query.lt('created_at', endDate.toISOString());
+    }
+
+    // Apply user filter
+    if (userId) {
+      query = query.eq('user_id', userId);
+    }
+
+    // Apply search filter (searches template name via a subquery approach)
+    // Note: For search, we fetch and filter client-side since Supabase doesn't support
+    // searching across joined tables efficiently
+
+    // Apply cursor pagination
+    if (cursor) {
+      const cursorData = decodeCursor(cursor);
+      if (cursorData) {
+        query = query.lt('created_at', cursorData.timestamp);
+      }
+    }
+
+    query = query.order('created_at', { ascending: false }).limit(fetchLimit);
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      return emptyPaginatedResult();
+    }
+
+    // Transform to summary format
+    let reports: (ReportSummaryExtended & { created_at: string; id: string })[] = (
+      (data as unknown[]) || []
+    ).map((report: unknown) => {
+      const r = report as {
+        id: string;
+        status: 'draft' | 'submitted';
+        started_at: string;
+        submitted_at: string | null;
+        created_at: string;
+        template_id: string;
+        user_id: string | null;
+        template: { name: string } | null;
+        user_profile: { full_name: string } | null;
+      };
+      return {
+        id: r.id,
+        status: r.status,
+        started_at: r.started_at,
+        submitted_at: r.submitted_at,
+        created_at: r.created_at,
+        template_id: r.template_id,
+        user_id: r.user_id,
+        template_name: r.template?.name || 'Unknown Template',
+        user_name: r.user_profile?.full_name || null,
+      };
+    });
+
+    // Apply client-side search filter if provided
+    if (search && search.trim().length > 0) {
+      const searchLower = search.toLowerCase().trim();
+      reports = reports.filter(
+        (r) =>
+          r.template_name.toLowerCase().includes(searchLower) ||
+          (r.user_name && r.user_name.toLowerCase().includes(searchLower))
+      );
+    }
+
+    const result = processPaginatedResults(reports, limit, cursor);
+
+    if (count !== null) {
+      // Adjust total count if we're doing client-side search filtering
+      result.pageInfo.totalCount = search ? reports.length : count;
+    }
+
+    return result;
+  } catch {
+    return emptyPaginatedResult();
+  }
+}
+
+// ============================================
+// Quick Record Creation (for inline creation in report flow)
+// ============================================
+
+/**
+ * Create a new record with minimal info (for quick inline creation)
+ * Only requires name, record_type_id, and organisation_id
+ */
+export async function createRecordQuick(
+  organisationId: string,
+  recordTypeId: string,
+  name: string,
+  address?: string
+): Promise<RecordResult> {
+  try {
+    const { data, error } = await supabase
+      .from('records')
+      .insert({
+        organisation_id: organisationId,
+        record_type_id: recordTypeId,
+        name: name.trim(),
+        address: address?.trim() || null,
+      } as never)
+      .select()
+      .single();
+
+    if (error) {
+      return { data: null, error: { message: error.message } };
+    }
+
+    return { data: data as RecordModel, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to create record';
+    return { data: null, error: { message } };
   }
 }
 

@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
 } from 'react-native';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
 import { ItemEditor } from './ItemEditor';
@@ -91,20 +92,27 @@ export function SectionEditor({
   drag,
   isActive,
 }: SectionEditorProps) {
+  const { width: windowWidth } = useWindowDimensions();
+  const isMobile = windowWidth < 768;
+
   return (
-    <View style={[styles.container, isActive && styles.containerActive]}>
+    <View style={[
+      styles.container,
+      isMobile && styles.containerMobile,
+      isActive && styles.containerActive,
+    ]}>
       {/* Section Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, isMobile && styles.headerMobile]}>
         {drag && <DragHandle drag={drag} isActive={isActive || false} />}
         <TouchableOpacity style={styles.headerMain} onPress={onToggleExpand}>
           <View style={styles.headerLeft}>
             <Icon
               name={isExpanded ? 'chevron-down' : 'chevron-right'}
-              size={16}
-              color={colors.text.secondary}
+              size={isMobile ? 18 : 16}
+              color={isMobile ? colors.primary.DEFAULT : colors.text.secondary}
             />
             <TextInput
-              style={styles.sectionNameInput}
+              style={[styles.sectionNameInput, isMobile && styles.sectionNameInputMobile]}
               value={section.name}
               onChangeText={(text) => onUpdateSection({ name: text })}
               placeholder="Section name"
@@ -113,9 +121,17 @@ export function SectionEditor({
             />
           </View>
           <View style={styles.headerActions}>
-            <Text style={styles.itemCount}>
-              {section.items.length} {section.items.length === 1 ? 'item' : 'items'}
-            </Text>
+            {isMobile ? (
+              <View style={styles.itemCountBadgeMobile}>
+                <Text style={styles.itemCountBadgeTextMobile}>
+                  {section.items.length}
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.itemCount}>
+                {section.items.length} {section.items.length === 1 ? 'item' : 'items'}
+              </Text>
+            )}
           </View>
         </TouchableOpacity>
 
@@ -290,5 +306,35 @@ const styles = StyleSheet.create({
     fontSize: fontSize.body,
     fontWeight: fontWeight.medium,
     color: colors.primary.DEFAULT,
+  },
+  // ==================== MOBILE STYLES ====================
+  containerMobile: {
+    marginBottom: spacing.lg,
+    ...shadows.card,
+  },
+  headerMobile: {
+    backgroundColor: colors.primary.light,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.primary.DEFAULT,
+    minHeight: 60,
+  },
+  sectionNameInputMobile: {
+    fontSize: fontSize.sectionTitle,
+    fontWeight: fontWeight.semibold,
+    color: colors.primary.DEFAULT,
+    marginLeft: spacing.sm,
+  },
+  itemCountBadgeMobile: {
+    backgroundColor: colors.primary.DEFAULT,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: borderRadius.full,
+    minWidth: 28,
+    alignItems: 'center',
+  },
+  itemCountBadgeTextMobile: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.semibold,
+    color: colors.white,
   },
 });

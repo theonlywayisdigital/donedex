@@ -76,6 +76,8 @@ interface RecordsState {
   currentRecord: RecordModel | null;
   currentRecordType: RecordType | null;
   recordTemplates: Template[];
+  /** Alias for recordTemplates - organisation-wide published templates */
+  publishedTemplates: Template[];
   isLoading: boolean;
   error: string | null;
 
@@ -97,6 +99,8 @@ interface RecordsState {
   fetchRecordsByType: (recordTypeId: string) => Promise<void>;
   fetchRecordById: (recordId: string) => Promise<RecordModel | null>;
   fetchRecordTemplates: (recordId: string) => Promise<void>;
+  /** Fetch all published templates (organisation-wide, not record-specific) */
+  fetchPublishedTemplates: () => Promise<void>;
   createRecord: (record: Omit<RecordModel, 'id' | 'created_at' | 'updated_at' | 'archived'>) => Promise<{ error: string | null; data: RecordModel | null }>;
   updateRecord: (recordId: string, updates: Partial<RecordModel>) => Promise<{ error: string | null }>;
   archiveRecord: (recordId: string) => Promise<{ error: string | null }>;
@@ -152,6 +156,7 @@ export const useRecordsStore = create<RecordsState>((set, get) => ({
   currentRecord: null,
   currentRecordType: null,
   recordTemplates: [],
+  publishedTemplates: [],
   isLoading: false,
   error: null,
 
@@ -290,14 +295,24 @@ export const useRecordsStore = create<RecordsState>((set, get) => ({
   },
 
   fetchRecordTemplates: async (recordId: string) => {
+    // Deprecated: templates are not record-specific, this just fetches all published templates
+    return get().fetchPublishedTemplates();
+  },
+
+  fetchPublishedTemplates: async () => {
     set({ isLoading: true, error: null });
 
-    const result = await recordsService.fetchRecordTemplates(recordId);
+    const result = await recordsService.fetchPublishedTemplates();
 
     if (result.error) {
       set({ isLoading: false, error: result.error.message });
     } else {
-      set({ recordTemplates: result.data, siteTemplates: result.data, isLoading: false });
+      set({
+        recordTemplates: result.data,
+        publishedTemplates: result.data,
+        siteTemplates: result.data,
+        isLoading: false,
+      });
     }
   },
 
@@ -551,10 +566,11 @@ export const useRecordsStore = create<RecordsState>((set, get) => ({
     });
 
     // Fetch record, reports, and templates in parallel
+    // Note: templates are organisation-wide, not record-specific
     const [recordResult, reportsResult, templatesResult] = await Promise.all([
       recordsService.fetchRecordWithType(recordId),
       recordsService.fetchRecordReportsSummary(recordId),
-      recordsService.fetchRecordTemplates(recordId),
+      recordsService.fetchPublishedTemplates(),
     ]);
 
     set((state) => {

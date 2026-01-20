@@ -5,3 +5,5 @@ export { RecordTypeSelectScreen } from './RecordTypeSelectScreen';
 export { RecordSearchScreen } from './RecordSearchScreen';
 export { QuickCreateRecordScreen } from './QuickCreateRecordScreen';
 export { RecordDetailScreen } from './RecordDetailScreen';
+export { TemplatePickerScreen } from './TemplatePickerScreen';
+export { RecordForTemplateScreen } from './RecordForTemplateScreen';

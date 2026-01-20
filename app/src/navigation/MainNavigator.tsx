@@ -13,13 +13,15 @@ import {
   RecordSearchScreen,
   QuickCreateRecordScreen,
   RecordDetailScreen,
+  TemplatePickerScreen,
+  RecordForTemplateScreen,
 } from '../screens/home';
 import {
   InspectionScreen,
   InspectionReviewScreen,
   InspectionCompleteScreen,
 } from '../screens/inspection';
-import { TemplateListScreen, TemplateEditorScreen, NewTemplateScreen, AITemplateBuilderScreen } from '../screens/templates';
+import { TemplateListScreen, TemplateDetailScreen, TemplateEditorScreen, NewTemplateScreen, AITemplateBuilderScreen } from '../screens/templates';
 import {
   SiteListScreen as AdminSiteListScreen,
   SiteEditorScreen,
@@ -56,16 +58,19 @@ export type HomeStackParamList = {
   Dashboard: undefined;
   // Legacy route - kept for backwards compatibility
   SiteList: undefined;
-  // NEW: Start inspection flow
+  // Record-first flow
   RecordTypeSelect: undefined;
   RecordSearch: { recordTypeId: string; mode?: 'select' | 'view' };
   QuickCreateRecord: { recordTypeId: string };
+  // Template-first flow (NEW)
+  TemplatePicker: undefined;
+  RecordForTemplate: { templateId: string; templateName: string; recordTypeId?: string };
   // Existing inspection flow
   TemplateSelect: { siteId: string };
   Inspection: { reportId: string };
   InspectionReview: { reportId: string };
   InspectionComplete: { reportId: string };
-  // NEW: Record detail (for browse mode)
+  // Record detail (for browse mode)
   RecordDetail: { recordId: string };
 };
 
@@ -105,6 +110,17 @@ function HomeNavigator() {
         name="TemplateSelect"
         component={TemplateSelectScreen}
         options={{ title: 'Select Template' }}
+      />
+      {/* Template-first flow (NEW) */}
+      <HomeStack.Screen
+        name="TemplatePicker"
+        component={TemplatePickerScreen}
+        options={{ title: 'Choose Template' }}
+      />
+      <HomeStack.Screen
+        name="RecordForTemplate"
+        component={RecordForTemplateScreen}
+        options={{ title: 'Select Record' }}
       />
       <HomeStack.Screen
         name="Inspection"
@@ -158,6 +174,7 @@ function ReportsNavigator() {
 // Templates Stack (Admin only)
 export type TemplatesStackParamList = {
   TemplateList: undefined;
+  TemplateDetail: { templateId: string };
   NewTemplate: undefined;
   TemplateEditor: { templateId?: string; initialData?: {
     name: string;
@@ -190,6 +207,11 @@ function TemplatesNavigator() {
         options={{ title: 'Templates' }}
       />
       <TemplatesStack.Screen
+        name="TemplateDetail"
+        component={TemplateDetailScreen}
+        options={{ title: 'Template' }}
+      />
+      <TemplatesStack.Screen
         name="NewTemplate"
         component={NewTemplateScreen}
         options={{ title: 'New Template' }}
@@ -219,6 +241,7 @@ export type SitesStackParamList = {
   SiteAssignTemplates: { siteId: string };
   AddRecordType: undefined;
   RecordTypeEditor: { recordTypeId: string };
+  RecordDetail: { recordId: string };
 };
 
 const SitesStack = createNativeStackNavigator<SitesStackParamList>();
@@ -262,6 +285,11 @@ function SitesNavigator() {
         name="RecordTypeEditor"
         component={RecordTypeEditorScreen}
         options={{ title: 'Edit Record Type' }}
+      />
+      <SitesStack.Screen
+        name="RecordDetail"
+        component={RecordDetailScreen}
+        options={{ title: 'Record' }}
       />
     </SitesStack.Navigator>
   );
