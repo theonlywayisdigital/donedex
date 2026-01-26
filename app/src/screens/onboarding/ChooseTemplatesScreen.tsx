@@ -28,44 +28,15 @@ interface Props {
   navigation: ChooseTemplatesScreenNavigationProp;
 }
 
-// Starter templates - would typically come from API
-const STARTER_TEMPLATES = [
-  {
-    id: 'residential-inventory',
-    name: 'Residential Inventory',
-    description: 'Complete property inventory for residential lettings',
-    sections: 12,
-    icon: '🏠',
-  },
-  {
-    id: 'commercial-inspection',
-    name: 'Commercial Inspection',
-    description: 'Commercial property inspection checklist',
-    sections: 15,
-    icon: '🏢',
-  },
-  {
-    id: 'check-in-out',
-    name: 'Check In/Out',
-    description: 'Quick check-in and check-out inspection',
-    sections: 8,
-    icon: '📋',
-  },
-  {
-    id: 'mid-term-inspection',
-    name: 'Mid-Term Inspection',
-    description: 'Periodic inspection during tenancy',
-    sections: 10,
-    icon: '🔍',
-  },
-  {
-    id: 'fire-safety',
-    name: 'Fire Safety Check',
-    description: 'Fire safety and compliance inspection',
-    sections: 6,
-    icon: '🔥',
-  },
-];
+// Starter templates - currently empty, will be re-added once field types are finalized
+// TODO: Re-populate with proper starter templates from library_templates table
+const STARTER_TEMPLATES: Array<{
+  id: string;
+  name: string;
+  description: string;
+  sections: number;
+  icon: string;
+}> = [];
 
 export function ChooseTemplatesScreen({ navigation }: Props) {
   const {

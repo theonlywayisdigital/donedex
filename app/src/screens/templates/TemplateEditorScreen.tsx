@@ -13,6 +13,7 @@ import {
   NestableScrollContainer,
   NestableDraggableList,
   DragHandle,
+  Icon,
 } from '../../components/ui';
 import { showNotification, showConfirm, showDestructiveConfirm } from '../../utils/alert';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
@@ -40,6 +41,7 @@ import {
   UnitType,
   InstructionStyle,
   SubItem,
+  DisplayStyle,
 } from '../../services/templates';
 import { useAuthStore } from '../../store/authStore';
 import { SectionEditor } from '../../components/templates/SectionEditor';
@@ -98,6 +100,9 @@ interface LocalItem {
   instruction_image_url?: string | null;
   instruction_style?: InstructionStyle | null;
   asset_types?: string[] | null;
+  // Coloured selection and display fields
+  coloured_options?: { label: string; color: string }[] | null;
+  display_style?: DisplayStyle | null;
 }
 
 export function TemplateEditorScreen() {
@@ -371,6 +376,8 @@ export function TemplateEditorScreen() {
               instruction_image_url: item.instruction_image_url ?? null,
               instruction_style: item.instruction_style ?? null,
               asset_types: item.asset_types ?? null,
+              coloured_options: item.coloured_options ?? null,
+              display_style: item.display_style ?? null,
             });
             if (error) throw new Error(error.message);
             if (data?.id) {
@@ -489,7 +496,7 @@ export function TemplateEditorScreen() {
           }}
           style={styles.headerBackButton}
         >
-          <Text style={styles.headerBackText}>← Back</Text>
+          <Icon name="arrow-left" size={20} color={colors.primary.DEFAULT} />
         </TouchableOpacity>
       ),
       headerRight: () => (
@@ -638,6 +645,8 @@ export function TemplateEditorScreen() {
             instruction_image_url: item.instruction_image_url ?? null,
             instruction_style: item.instruction_style ?? null,
             asset_types: item.asset_types ?? null,
+            coloured_options: item.coloured_options ?? null,
+            display_style: item.display_style ?? null,
           };
 
           if (item.isNew) {
@@ -1215,11 +1224,6 @@ const styles = StyleSheet.create({
   headerBackButton: {
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
-  },
-  headerBackText: {
-    fontSize: fontSize.body,
-    color: colors.primary.DEFAULT,
-    fontWeight: fontWeight.medium,
   },
   headerToggleButton: {
     paddingHorizontal: spacing.md,

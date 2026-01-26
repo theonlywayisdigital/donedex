@@ -13,16 +13,19 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { TemplatesStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
-import { Icon, IconName, ProBadge, UpgradeModal } from '../../components/ui';
-import { Sparkles } from 'lucide-react-native';
+import { Icon, IconName, ProBadge, UpgradeModal, Card } from '../../components/ui';
+import { ResponseInput } from '../../components/inspection';
+import { Sparkles, FileText } from 'lucide-react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useBillingStore } from '../../store/billingStore';
 import {
   fetchLibraryRecordTypesWithTemplates,
   copyLibraryTemplateToOrg,
   LibraryTemplateSection,
+  LibraryTemplateItem,
 } from '../../services/library';
 import type { LibraryRecordType, LibraryTemplate } from '../../types';
+import type { ItemType } from '../../services/templates';
 
 type NavigationProp = NativeStackNavigationProp<TemplatesStackParamList, 'NewTemplate'>;
 
@@ -69,6 +72,8 @@ export function NewTemplateScreen() {
   // Preview modal
   const [previewTemplate, setPreviewTemplate] = useState<LibraryTemplate | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [previewSectionIndex, setPreviewSectionIndex] = useState(0);
+  const [previewResponses, setPreviewResponses] = useState<Map<string, string | null>>(new Map());
 
   // Upgrade modal state
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -115,9 +120,21 @@ export function NewTemplateScreen() {
     }
   };
 
+  const handleImportFromDocument = () => {
+    if (aiTemplatesAllowed) {
+      navigation.navigate('DocumentImport' as any);
+    } else {
+      setUpgradeFeature('Document Import');
+      setUpgradeDescription('Upload a photo of your existing form and let Dexter convert it to a digital template. This feature is available on the Pro plan.');
+      setShowUpgradeModal(true);
+    }
+  };
+
   const handleSelectTemplate = (template: LibraryTemplate) => {
     if (starterTemplatesAllowed) {
       setPreviewTemplate(template);
+      setPreviewSectionIndex(0); // Reset to first section
+      setPreviewResponses(new Map()); // Reset responses
       setShowPreview(true);
     } else {
       setUpgradeFeature('Starter Templates');
@@ -179,6 +196,22 @@ export function NewTemplateScreen() {
     const recordType = libraryData.find((t) => t.id === previewTemplate.record_type_id);
     const totalItems = sections.reduce((sum, s) => sum + s.items.length, 0);
 
+    const currentSection = sections[previewSectionIndex];
+    const isFirstSection = previewSectionIndex === 0;
+    const isLastSection = previewSectionIndex === sections.length - 1;
+
+    const handlePreviousSection = () => {
+      if (!isFirstSection) {
+        setPreviewSectionIndex((prev) => prev - 1);
+      }
+    };
+
+    const handleNextSection = () => {
+      if (!isLastSection) {
+        setPreviewSectionIndex((prev) => prev + 1);
+      }
+    };
+
     return (
       <Modal visible={showPreview} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.previewContainer}>
@@ -199,50 +232,154 @@ export function NewTemplateScreen() {
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.previewContent}>
-            {/* Template info */}
-            <View style={styles.previewInfo}>
-              <Text style={styles.previewTemplateName}>{previewTemplate.name}</Text>
-              {previewTemplate.description && (
-                <Text style={styles.previewDescription}>{previewTemplate.description}</Text>
+          {/* Template info */}
+          <View style={styles.previewInfo}>
+            <Text style={styles.previewTemplateName}>{previewTemplate.name}</Text>
+            {previewTemplate.description && (
+              <Text style={styles.previewDescription}>{previewTemplate.description}</Text>
+            )}
+            <View style={styles.previewMeta}>
+              {recordType && (
+                <View style={[styles.previewBadge, { backgroundColor: recordType.color + '20' }]}>
+                  <Icon name={getIconName(recordType.icon)} size={14} color={recordType.color} />
+                  <Text style={[styles.previewBadgeText, { color: recordType.color }]}>
+                    {recordType.name}
+                  </Text>
+                </View>
               )}
-              <View style={styles.previewMeta}>
-                {recordType && (
-                  <View style={[styles.previewBadge, { backgroundColor: recordType.color + '20' }]}>
-                    <Icon name={getIconName(recordType.icon)} size={14} color={recordType.color} />
-                    <Text style={[styles.previewBadgeText, { color: recordType.color }]}>
-                      {recordType.name}
-                    </Text>
-                  </View>
-                )}
-                <Text style={styles.previewStats}>
-                  {sections.length} sections, {totalItems} items
-                </Text>
-              </View>
+              <Text style={styles.previewStats}>
+                {sections.length} sections, {totalItems} items
+              </Text>
             </View>
+          </View>
 
-            {/* Sections preview */}
-            {sections.map((section, sectionIndex) => (
-              <View key={sectionIndex} style={styles.previewSection}>
-                <Text style={styles.previewSectionTitle}>
-                  {section.name} ({section.items.length})
-                </Text>
-                {section.items.map((item, itemIndex) => (
-                  <View key={itemIndex} style={styles.previewItem}>
-                    <Text style={styles.previewItemLabel}>
-                      {item.label}
-                      {item.is_required && <Text style={styles.required}> *</Text>}
-                    </Text>
-                    <Text style={styles.previewItemType}>{item.item_type.replace(/_/g, ' ')}</Text>
-                  </View>
-                ))}
-              </View>
-            ))}
-
-            <Text style={styles.previewHint}>
-              You can customize this template after adding it
+          {/* Section navigation header */}
+          <View style={styles.sectionNavHeader}>
+            <Text style={styles.sectionNavTitle}>{currentSection?.name}</Text>
+            <Text style={styles.sectionNavCounter}>
+              Section {previewSectionIndex + 1} of {sections.length}
             </Text>
+          </View>
+
+          {/* Progress bar */}
+          <View style={styles.progressBarContainer}>
+            <View style={styles.progressBar}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${((previewSectionIndex + 1) / sections.length) * 100}%` }
+                ]}
+              />
+            </View>
+          </View>
+
+          {/* Current section items */}
+          <ScrollView style={styles.previewContent} contentContainerStyle={styles.previewContentInner}>
+            {currentSection && currentSection.items.map((item, itemIndex) => {
+              // Create a unique key for this item based on section and index
+              const itemKey = `${previewSectionIndex}-${itemIndex}`;
+              const currentValue = previewResponses.get(itemKey) ?? null;
+
+              // Handle response change
+              const handleResponseChange = (value: string | null) => {
+                setPreviewResponses((prev) => {
+                  const newMap = new Map(prev);
+                  newMap.set(itemKey, value);
+                  return newMap;
+                });
+              };
+
+              // Get options as string array for ResponseInput
+              const getOptions = (): string[] | undefined => {
+                if (!item.options) return undefined;
+                return item.options.map((opt) =>
+                  typeof opt === 'string' ? opt : opt.label
+                );
+              };
+
+              // Get checklist items from sub_items
+              const getChecklistItems = (): string[] | undefined => {
+                if (!item.sub_items) return undefined;
+                return item.sub_items.map((si) => si.label);
+              };
+
+              return (
+                <Card key={itemIndex} style={styles.previewItemCard}>
+                  <View style={styles.previewItemHeader}>
+                    <View style={styles.previewItemNumber}>
+                      <Text style={styles.previewItemNumberText}>{itemIndex + 1}</Text>
+                    </View>
+                    <View style={styles.previewItemHeaderContent}>
+                      <Text style={styles.previewItemLabel}>
+                        {item.label}
+                      </Text>
+                      {item.is_required && <Text style={styles.requiredBadge}>Required</Text>}
+                    </View>
+                  </View>
+                  <ResponseInput
+                    itemType={item.item_type as ItemType}
+                    value={currentValue}
+                    onChange={handleResponseChange}
+                    options={getOptions()}
+                    photoRule={item.photo_rule}
+                    helpText={item.help_text}
+                    placeholder={item.placeholder_text}
+                    datetimeMode={item.datetime_mode}
+                    ratingMax={item.rating_max}
+                    declarationText={item.declaration_text}
+                    signatureRequiresName={item.signature_requires_name}
+                    minValue={item.min_value ?? item.counter_min}
+                    maxValue={item.max_value ?? item.counter_max}
+                    stepValue={item.step_value ?? item.counter_step}
+                    unitOptions={item.unit_options}
+                    defaultUnit={item.default_unit}
+                    warningDaysBefore={item.warning_days_before}
+                    instructionText={item.label} // For instruction fields, use label as text
+                    instructionStyle={item.instruction_style}
+                    checklistItems={getChecklistItems()}
+                    isPreview={true}
+                  />
+                </Card>
+              );
+            })}
           </ScrollView>
+
+          {/* Section navigation footer */}
+          <View style={styles.sectionNavFooter}>
+            <TouchableOpacity
+              style={[styles.navButton, isFirstSection && styles.navButtonDisabled]}
+              onPress={handlePreviousSection}
+              disabled={isFirstSection}
+            >
+              <Icon
+                name="chevron-left"
+                size={20}
+                color={isFirstSection ? colors.neutral[300] : colors.text.primary}
+              />
+              <Text style={[styles.navButtonText, isFirstSection && styles.navButtonTextDisabled]}>
+                Previous
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.navButton, styles.navButtonPrimary, isLastSection && styles.navButtonPrimaryLast]}
+              onPress={isLastSection ? handleUseTemplate : handleNextSection}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color={colors.white} />
+              ) : (
+                <>
+                  <Text style={styles.navButtonTextPrimary}>
+                    {isLastSection ? 'Use Template' : 'Next'}
+                  </Text>
+                  {!isLastSection && (
+                    <Icon name="chevron-right" size={20} color={colors.white} />
+                  )}
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
     );
@@ -282,12 +419,33 @@ export function NewTemplateScreen() {
         <View style={styles.blankButtonContent}>
           <View style={styles.titleRow}>
             <Text style={[styles.blankButtonTitle, !aiTemplatesAllowed && styles.textDisabled]}>
-              Create with AI
+              Create with Dexter
             </Text>
             {!aiTemplatesAllowed && <ProBadge size="sm" style={styles.proBadge} />}
           </View>
           <Text style={[styles.blankButtonSubtitle, !aiTemplatesAllowed && styles.subtitleDisabled]}>
-            Describe what you need
+            AI-powered template builder
+          </Text>
+        </View>
+        <Icon name="chevron-right" size={20} color={aiTemplatesAllowed ? colors.text.tertiary : colors.neutral[300]} />
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.aiButton, !aiTemplatesAllowed && styles.buttonDisabled]}
+        onPress={handleImportFromDocument}
+      >
+        <View style={[styles.aiIconContainer, styles.importIconContainer, !aiTemplatesAllowed && styles.aiIconDisabled]}>
+          <FileText size={24} color={aiTemplatesAllowed ? colors.white : colors.neutral[500]} />
+        </View>
+        <View style={styles.blankButtonContent}>
+          <View style={styles.titleRow}>
+            <Text style={[styles.blankButtonTitle, !aiTemplatesAllowed && styles.textDisabled]}>
+              Import from Document
+            </Text>
+            {!aiTemplatesAllowed && <ProBadge size="sm" style={styles.proBadge} />}
+          </View>
+          <Text style={[styles.blankButtonSubtitle, !aiTemplatesAllowed && styles.subtitleDisabled]}>
+            Upload existing form or report
           </Text>
         </View>
         <Icon name="chevron-right" size={20} color={aiTemplatesAllowed ? colors.text.tertiary : colors.neutral[300]} />
@@ -452,7 +610,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.primary.DEFAULT,
     ...shadows.card,
@@ -464,6 +622,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary.DEFAULT,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  importIconContainer: {
+    backgroundColor: colors.primary.dark,
   },
   blankButtonContent: {
     flex: 1,
@@ -511,6 +672,7 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   filterSection: {
+    marginTop: spacing.md,
     marginBottom: spacing.md,
   },
   filterScrollView: {
@@ -636,10 +798,16 @@ const styles = StyleSheet.create({
   },
   previewContent: {
     flex: 1,
+  },
+  previewContentInner: {
     padding: spacing.md,
+    gap: spacing.md,
   },
   previewInfo: {
-    marginBottom: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.DEFAULT,
   },
   previewTemplateName: {
     fontSize: fontSize.sectionTitle,
@@ -677,7 +845,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
-    marginBottom: spacing.sm,
   },
   previewSectionTitle: {
     fontSize: fontSize.body,
@@ -687,16 +854,36 @@ const styles = StyleSheet.create({
   },
   previewItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.xs,
+    alignItems: 'flex-start',
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.DEFAULT,
   },
+  previewItemCard: {
+    marginBottom: 0, // Gap handled by parent
+  },
+  previewItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  previewItemHeaderContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
   previewItemLabel: {
     fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
     color: colors.text.primary,
-    flex: 1,
+  },
+  requiredBadge: {
+    fontSize: fontSize.caption,
+    color: colors.danger,
+    fontWeight: fontWeight.medium,
   },
   required: {
     color: colors.danger,
@@ -711,5 +898,108 @@ const styles = StyleSheet.create({
     color: colors.text.tertiary,
     textAlign: 'center',
     marginTop: spacing.md,
+  },
+  // Section navigation styles
+  sectionNavHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: spacing.md,
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.DEFAULT,
+  },
+  sectionNavTitle: {
+    fontSize: fontSize.bodyLarge,
+    fontWeight: fontWeight.semibold,
+    color: colors.text.primary,
+    flex: 1,
+  },
+  sectionNavCounter: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+  },
+  progressBarContainer: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.DEFAULT,
+  },
+  progressBar: {
+    height: 4,
+    backgroundColor: colors.neutral[200],
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: colors.primary.DEFAULT,
+    borderRadius: 2,
+  },
+  previewSectionItemCount: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+    marginBottom: spacing.sm,
+  },
+  previewItemNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.primary.DEFAULT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  previewItemNumberText: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.semibold,
+    color: colors.white,
+  },
+  previewItemContent: {
+    flex: 1,
+  },
+  sectionNavFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: spacing.md,
+    backgroundColor: colors.white,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.DEFAULT,
+    gap: spacing.md,
+  },
+  navButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.neutral[100],
+    flex: 1,
+    gap: spacing.xs,
+  },
+  navButtonDisabled: {
+    backgroundColor: colors.neutral[50],
+  },
+  navButtonText: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.text.primary,
+  },
+  navButtonTextDisabled: {
+    color: colors.neutral[300],
+  },
+  navButtonPrimary: {
+    backgroundColor: colors.primary.DEFAULT,
+  },
+  navButtonPrimaryLast: {
+    backgroundColor: colors.success,
+  },
+  navButtonTextPrimary: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.white,
   },
 });

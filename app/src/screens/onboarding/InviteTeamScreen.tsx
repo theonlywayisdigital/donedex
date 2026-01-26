@@ -82,12 +82,12 @@ export function InviteTeamScreen({ navigation }: Props) {
     // Save to server
     await saveToServer();
 
-    // Navigate to next step
-    navigation.navigate('ChooseTemplates');
+    // Navigate to complete (skip templates for now - will be re-added later)
+    navigation.navigate('Complete');
   };
 
   const handleSkip = () => {
-    navigation.navigate('ChooseTemplates');
+    navigation.navigate('Complete');
   };
 
   const handleBack = () => {

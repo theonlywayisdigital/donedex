@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
-import { compressImage } from './imageCompression';
+import { compressImageToBase64 } from './imageCompression';
+import { Platform } from 'react-native';
+import { decode as base64Decode } from 'base-64';
 
 // Types matching database schema
 export interface Report {
@@ -328,6 +330,7 @@ export async function fetchAllReports(): Promise<{ data: ReportWithDetails[]; er
 /**
  * Upload a photo for a response
  * Photos are automatically compressed to max 2000px before upload
+ * @deprecated Use uploadMediaFile instead
  */
 export async function uploadResponsePhoto(
   reportId: string,
@@ -335,24 +338,31 @@ export async function uploadResponsePhoto(
   photoUri: string
 ): Promise<{ data: ReportPhoto | null; error: { message: string } | null }> {
   try {
-    // Compress the image before upload (max 2000px, 80% quality)
-    const compressed = await compressImage(photoUri, {
+    // Compress the image and get base64 - works reliably on all platforms
+    const compressed = await compressImageToBase64(photoUri, {
       maxWidth: 2000,
       maxHeight: 2000,
       quality: 0.8,
     });
 
+    if (!compressed.base64) {
+      return { data: null, error: { message: 'Image compression failed' } };
+    }
+
     // Generate unique filename
     const filename = `${reportId}/${responseId}/${Date.now()}.jpg`;
 
-    // Fetch the compressed image as a blob
-    const response = await fetch(compressed.uri);
-    const blob = await response.blob();
+    // Convert base64 to ArrayBuffer for upload
+    const binaryString = base64Decode(compressed.base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
 
     // Upload to Supabase Storage
     const { error: uploadError } = await supabase.storage
       .from('report-photos')
-      .upload(filename, blob, {
+      .upload(filename, bytes, {
         contentType: 'image/jpeg',
       });
 
@@ -404,36 +414,42 @@ export async function uploadSignature(
   base64Data: string
 ): Promise<{ data: string | null; error: { message: string } | null }> {
   try {
+    console.log('[uploadSignature] Starting signature upload');
+    console.log(`[uploadSignature] Base64 data length: ${base64Data?.length || 0}`);
+
     // Generate unique filename
     const filename = `${reportId}/${responseId}/${Date.now()}.png`;
 
-    // Convert base64 to blob
     // Remove data URL prefix if present
     const base64Content = base64Data.replace(/^data:image\/\w+;base64,/, '');
-    const byteCharacters = atob(base64Content);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: 'image/png' });
+    console.log(`[uploadSignature] Cleaned base64 length: ${base64Content.length}`);
 
-    // Upload to Supabase Storage (signatures bucket)
+    // Convert base64 to ArrayBuffer using reliable method for React Native
+    const binaryString = base64Decode(base64Content);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    console.log(`[uploadSignature] ArrayBuffer size: ${bytes.length} bytes`);
+
+    // Upload to Supabase Storage (signatures bucket) using ArrayBuffer
     const { error: uploadError } = await supabase.storage
       .from('report-signatures')
-      .upload(filename, blob, {
+      .upload(filename, bytes, {
         contentType: 'image/png',
       });
 
     if (uploadError) {
-      console.error('Error uploading signature:', uploadError);
+      console.error('[uploadSignature] Upload error:', uploadError);
       return { data: null, error: { message: uploadError.message } };
     }
 
+    console.log(`[uploadSignature] Upload successful: ${filename}`);
     return { data: filename, error: null };
   } catch (err) {
-    console.error('Error in uploadSignature:', err);
-    return { data: null, error: { message: 'Failed to upload signature' } };
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[uploadSignature] Exception:', err);
+    return { data: null, error: { message: `Failed to upload signature: ${errorMessage}` } };
   }
 }
 
@@ -446,106 +462,77 @@ export function getSignatureUrl(storagePath: string): string {
 }
 
 /**
- * Upload a video for a response
- * @param reportId - The report ID
- * @param responseId - The response ID
- * @param videoUri - Local URI to the video file
- * @returns Storage path for the uploaded video
- */
-export async function uploadResponseVideo(
-  reportId: string,
-  responseId: string,
-  videoUri: string
-): Promise<{ data: string | null; error: { message: string } | null }> {
-  try {
-    // Generate unique filename
-    const filename = `${reportId}/${responseId}/${Date.now()}.mp4`;
-
-    // Fetch the video as a blob
-    const response = await fetch(videoUri);
-    const blob = await response.blob();
-
-    // Upload to Supabase Storage
-    const { error: uploadError } = await supabase.storage
-      .from('report-videos')
-      .upload(filename, blob, {
-        contentType: 'video/mp4',
-      });
-
-    if (uploadError) {
-      console.error('Error uploading video:', uploadError);
-      return { data: null, error: { message: uploadError.message } };
-    }
-
-    return { data: filename, error: null };
-  } catch (err) {
-    console.error('Error in uploadResponseVideo:', err);
-    return { data: null, error: { message: 'Failed to upload video' } };
-  }
-}
-
-/**
- * Get public URL for a video
- * This URL can be used directly in HTML5 video elements or React Native Video
- */
-export function getVideoUrl(storagePath: string): string {
-  const { data } = supabase.storage.from('report-videos').getPublicUrl(storagePath);
-  return data.publicUrl;
-}
-
-/**
- * Upload a media file (photo or video) for a response
+ * Upload a media file (photo) for a response
  * Simplified upload that stores files by reportId/templateItemId path
  * @param reportId - The report ID
  * @param templateItemId - The template item ID (used for path organization)
  * @param fileUri - Local URI to the file
- * @param mediaType - Type of media ('photo' or 'video')
+ * @param mediaType - Type of media ('photo')
  * @returns Storage path for the uploaded file
  */
 export async function uploadMediaFile(
   reportId: string,
   templateItemId: string,
   fileUri: string,
-  mediaType: 'photo' | 'video'
+  mediaType: 'photo'
 ): Promise<{ data: string | null; error: { message: string } | null }> {
   try {
-    const bucket = mediaType === 'photo' ? 'report-photos' : 'report-videos';
-    const extension = mediaType === 'photo' ? 'jpg' : 'mp4';
-    const contentType = mediaType === 'photo' ? 'image/jpeg' : 'video/mp4';
+    console.log(`[uploadMediaFile] Starting upload for report ${reportId}, item ${templateItemId}`);
+    console.log(`[uploadMediaFile] Source URI: ${fileUri ? fileUri.substring(0, 100) : 'NULL'}...`);
+    console.log(`[uploadMediaFile] Platform: ${Platform.OS}`);
 
     // Generate unique filename using reportId and templateItemId
-    const filename = `${reportId}/${templateItemId}/${Date.now()}.${extension}`;
+    const filename = `${reportId}/${templateItemId}/${Date.now()}.jpg`;
+    console.log(`[uploadMediaFile] Target filename: ${filename}`);
 
-    let fileBlob: Blob;
+    // Compress image and get base64 - this works reliably on all platforms
+    console.log('[uploadMediaFile] Compressing image to base64...');
+    const compressed = await compressImageToBase64(fileUri, {
+      maxWidth: 2000,
+      maxHeight: 2000,
+      quality: 0.8,
+    });
+    console.log(`[uploadMediaFile] Compressed to ${compressed.width}x${compressed.height}`);
 
-    if (mediaType === 'photo') {
-      // Compress image before upload
-      const compressed = await compressImage(fileUri, {
-        maxWidth: 2000,
-        maxHeight: 2000,
-        quality: 0.8,
-      });
-      const response = await fetch(compressed.uri);
-      fileBlob = await response.blob();
-    } else {
-      // Videos uploaded as-is
-      const response = await fetch(fileUri);
-      fileBlob = await response.blob();
+    if (!compressed.base64) {
+      console.error('[uploadMediaFile] No base64 data returned from compression');
+      return { data: null, error: { message: 'Image compression failed - no data returned' } };
     }
 
-    // Upload to Supabase Storage
-    const { error: uploadError } = await supabase.storage
-      .from(bucket)
-      .upload(filename, fileBlob, { contentType });
+    console.log(`[uploadMediaFile] Base64 length: ${compressed.base64.length} chars`);
+
+    // Convert base64 to ArrayBuffer for upload
+    // This method works reliably on React Native
+    const binaryString = base64Decode(compressed.base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    console.log(`[uploadMediaFile] ArrayBuffer size: ${bytes.length} bytes`);
+
+    // Upload to Supabase Storage using ArrayBuffer
+    console.log('[uploadMediaFile] Uploading to Supabase Storage...');
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('report-photos')
+      .upload(filename, bytes, { contentType: 'image/jpeg' });
 
     if (uploadError) {
-      console.error(`Error uploading ${mediaType}:`, uploadError);
+      console.error('[uploadMediaFile] Upload error:', uploadError);
       return { data: null, error: { message: uploadError.message } };
     }
 
+    console.log('[uploadMediaFile] Upload successful:', uploadData);
+    console.log(`[uploadMediaFile] Storage path: ${filename}`);
+
+    // Also log the public URL for debugging
+    const publicUrl = getPhotoUrl(filename);
+    console.log(`[uploadMediaFile] Public URL: ${publicUrl}`);
+
     return { data: filename, error: null };
   } catch (err) {
-    console.error(`Error in uploadMediaFile (${mediaType}):`, err);
-    return { data: null, error: { message: `Failed to upload ${mediaType}` } };
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[uploadMediaFile] Exception:', err);
+    console.error('[uploadMediaFile] Error stack:', err instanceof Error ? err.stack : 'No stack');
+    return { data: null, error: { message: `Photo upload failed: ${errorMessage}` } };
   }
 }

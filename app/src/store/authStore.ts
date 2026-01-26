@@ -38,7 +38,7 @@ interface AuthState {
   // Super Admin Actions
   checkSuperAdminStatus: () => Promise<void>;
   hasSuperAdminPermission: (permission: SuperAdminPermission) => boolean;
-  startImpersonation: (userId: string, orgId: string, userName: string, orgName: string) => Promise<{ error: string | null }>;
+  startImpersonation: (userId: string, orgId: string, userName: string, orgName: string, role?: 'owner' | 'admin' | 'user') => Promise<{ error: string | null }>;
   endImpersonation: () => Promise<{ error: string | null }>;
 }
 
@@ -70,10 +70,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
   get effectiveOrganisation() {
     const { impersonationContext, organisation } = get();
-    // When impersonating, use the impersonated org
-    // For now, we still return the regular org since impersonation
-    // affects RLS at the database level
+    // When impersonating, return the impersonated org details
+    if (impersonationContext?.isImpersonating && impersonationContext.impersonatedOrgId) {
+      return {
+        id: impersonationContext.impersonatedOrgId,
+        name: impersonationContext.impersonatedOrgName || 'Unknown Organisation',
+        slug: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as Organisation;
+    }
     return organisation;
+  },
+  get effectiveRole() {
+    const { impersonationContext, role } = get();
+    if (impersonationContext?.isImpersonating && impersonationContext.impersonatedRole) {
+      return impersonationContext.impersonatedRole;
+    }
+    return role;
   },
   get isImpersonating() {
     return get().impersonationContext?.isImpersonating === true;
@@ -271,9 +285,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               impersonatedOrgId: sessionResult.data.impersonating_org_id,
               impersonatedUserName: null, // Would need to fetch
               impersonatedOrgName: null, // Would need to fetch
+              impersonatedRole: 'user', // Default, would need to fetch actual role
               expiresAt: sessionResult.data.expires_at,
             },
           });
+        } else {
+          // No active session - clear any stale impersonation context
+          set({ impersonationContext: null });
         }
       } else {
         set({
@@ -287,6 +305,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({
         isSuperAdmin: false,
         superAdminPermissions: [],
+        impersonationContext: null,
       });
     }
   },
@@ -295,7 +314,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return get().superAdminPermissions.includes(permission);
   },
 
-  startImpersonation: async (userId: string, orgId: string, userName: string, orgName: string) => {
+  startImpersonation: async (userId: string, orgId: string, userName: string, orgName: string, role?: 'owner' | 'admin' | 'user') => {
     const result = await superAdminService.startImpersonation(userId, orgId);
 
     if (result.error) {
@@ -312,6 +331,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           impersonatedOrgId: orgId,
           impersonatedUserName: userName,
           impersonatedOrgName: orgName,
+          impersonatedRole: role || 'user',
           expiresAt: result.data.expires_at,
         },
       });

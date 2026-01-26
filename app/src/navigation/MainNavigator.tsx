@@ -21,7 +21,7 @@ import {
   InspectionReviewScreen,
   InspectionCompleteScreen,
 } from '../screens/inspection';
-import { TemplateListScreen, TemplateDetailScreen, TemplateEditorScreen, NewTemplateScreen, AITemplateBuilderScreen } from '../screens/templates';
+import { TemplateListScreen, TemplateDetailScreen, TemplateEditorScreen, NewTemplateScreen, AITemplateBuilderScreen, TemplatePreviewScreen, DocumentImportScreen } from '../screens/templates';
 import {
   SiteListScreen as AdminSiteListScreen,
   SiteEditorScreen,
@@ -65,6 +65,8 @@ export type HomeStackParamList = {
   // Template-first flow (NEW)
   TemplatePicker: undefined;
   RecordForTemplate: { templateId: string; templateName: string; recordTypeId?: string };
+  // Template preview (for users)
+  TemplatePreview: { templateId: string };
   // Existing inspection flow
   TemplateSelect: { siteId: string };
   Inspection: { reportId: string };
@@ -123,6 +125,11 @@ function HomeNavigator() {
         options={{ title: 'Select Record' }}
       />
       <HomeStack.Screen
+        name="TemplatePreview"
+        component={TemplatePreviewScreen}
+        options={{ title: 'Template Preview' }}
+      />
+      <HomeStack.Screen
         name="Inspection"
         component={InspectionScreen}
         options={{ title: 'Inspection' }}
@@ -175,6 +182,7 @@ function ReportsNavigator() {
 export type TemplatesStackParamList = {
   TemplateList: undefined;
   TemplateDetail: { templateId: string };
+  TemplatePreview: { templateId: string };
   NewTemplate: undefined;
   TemplateEditor: { templateId?: string; initialData?: {
     name: string;
@@ -194,6 +202,7 @@ export type TemplatesStackParamList = {
   TemplateImport: undefined;
   TemplateAssign: { templateId: string };
   AITemplateBuilder: undefined;
+  DocumentImport: undefined;
 };
 
 const TemplatesStack = createNativeStackNavigator<TemplatesStackParamList>();
@@ -212,6 +221,11 @@ function TemplatesNavigator() {
         options={{ title: 'Template' }}
       />
       <TemplatesStack.Screen
+        name="TemplatePreview"
+        component={TemplatePreviewScreen}
+        options={{ title: 'Template Preview' }}
+      />
+      <TemplatesStack.Screen
         name="NewTemplate"
         component={NewTemplateScreen}
         options={{ title: 'New Template' }}
@@ -226,6 +240,11 @@ function TemplatesNavigator() {
       <TemplatesStack.Screen
         name="AITemplateBuilder"
         component={AITemplateBuilderScreen}
+        options={{ headerShown: false }}
+      />
+      <TemplatesStack.Screen
+        name="DocumentImport"
+        component={DocumentImportScreen}
         options={{ headerShown: false }}
       />
     </TemplatesStack.Navigator>

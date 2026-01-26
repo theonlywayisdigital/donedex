@@ -3,7 +3,7 @@
  * Shared between native and web implementations
  */
 
-import { getSignatureUrl, getPhotoUrl, getVideoUrl } from '../reports';
+import { getSignatureUrl, getPhotoUrl } from '../reports';
 import type { ExportOptions, ExportOptionsWithImages, ResponseDisplay, ImageDataMap } from './types';
 import { DEFAULT_BRANDING, BrandingContext } from '../../types/branding';
 
@@ -219,11 +219,14 @@ export function getResponseDisplay(
           signatureUrl,
         };
       } catch {
+        // Handle both base64 data URLs and storage paths
+        // Base64 starts with "data:", storage paths don't
+        const isBase64 = value.startsWith('data:');
         return {
           text: 'Signature captured',
           color: '#059669',
           isSignature: true,
-          signatureUrl: getSignatureUrl(value),
+          signatureUrl: isBase64 ? value : getSignatureUrl(value),
         };
       }
 
@@ -297,24 +300,6 @@ export function getResponseDisplay(
       return { text: 'Photo attached', color: '#059669' };
     }
 
-    // Video - show count (embedding video in PDF not practical)
-    case 'video': {
-      const videoPaths = getMediaPaths(value);
-      if (videoPaths.length > 0) {
-        const videoUrls = videoPaths.map((p) => getVideoUrl(p));
-        return {
-          text: `${videoPaths.length} video(s) attached`,
-          color: '#059669',
-          videoUrls,
-        };
-      }
-      return { text: 'Video attached', color: '#059669' };
-    }
-
-    // Audio - show indicator (embedding audio in PDF not practical)
-    case 'audio':
-      return { text: 'Audio recording attached', color: '#059669' };
-
     // Instruction (display only, no value)
     case 'instruction':
       return { text: '(Information)', color: '#6B7280' };
@@ -346,8 +331,11 @@ export function collectImageUrls(options: ExportOptions): string[] {
   const urls: string[] = [];
   const { template, responses, branding } = options;
 
+  console.log('[collectImageUrls] Starting image URL collection');
+
   // Add logo URL if present
   if (branding?.logoUrl) {
+    console.log('[collectImageUrls] Adding logo URL:', branding.logoUrl);
     urls.push(branding.logoUrl);
   }
 
@@ -358,6 +346,7 @@ export function collectImageUrls(options: ExportOptions): string[] {
       if (!response?.response_value) continue;
 
       const value = response.response_value;
+      console.log(`[collectImageUrls] Item ${item.id} (${item.item_type}): response_value = ${typeof value === 'string' ? value.substring(0, 100) : String(value)}...`);
 
       // Handle signature
       if (item.item_type === 'signature') {
@@ -388,13 +377,17 @@ export function collectImageUrls(options: ExportOptions): string[] {
       // Handle photos
       if (['photo', 'photo_before_after', 'annotated_photo'].includes(item.item_type)) {
         const paths = getMediaPaths(value);
+        console.log(`[collectImageUrls] Photo item ${item.id}: found ${paths.length} paths:`, paths);
         for (const path of paths) {
-          urls.push(getPhotoUrl(path));
+          const photoUrl = getPhotoUrl(path);
+          console.log(`[collectImageUrls] Adding photo URL: ${photoUrl}`);
+          urls.push(photoUrl);
         }
       }
     }
   }
 
+  console.log(`[collectImageUrls] Total URLs collected: ${urls.length}`);
   return urls;
 }
 
@@ -482,17 +475,6 @@ export function generateHtml(options: ExportOptionsWithImages): string {
             `;
           }
 
-          // Handle video links (can't embed video in PDF, show thumbnails or links)
-          let videoHtml = '';
-          if (display.videoUrls && display.videoUrls.length > 0) {
-            videoHtml = `
-              <div class="video-info">
-                <span class="video-icon">🎥</span>
-                ${display.videoUrls.length} video(s) captured
-              </div>
-            `;
-          }
-
           return `
             <div class="item">
               <div class="item-row">
@@ -506,7 +488,6 @@ export function generateHtml(options: ExportOptionsWithImages): string {
               </div>
               ${signatureHtml}
               ${photoGalleryHtml}
-              ${videoHtml}
               ${notesHtml}
               ${severityHtml}
             </div>
@@ -548,6 +529,9 @@ export function generateHtml(options: ExportOptionsWithImages): string {
           line-height: 1.4;
           color: #111827;
           background: #FFFFFF;
+          padding: 20px 24px;
+          max-width: 210mm;
+          margin: 0 auto;
         }
 
         .header {
@@ -690,49 +674,33 @@ export function generateHtml(options: ExportOptionsWithImages): string {
         }
 
         .signature-container {
-          margin-top: 6px;
-          padding: 6px;
+          margin-top: 8px;
+          padding: 12px;
           background-color: #F9FAFB;
-          border-radius: 4px;
+          border-radius: 6px;
           text-align: left;
           border: 1px solid #E5E7EB;
         }
 
         .signature-image {
-          max-width: 180px;
-          max-height: 70px;
+          max-width: 280px;
+          max-height: 120px;
           object-fit: contain;
         }
 
         .photo-gallery {
           display: flex;
           flex-wrap: wrap;
-          gap: 6px;
-          margin-top: 6px;
+          gap: 10px;
+          margin-top: 8px;
         }
 
         .photo-image {
-          width: 100px;
-          height: 75px;
-          border-radius: 4px;
+          width: 180px;
+          height: 135px;
+          border-radius: 6px;
           border: 1px solid #E5E7EB;
           object-fit: cover;
-        }
-
-        .video-info {
-          margin-top: 6px;
-          padding: 6px 10px;
-          background-color: #F0FDF4;
-          border-radius: 3px;
-          font-size: 10px;
-          color: #059669;
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-
-        .video-icon {
-          font-size: 12px;
         }
 
         .footer {

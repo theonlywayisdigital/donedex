@@ -11,32 +11,17 @@ export interface ImageAsset {
   uri: string;
   width: number;
   height: number;
-  type?: 'image' | 'video';
+  type?: 'image';
   fileName?: string;
   fileSize?: number;
   base64?: string;
-  duration?: number; // Video duration in milliseconds
 }
 
 export interface ImagePickerOptions {
-  mediaTypes?: 'images' | 'videos' | 'all';
+  mediaTypes?: 'images';
   allowsEditing?: boolean;
   aspect?: [number, number];
   quality?: number; // 0-1
   base64?: boolean;
   allowsMultipleSelection?: boolean;
-}
-
-export interface VideoAsset {
-  uri: string;
-  width: number;
-  height: number;
-  duration: number; // milliseconds
-  fileName?: string;
-  fileSize?: number;
-}
-
-export interface VideoPickerResult {
-  canceled: boolean;
-  asset?: VideoAsset;
 }

@@ -38,6 +38,3 @@ export { PIIWarningModal, type PIIWarningModalProps } from './PIIWarningModal';
 export { DragHandle } from './DragHandle';
 export { DraggableList, type DraggableListProps } from './DraggableList';
 export { NestableDraggableList, NestableScrollContainer, type NestableDraggableListProps } from './NestableDraggableList';
-
-// Media
-export { VideoPlayer } from './VideoPlayer';

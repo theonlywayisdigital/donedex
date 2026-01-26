@@ -24,7 +24,6 @@ export interface ResponseDisplay {
   isSignature?: boolean;
   signatureUrl?: string;
   photoUrls?: string[];
-  videoUrls?: string[];
 }
 
 /**

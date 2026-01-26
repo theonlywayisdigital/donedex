@@ -19,12 +19,21 @@ export interface Database {
         Row: {
           id: string;
           name: string;
+          slug: string | null;
+          // Contact info
+          contact_email: string | null;
+          contact_phone: string | null;
           // Billing columns
           stripe_customer_id: string | null;
           subscription_status: string | null;
           current_plan_id: string | null;
           trial_ends_at: string | null;
           subscription_ends_at: string | null;
+          // Archive/delete
+          archived: boolean;
+          archived_at: string | null;
+          // Onboarding
+          onboarding_completed_at: string | null;
           // Meta
           created_at: string;
           updated_at: string;
@@ -32,22 +41,34 @@ export interface Database {
         Insert: {
           id?: string;
           name: string;
+          slug?: string | null;
+          contact_email?: string | null;
+          contact_phone?: string | null;
           stripe_customer_id?: string | null;
           subscription_status?: string | null;
           current_plan_id?: string | null;
           trial_ends_at?: string | null;
           subscription_ends_at?: string | null;
+          archived?: boolean;
+          archived_at?: string | null;
+          onboarding_completed_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
           name?: string;
+          slug?: string | null;
+          contact_email?: string | null;
+          contact_phone?: string | null;
           stripe_customer_id?: string | null;
           subscription_status?: string | null;
           current_plan_id?: string | null;
           trial_ends_at?: string | null;
           subscription_ends_at?: string | null;
+          archived?: boolean;
+          archived_at?: string | null;
+          onboarding_completed_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

@@ -1,6 +1,6 @@
 /**
  * File Persistence Service
- * Ensures files (photos, videos) persist until explicitly deleted after sync
+ * Ensures files (photos) persist until explicitly deleted after sync
  *
  * On native: copies to documents directory
  * On web: returns original URI (blob URLs persist for session)
@@ -33,11 +33,10 @@ async function ensurePendingUploadsDirExists(): Promise<void> {
 /**
  * Generate a unique filename for a persisted file
  */
-function generateFilename(originalUri: string, type: 'photo' | 'video'): string {
+function generateFilename(originalUri: string, type: 'photo'): string {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 8);
-  const extension = type === 'photo' ? 'jpg' : 'mp4';
-  return `${timestamp}_${random}.${extension}`;
+  return `${timestamp}_${random}.jpg`;
 }
 
 /**
@@ -46,12 +45,12 @@ function generateFilename(originalUri: string, type: 'photo' | 'video'): string 
  * On web: returns original URI (blob URLs persist for session)
  *
  * @param sourceUri - The source URI (may be cache, blob, or other temporary location)
- * @param type - The type of file ('photo' or 'video')
+ * @param type - The type of file ('photo')
  * @returns The persistent URI that should be used for storage
  */
 export async function persistFile(
   sourceUri: string,
-  type: 'photo' | 'video'
+  type: 'photo'
 ): Promise<string> {
   // On web, blob URLs and data URIs persist for the session
   // No additional persistence needed

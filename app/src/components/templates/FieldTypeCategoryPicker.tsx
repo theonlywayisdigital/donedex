@@ -34,7 +34,7 @@ export const FIELD_TYPE_CATEGORIES_V2: FieldTypeCategory[] = [
     label: 'Basic Checks',
     icon: 'check-circle',
     subtitle: 'Pass/Fail, Yes/No',
-    types: ['pass_fail', 'yes_no', 'condition', 'severity', 'text', 'number', 'select', 'multi_select'],
+    types: ['pass_fail', 'yes_no', 'condition', 'severity', 'text', 'number', 'select', 'multi_select', 'coloured_selection'],
   },
   {
     key: 'rating',
@@ -55,7 +55,7 @@ export const FIELD_TYPE_CATEGORIES_V2: FieldTypeCategory[] = [
     label: 'Evidence & Media',
     icon: 'camera',
     subtitle: 'Photos, Signature',
-    types: ['photo', 'photo_before_after', 'video', 'audio', 'signature', 'annotated_photo'],
+    types: ['photo', 'photo_before_after', 'signature', 'annotated_photo'],
   },
   {
     key: 'measurement',
@@ -69,7 +69,7 @@ export const FIELD_TYPE_CATEGORIES_V2: FieldTypeCategory[] = [
     label: 'Advanced',
     icon: 'settings',
     subtitle: 'Conditional, etc.',
-    types: ['gps_location', 'barcode_scan', 'asset_lookup', 'person_picker', 'contractor', 'witness', 'instruction', 'checklist', 'declaration'],
+    types: ['gps_location', 'barcode_scan', 'asset_lookup', 'person_picker', 'contractor', 'witness', 'instruction', 'checklist', 'declaration', 'title', 'paragraph'],
   },
 ];
 

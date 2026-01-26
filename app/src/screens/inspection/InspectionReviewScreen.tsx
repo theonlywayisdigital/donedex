@@ -8,9 +8,9 @@ import {
   Image,
 } from 'react-native';
 import { showNotification, showConfirm } from '../../utils/alert';
-import { Icon, VideoPlayer } from '../../components/ui';
+import { Icon } from '../../components/ui';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getPhotoUrl, getVideoUrl, getSignatureUrl } from '../../services/reports';
+import { getSignatureUrl } from '../../services/reports';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Card, Button } from '../../components/ui';
@@ -49,9 +49,6 @@ function formatResponseValue(itemType: string, value: string | null): string {
     case 'photo':
       // Photo value might be a URL or count
       return 'Captured';
-    case 'video':
-      // Video value might be a URL or count
-      return 'Captured';
     default:
       return value;
   }
@@ -59,7 +56,7 @@ function formatResponseValue(itemType: string, value: string | null): string {
 
 // Check if a value is a media type that should show preview
 function isMediaType(itemType: string): boolean {
-  return ['signature', 'photo', 'video'].includes(itemType);
+  return ['signature', 'photo'].includes(itemType);
 }
 
 // Check if value is a base64 image
@@ -120,11 +117,10 @@ export function InspectionReviewScreen() {
       const response = responses.get(item.id);
 
       // Check if item is completed based on type
-      // Photos and videos are stored in separate arrays, not responseValue
+      // Photos are stored in separate arrays, not responseValue
       const hasResponseValue = response && response.responseValue !== null;
       const hasPhotos = response && item.item_type === 'photo' && response.photos && response.photos.length > 0;
-      const hasVideos = response && item.item_type === 'video' && response.videos && response.videos.length > 0;
-      const isCompleted = hasResponseValue || hasPhotos || hasVideos;
+      const isCompleted = hasResponseValue || hasPhotos;
 
       if (isCompleted) {
         completedItems++;
@@ -170,6 +166,10 @@ export function InspectionReviewScreen() {
         if (result.error) {
           showNotification('Error', result.error);
         } else {
+          // Show warning if some photos failed, but still navigate
+          if (result.warning) {
+            showNotification('Warning', result.warning);
+          }
           navigation.navigate('InspectionComplete', { reportId: report?.id || '' });
         }
       },
@@ -259,11 +259,9 @@ export function InspectionReviewScreen() {
               const value = response?.responseValue || null;
               const statusColor = getStatusColor(item.item_type, value);
 
-              // Check for photos and videos from response arrays
+              // Check for photos from response arrays
               const photos = response?.photos || [];
-              const videos = response?.videos || [];
               const hasPhotos = photos.length > 0;
-              const hasVideos = videos.length > 0;
 
               // Check for signature (could be base64 or storage path in JSON)
               let signatureUri: string | null = null;
@@ -287,8 +285,7 @@ export function InspectionReviewScreen() {
               }
 
               const isPhotoType = ['photo', 'photo_before_after', 'annotated_photo'].includes(item.item_type);
-              const isVideoType = item.item_type === 'video';
-              const hasMedia = isPhotoType ? hasPhotos : isVideoType ? hasVideos : false;
+              const hasMedia = isPhotoType ? hasPhotos : false;
               const isMissing = value === null && !hasMedia && item.is_required;
 
               return (
@@ -309,10 +306,10 @@ export function InspectionReviewScreen() {
                       </View>
                     ) : isPhotoType && hasPhotos ? (
                       <View style={styles.photoGallery}>
-                        {photos.slice(0, 3).map((photo, index) => (
+                        {photos.slice(0, 3).map((photoUri, index) => (
                           <Image
-                            key={photo.id || index}
-                            source={{ uri: getPhotoUrl(photo.storage_path) }}
+                            key={index}
+                            source={{ uri: photoUri }}
                             style={styles.photoThumbnail}
                             resizeMode="cover"
                           />
@@ -320,20 +317,6 @@ export function InspectionReviewScreen() {
                         {photos.length > 3 && (
                           <View style={styles.morePhotosIndicator}>
                             <Text style={styles.morePhotosText}>+{photos.length - 3}</Text>
-                          </View>
-                        )}
-                        <Icon name="check-circle" size={16} color={colors.success} />
-                      </View>
-                    ) : isVideoType && hasVideos ? (
-                      <View style={styles.videoGallery}>
-                        {videos.slice(0, 2).map((video, index) => (
-                          <View key={video.id || index} style={styles.videoThumbnailWrapper}>
-                            <VideoPlayer uri={getVideoUrl(video.storage_path)} thumbnailMode small />
-                          </View>
-                        ))}
-                        {videos.length > 2 && (
-                          <View style={styles.morePhotosIndicator}>
-                            <Text style={styles.morePhotosText}>+{videos.length - 2}</Text>
                           </View>
                         )}
                         <Icon name="check-circle" size={16} color={colors.success} />
@@ -521,18 +504,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.neutral[100],
     borderWidth: 1,
     borderColor: colors.border.DEFAULT,
-  },
-  videoGallery: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    flexWrap: 'wrap',
-  },
-  videoThumbnailWrapper: {
-    width: 64,
-    height: 48,
-    borderRadius: borderRadius.sm,
-    overflow: 'hidden',
   },
   morePhotosIndicator: {
     width: 32,

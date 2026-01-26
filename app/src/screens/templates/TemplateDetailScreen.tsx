@@ -60,7 +60,7 @@ const ITEM_TYPE_ICONS: Record<string, string> = {
   counter: 'plus-circle',
   measurement: 'ruler',
   checklist: 'list',
-  media: 'video',
+  media: 'image',
   expirydate: 'clock',
   declaration: 'file-check',
   instruction: 'info',
@@ -107,6 +107,10 @@ export function TemplateDetailScreen() {
 
   const handleEdit = () => {
     navigation.navigate('TemplateEditor', { templateId });
+  };
+
+  const handlePreview = () => {
+    navigation.navigate('TemplatePreview', { templateId });
   };
 
   const renderItem = (item: TemplateItem, index: number) => {
@@ -234,12 +238,18 @@ export function TemplateDetailScreen() {
       </ScrollView>
 
       {/* Edit Button for Admins */}
-      {isAdmin && (
-        <TouchableOpacity style={styles.editFab} onPress={handleEdit}>
-          <Icon name="edit" size={20} color={colors.white} />
-          <Text style={styles.editFabText}>Edit Template</Text>
+      <View style={styles.fabContainer}>
+        <TouchableOpacity style={styles.previewFab} onPress={handlePreview}>
+          <Icon name="eye" size={20} color={colors.primary.DEFAULT} />
+          <Text style={styles.previewFabText}>Preview</Text>
         </TouchableOpacity>
-      )}
+        {isAdmin && (
+          <TouchableOpacity style={styles.editFab} onPress={handleEdit}>
+            <Icon name="edit" size={20} color={colors.white} />
+            <Text style={styles.editFabText}>Edit</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
@@ -460,10 +470,31 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     textAlign: 'center',
   },
-  editFab: {
+  fabContainer: {
     position: 'absolute',
     bottom: spacing.lg,
     right: spacing.lg,
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  previewFab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.full,
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.primary.DEFAULT,
+    ...shadows.elevated,
+  },
+  previewFabText: {
+    color: colors.primary.DEFAULT,
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+  },
+  editFab: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.primary.DEFAULT,

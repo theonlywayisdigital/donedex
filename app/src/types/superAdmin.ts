@@ -94,6 +94,7 @@ export interface ImpersonationContext {
   impersonatedOrgId: string | null;
   impersonatedUserName: string | null;
   impersonatedOrgName: string | null;
+  impersonatedRole: 'owner' | 'admin' | 'user' | null;
   expiresAt: string;
 }
 

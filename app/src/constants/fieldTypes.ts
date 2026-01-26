@@ -40,8 +40,6 @@ export const FIELD_TYPES = {
 
   // Evidence & Media
   PHOTO_BEFORE_AFTER: 'photo_before_after',
-  VIDEO: 'video',
-  AUDIO: 'audio',
   ANNOTATED_PHOTO: 'annotated_photo',
 
   // Location & Assets
@@ -69,6 +67,11 @@ export const FIELD_TYPES = {
   COMPOSITE_ADDRESS_US: 'composite_address_us',
   COMPOSITE_ADDRESS_INTL: 'composite_address_intl',
   COMPOSITE_VEHICLE: 'composite_vehicle',
+
+  // Display & Selection
+  COLOURED_SELECTION: 'coloured_selection',
+  TITLE: 'title',
+  PARAGRAPH: 'paragraph',
 } as const;
 
 export type FieldType = typeof FIELD_TYPES[keyof typeof FIELD_TYPES];
@@ -77,9 +80,31 @@ export const PHOTO_RULES = {
   NEVER: 'never',
   ON_FAIL: 'on_fail',
   ALWAYS: 'always',
+  ON_PASS: 'on_pass',
+  ON_YES: 'on_yes',
+  ON_NO: 'on_no',
 } as const;
 
 export type PhotoRule = typeof PHOTO_RULES[keyof typeof PHOTO_RULES];
+
+// Default photo rules per field type
+// Fields not listed default to 'never'
+export const DEFAULT_PHOTO_RULES: Partial<Record<FieldType, PhotoRule>> = {
+  // Binary checks - default to conditional photo on issue
+  pass_fail: 'on_fail',
+  yes_no: 'on_no',
+  condition: 'on_fail',
+  severity: 'on_fail',
+  traffic_light: 'on_fail',
+
+  // Meter reading always needs photo of the meter dial
+  meter_reading: 'always',
+};
+
+// Get the default photo rule for a field type
+export const getDefaultPhotoRule = (fieldType: FieldType): PhotoRule => {
+  return DEFAULT_PHOTO_RULES[fieldType] ?? 'never';
+};
 
 // Field type categories for template builder UI
 export const FIELD_TYPE_CATEGORIES = {
@@ -89,7 +114,7 @@ export const FIELD_TYPE_CATEGORIES = {
   },
   BASIC: {
     label: 'Basic',
-    types: ['pass_fail', 'yes_no', 'condition', 'severity', 'text', 'number', 'select', 'multi_select'],
+    types: ['pass_fail', 'yes_no', 'condition', 'severity', 'text', 'number', 'select', 'multi_select', 'coloured_selection'],
   },
   RATING_SCALES: {
     label: 'Rating & Scales',
@@ -105,7 +130,7 @@ export const FIELD_TYPE_CATEGORIES = {
   },
   EVIDENCE: {
     label: 'Evidence & Media',
-    types: ['photo', 'photo_before_after', 'video', 'audio', 'signature', 'annotated_photo'],
+    types: ['photo', 'photo_before_after', 'signature', 'annotated_photo'],
   },
   LOCATION: {
     label: 'Location & Assets',
@@ -117,19 +142,20 @@ export const FIELD_TYPE_CATEGORIES = {
   },
   ADVANCED: {
     label: 'Smart/Advanced',
-    types: ['instruction', 'declaration', 'checklist', 'repeater', 'auto_timestamp', 'auto_weather'],
+    types: ['instruction', 'declaration', 'checklist', 'repeater', 'auto_timestamp', 'auto_weather', 'title', 'paragraph'],
   },
 } as const;
 
 // Icon name type for Lucide icons used in field types
 export type FieldTypeIconName =
   | 'check-circle' | 'x-circle' | 'help-circle' | 'alert-triangle' | 'circle'
-  | 'calendar' | 'clock' | 'camera' | 'video' | 'mic' | 'pen-tool'
+  | 'calendar' | 'clock' | 'camera' | 'pen-tool'
   | 'map-pin' | 'scan' | 'tag' | 'user' | 'users' | 'eye'
   | 'star' | 'hash' | 'type' | 'list' | 'check-square'
   | 'thermometer' | 'ruler' | 'gauge' | 'circle-dollar-sign'
   | 'file-text' | 'info' | 'clipboard-list' | 'refresh-cw' | 'cloud-sun'
-  | 'contact' | 'home' | 'globe' | 'car';
+  | 'contact' | 'home' | 'globe' | 'car'
+  | 'palette' | 'heading' | 'align-left';
 
 // PII category type for field configuration
 export type FieldPiiCategory = 'email' | 'phone' | 'name' | 'signature' | 'location' | 'identifier';
@@ -343,22 +369,6 @@ export const FIELD_TYPE_CONFIG: Record<string, {
     icon: 'camera',
     category: 'evidence',
   },
-  [FIELD_TYPES.VIDEO]: {
-    label: 'Video',
-    description: 'Short video clip (max 30s)',
-    options: null,
-    displayOptions: null,
-    icon: 'video',
-    category: 'evidence',
-  },
-  [FIELD_TYPES.AUDIO]: {
-    label: 'Audio Note',
-    description: 'Voice memo recording',
-    options: null,
-    displayOptions: null,
-    icon: 'mic',
-    category: 'evidence',
-  },
   [FIELD_TYPES.SIGNATURE]: {
     label: 'Signature',
     description: 'Draw signature on screen',
@@ -567,6 +577,32 @@ export const FIELD_TYPE_CONFIG: Record<string, {
     containsPII: true,
     piiCategory: 'identifier',
     piiWarning: 'Vehicle registration numbers can identify individuals and create GDPR obligations.',
+  },
+
+  // Display & Selection
+  [FIELD_TYPES.COLOURED_SELECTION]: {
+    label: 'Coloured Selection',
+    description: 'Customizable colored option buttons',
+    options: null,
+    displayOptions: null,
+    icon: 'palette',
+    category: 'basic',
+  },
+  [FIELD_TYPES.TITLE]: {
+    label: 'Title',
+    description: 'Display-only heading text',
+    options: null,
+    displayOptions: null,
+    icon: 'heading',
+    category: 'advanced',
+  },
+  [FIELD_TYPES.PARAGRAPH]: {
+    label: 'Paragraph',
+    description: 'Display-only instructional text',
+    options: null,
+    displayOptions: null,
+    icon: 'align-left',
+    category: 'advanced',
   },
 };
 

@@ -71,8 +71,7 @@ export function FieldTypeListPicker({
                 style={styles.backButton}
                 onPress={onBack}
               >
-                <Icon name="arrow-left" size={16} color={colors.primary.DEFAULT} />
-                <Text style={styles.backButtonText}>Back</Text>
+                <Icon name="arrow-left" size={20} color={colors.primary.DEFAULT} />
               </TouchableOpacity>
               <Text style={styles.title}>{category.label}</Text>
               <View style={styles.headerSpacer} />
@@ -197,11 +196,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     paddingRight: spacing.md,
     minHeight: 48,
-  },
-  backButtonText: {
-    fontSize: fontSize.body,
-    color: colors.primary.DEFAULT,
-    fontWeight: fontWeight.medium,
   },
   title: {
     fontSize: fontSize.sectionTitle,

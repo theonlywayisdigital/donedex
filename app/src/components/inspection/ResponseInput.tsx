@@ -16,7 +16,8 @@ import type { DateTimePickerEvent } from '../ui/DateTimePicker/types';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
 import { Icon, ProBadge, UpgradeModal, SignatureCanvas, type SignatureCanvasRef } from '../ui';
 import { useBillingStore } from '../../store/billingStore';
-import type { ItemType, PhotoRule, DatetimeMode, InstructionStyle, SubItem } from '../../services/templates';
+import type { ItemType, PhotoRule, DatetimeMode, InstructionStyle, SubItem, DisplayStyle } from '../../services/templates';
+import { COMPOSITE_DEFINITIONS, parseCompositeValue, formatCompositeValue, US_STATES, COUNTRIES } from '../../constants/fieldTypes';
 
 // Import extended input components
 import {
@@ -39,7 +40,6 @@ import {
 } from './ExtendedInputs';
 
 // Import new field type components
-import { AudioRecorderInput } from './AudioRecorderInput';
 import { GPSCaptureInput } from './GPSCaptureInput';
 import { BarcodeScanInput } from './BarcodeScanInput';
 import { PersonPickerInput } from './PersonPickerInput';
@@ -74,9 +74,12 @@ interface ResponseInputProps {
   instructionText?: string | null;
   instructionStyle?: InstructionStyle | null;
   checklistItems?: string[] | null;
-  // Video props
-  onAddVideo?: () => void;
-  videoCount?: number;
+  // Coloured selection options
+  colouredOptions?: { label: string; color: string }[] | null;
+  // Title/paragraph display style
+  displayStyle?: DisplayStyle | null;
+  // Preview mode - disables photo/signature capture, shows placeholders
+  isPreview?: boolean;
 }
 
 // Button option component for consistent styling
@@ -802,6 +805,46 @@ function RatingInput({
   );
 }
 
+// Preview placeholder for photo input
+function PhotoPreviewPlaceholder() {
+  return (
+    <View style={styles.previewPlaceholder}>
+      <Icon name="camera" size={24} color={colors.text.tertiary} />
+      <Text style={styles.previewPlaceholderText}>Photo capture disabled in preview</Text>
+    </View>
+  );
+}
+
+// Preview placeholder for signature input
+function SignaturePreviewPlaceholder() {
+  return (
+    <View style={styles.previewPlaceholder}>
+      <Icon name="pen-tool" size={24} color={colors.text.tertiary} />
+      <Text style={styles.previewPlaceholderText}>Signature capture disabled in preview</Text>
+    </View>
+  );
+}
+
+// Preview placeholder for GPS input
+function GPSPreviewPlaceholder() {
+  return (
+    <View style={styles.previewPlaceholder}>
+      <Icon name="map-pin" size={24} color={colors.text.tertiary} />
+      <Text style={styles.previewPlaceholderText}>GPS capture disabled in preview</Text>
+    </View>
+  );
+}
+
+// Preview placeholder for barcode input
+function BarcodePreviewPlaceholder() {
+  return (
+    <View style={styles.previewPlaceholder}>
+      <Icon name="scan" size={24} color={colors.text.tertiary} />
+      <Text style={styles.previewPlaceholderText}>Barcode scan disabled in preview</Text>
+    </View>
+  );
+}
+
 // Main ResponseInput component
 export function ResponseInput({
   itemType,
@@ -831,9 +874,11 @@ export function ResponseInput({
   instructionText,
   instructionStyle,
   checklistItems,
-  // Video props
-  onAddVideo,
-  videoCount,
+  // New field type props
+  colouredOptions,
+  displayStyle,
+  // Preview mode
+  isPreview,
 }: ResponseInputProps) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const canUsePhotos = useBillingStore((state) => state.canUsePhotos);
@@ -849,14 +894,23 @@ export function ResponseInput({
 
   const showPhotoButton = () => {
     if (photoRule === 'always') return true;
+    if (photoRule === 'never') return false;
+
+    // Value-specific photo rules
+    if (photoRule === 'on_pass' && value === 'pass') return true;
+    if (photoRule === 'on_yes' && value === 'yes') return true;
+    if (photoRule === 'on_no' && value === 'no') return true;
     if (photoRule === 'on_fail') {
-      // Show photo button for negative responses
+      // Show photo button for negative/issue responses
+      // Includes traffic light colors (red, amber)
       return (
         value === 'fail' ||
         value === 'no' ||
         value === 'poor' ||
         value === 'high' ||
-        value === 'medium'
+        value === 'medium' ||
+        value === 'red' ||
+        value === 'amber'
       );
     }
     return false;
@@ -882,6 +936,9 @@ export function ResponseInput({
       case 'multi_select':
         return <MultiSelectInput value={value} onChange={handleChange} options={options || []} />;
       case 'photo':
+        if (isPreview) {
+          return <PhotoPreviewPlaceholder />;
+        }
         return (
           <PhotoInput
             onAddPhoto={onAddPhoto}
@@ -894,6 +951,9 @@ export function ResponseInput({
           />
         );
       case 'signature':
+        if (isPreview) {
+          return <SignaturePreviewPlaceholder />;
+        }
         return (
           <SignatureInput
             value={value}
@@ -990,7 +1050,7 @@ export function ResponseInput({
           <MeterReadingInput
             value={value}
             onChange={handleChange}
-            onAddPhoto={onAddPhoto}
+            onAddPhoto={isPreview ? undefined : onAddPhoto}
             photoCount={photoCount}
           />
         );
@@ -1006,6 +1066,9 @@ export function ResponseInput({
 
       // Evidence & Media
       case 'photo_before_after':
+        if (isPreview) {
+          return <PhotoPreviewPlaceholder />;
+        }
         // For now, use standard photo input - will be enhanced later
         return (
           <PhotoInput
@@ -1018,18 +1081,10 @@ export function ResponseInput({
             onUpgradePress={handleUpgradePress}
           />
         );
-      case 'video':
-        return (
-          <TouchableOpacity style={styles.photoButton} onPress={onAddVideo} activeOpacity={0.7}>
-            <Icon name="video" size={20} color={colors.primary.DEFAULT} />
-            <Text style={[styles.photoButtonText, { color: colors.primary.DEFAULT }]}>
-              {videoCount ? `${videoCount} video(s) recorded` : 'Record Video'}
-            </Text>
-          </TouchableOpacity>
-        );
-      case 'audio':
-        return <AudioRecorderInput value={value} onChange={handleChange} />;
       case 'annotated_photo':
+        if (isPreview) {
+          return <PhotoPreviewPlaceholder />;
+        }
         // For now, use standard photo input - annotation to be added later
         return (
           <PhotoInput
@@ -1045,8 +1100,14 @@ export function ResponseInput({
 
       // Location & Assets
       case 'gps_location':
+        if (isPreview) {
+          return <GPSPreviewPlaceholder />;
+        }
         return <GPSCaptureInput value={value} onChange={handleChange} />;
       case 'barcode_scan':
+        if (isPreview) {
+          return <BarcodePreviewPlaceholder />;
+        }
         return <BarcodeScanInput value={value} onChange={handleChange} />;
       case 'asset_lookup':
         // Placeholder - asset lookup to be implemented
@@ -1069,7 +1130,7 @@ export function ResponseInput({
           <WitnessInput
             value={value}
             onChange={handleChange}
-            onSignatureCapture={onSignatureCapture}
+            onSignatureCapture={isPreview ? undefined : onSignatureCapture}
           />
         );
 
@@ -1100,6 +1161,154 @@ export function ResponseInput({
         // Conditional fields are handled at the form level, not here
         return <Text style={styles.unsupportedText}>Conditional field</Text>;
 
+      // Display & Selection
+      case 'coloured_selection':
+        return (
+          <View style={styles.colouredSelectionContainer}>
+            {(colouredOptions || []).map((option, index) => {
+              const isSelected = value === option.label;
+              return (
+                <TouchableOpacity
+                  key={`${option.label}-${index}`}
+                  style={[
+                    styles.colouredOptionButton,
+                    { backgroundColor: isSelected ? option.color : colors.white },
+                    { borderColor: option.color },
+                  ]}
+                  onPress={() => handleChange(option.label)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.colouredOptionText,
+                      { color: isSelected ? colors.white : option.color },
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        );
+
+      case 'title':
+        // Display-only heading - uses the label as the content
+        return (
+          <View style={styles.titleDisplayContainer}>
+            <Text
+              style={[
+                styles.titleDisplayText,
+                displayStyle === 'heading1' && styles.titleHeading1,
+                displayStyle === 'heading2' && styles.titleHeading2,
+                displayStyle === 'heading3' && styles.titleHeading3,
+              ]}
+            >
+              {instructionText || ''}
+            </Text>
+          </View>
+        );
+
+      case 'paragraph':
+        // Display-only paragraph text
+        return (
+          <View style={styles.paragraphDisplayContainer}>
+            <Text style={styles.paragraphDisplayText}>
+              {instructionText || ''}
+            </Text>
+          </View>
+        );
+
+      // Composite Field Groups - render sub-fields inline
+      case 'composite_person_name':
+      case 'composite_contact':
+      case 'composite_address_uk':
+      case 'composite_address_us':
+      case 'composite_address_intl':
+      case 'composite_vehicle': {
+        const definition = COMPOSITE_DEFINITIONS[itemType];
+        if (!definition) {
+          return <Text style={styles.unsupportedText}>Unknown composite type</Text>;
+        }
+
+        const parsedValue = parseCompositeValue(value);
+
+        const handleSubFieldChange = (key: string, subValue: string | null) => {
+          const newValue = { ...parsedValue, [key]: subValue || null };
+          handleChange(formatCompositeValue(newValue));
+        };
+
+        // Group sub-fields into rows (half-width fields pair up)
+        const rows: typeof definition.subFields[] = [];
+        let currentRow: typeof definition.subFields = [];
+
+        definition.subFields.forEach((field) => {
+          if (field.width === 'full') {
+            if (currentRow.length > 0) {
+              rows.push(currentRow);
+              currentRow = [];
+            }
+            rows.push([field]);
+          } else {
+            currentRow.push(field);
+            if (currentRow.length === 2) {
+              rows.push(currentRow);
+              currentRow = [];
+            }
+          }
+        });
+        if (currentRow.length > 0) {
+          rows.push(currentRow);
+        }
+
+        return (
+          <View style={styles.compositeContainer}>
+            {rows.map((row, rowIndex) => (
+              <View key={rowIndex} style={styles.compositeRow}>
+                {row.map((field) => (
+                  <View
+                    key={field.key}
+                    style={[
+                      styles.compositeField,
+                      field.width === 'half' && styles.compositeFieldHalf,
+                    ]}
+                  >
+                    <Text style={styles.compositeLabel}>
+                      {field.label}
+                      {field.required && <Text style={styles.compositeRequired}> *</Text>}
+                    </Text>
+                    {field.type === 'select' && field.options ? (
+                      <View style={styles.compositeSelectContainer}>
+                        <select
+                          value={parsedValue[field.key] || ''}
+                          onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                            handleSubFieldChange(field.key, e.target.value || null)
+                          }
+                          style={compositeSelectStyles}
+                        >
+                          <option value="">Select...</option>
+                          {field.options.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      </View>
+                    ) : (
+                      <TextInput
+                        style={styles.compositeInput}
+                        value={parsedValue[field.key] || ''}
+                        onChangeText={(text) => handleSubFieldChange(field.key, text)}
+                        placeholder={field.placeholder}
+                        placeholderTextColor={colors.text.tertiary}
+                      />
+                    )}
+                  </View>
+                ))}
+              </View>
+            ))}
+          </View>
+        );
+      }
+
       default:
         return <Text style={styles.unsupportedText}>Unsupported field type: {itemType}</Text>;
     }
@@ -1114,15 +1323,19 @@ export function ResponseInput({
         )}
         {showPhotoButton() && itemType !== 'photo' && (
           <View style={styles.photoSection}>
-            <PhotoInput
-              onAddPhoto={onAddPhoto}
-              onPickFromLibrary={onPickFromLibrary}
-              photoCount={photoCount}
-              photos={photos}
-              onRemovePhoto={onRemovePhoto}
-              disabled={!photosAllowed}
-              onUpgradePress={handleUpgradePress}
-            />
+            {isPreview ? (
+              <PhotoPreviewPlaceholder />
+            ) : (
+              <PhotoInput
+                onAddPhoto={onAddPhoto}
+                onPickFromLibrary={onPickFromLibrary}
+                photoCount={photoCount}
+                photos={photos}
+                onRemovePhoto={onRemovePhoto}
+                disabled={!photosAllowed}
+                onUpgradePress={handleUpgradePress}
+              />
+            )}
           </View>
         )}
       </View>
@@ -1328,6 +1541,43 @@ const styles = StyleSheet.create({
     fontSize: fontSize.body,
     color: colors.text.tertiary,
     fontStyle: 'italic',
+  },
+  // Composite field styles
+  compositeContainer: {
+    gap: spacing.md,
+  },
+  compositeRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  compositeField: {
+    flex: 1,
+  },
+  compositeFieldHalf: {
+    flex: 1,
+  },
+  compositeLabel: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.medium,
+    color: colors.text.secondary,
+    marginBottom: spacing.xs,
+  },
+  compositeRequired: {
+    color: colors.danger,
+  },
+  compositeInput: {
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: fontSize.body,
+    color: colors.text.primary,
+    minHeight: 48,
+  },
+  compositeSelectContainer: {
+    width: '100%',
   },
   helpText: {
     fontSize: fontSize.caption,
@@ -1586,4 +1836,87 @@ const styles = StyleSheet.create({
     color: colors.text.tertiary,
     fontStyle: 'italic',
   },
+  // Preview placeholder styles
+  previewPlaceholder: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.neutral[50],
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+    borderStyle: 'dashed',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    minHeight: 48,
+    gap: spacing.sm,
+  },
+  previewPlaceholderText: {
+    fontSize: fontSize.body,
+    color: colors.text.tertiary,
+    fontStyle: 'italic',
+  },
+  // Coloured selection styles
+  colouredSelectionContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  colouredOptionButton: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+    borderWidth: 2,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  colouredOptionText: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.semibold,
+  },
+  // Title display styles
+  titleDisplayContainer: {
+    paddingVertical: spacing.sm,
+  },
+  titleDisplayText: {
+    color: colors.text.primary,
+    fontWeight: fontWeight.semibold,
+  },
+  titleHeading1: {
+    fontSize: 28,
+    fontWeight: fontWeight.bold,
+  },
+  titleHeading2: {
+    fontSize: 22,
+    fontWeight: fontWeight.semibold,
+  },
+  titleHeading3: {
+    fontSize: 18,
+    fontWeight: fontWeight.semibold,
+  },
+  // Paragraph display styles
+  paragraphDisplayContainer: {
+    paddingVertical: spacing.sm,
+  },
+  paragraphDisplayText: {
+    fontSize: fontSize.body,
+    color: colors.text.secondary,
+    lineHeight: 24,
+  },
 });
+
+// Web-specific styles for composite select fields
+const compositeSelectStyles: React.CSSProperties = {
+  width: '100%',
+  height: 48,
+  padding: '0 16px',
+  fontSize: 16,
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  color: '#111827',
+  backgroundColor: '#FFFFFF',
+  border: '1px solid #E5E7EB',
+  borderRadius: 8,
+  outline: 'none',
+  boxSizing: 'border-box',
+  cursor: 'pointer',
+};

@@ -50,7 +50,39 @@ export interface LibraryTemplateItem {
   item_type: string;
   is_required?: boolean;
   photo_rule?: 'never' | 'on_fail' | 'always';
-  options?: { value: string; label: string }[];
+  options?: string[] | { value: string; label: string }[];
+  // Common options
+  help_text?: string;
+  placeholder_text?: string;
+  default_value?: string;
+  // Number-specific
+  min_value?: number;
+  max_value?: number;
+  step_value?: number;
+  // DateTime config
+  datetime_mode?: 'date' | 'time' | 'datetime';
+  // Rating config
+  rating_max?: number;
+  rating_style?: 'stars' | 'numeric' | 'slider';
+  // Declaration/signature config
+  declaration_text?: string;
+  signature_requires_name?: boolean;
+  // Measurement unit config
+  unit_type?: string;
+  unit_options?: string[];
+  default_unit?: string;
+  // Counter config
+  counter_min?: number;
+  counter_max?: number;
+  counter_step?: number;
+  // Expiry date config
+  warning_days_before?: number;
+  // Checklist/repeater config
+  sub_items?: { label: string; id?: string }[];
+  min_entries?: number;
+  max_entries?: number;
+  // Instruction field config
+  instruction_style?: 'info' | 'warning' | 'tip';
 }
 
 /**
@@ -304,6 +336,38 @@ export async function copyLibraryTemplateToOrg(
         photo_rule: item.photo_rule ?? 'never',
         options: item.options ?? null,
         sort_order: itemIndex,
+        // Common options
+        help_text: item.help_text ?? null,
+        placeholder_text: item.placeholder_text ?? null,
+        default_value: item.default_value ?? null,
+        // Number-specific
+        min_value: item.min_value ?? null,
+        max_value: item.max_value ?? null,
+        step_value: item.step_value ?? null,
+        // DateTime config
+        datetime_mode: item.datetime_mode ?? null,
+        // Rating config
+        rating_max: item.rating_max ?? null,
+        rating_style: item.rating_style ?? null,
+        // Declaration/signature config
+        declaration_text: item.declaration_text ?? null,
+        signature_requires_name: item.signature_requires_name ?? null,
+        // Measurement unit config
+        unit_type: item.unit_type ?? null,
+        unit_options: item.unit_options ?? null,
+        default_unit: item.default_unit ?? null,
+        // Counter config
+        counter_min: item.counter_min ?? null,
+        counter_max: item.counter_max ?? null,
+        counter_step: item.counter_step ?? null,
+        // Expiry date config
+        warning_days_before: item.warning_days_before ?? null,
+        // Checklist/repeater config
+        sub_items: item.sub_items ?? null,
+        min_entries: item.min_entries ?? null,
+        max_entries: item.max_entries ?? null,
+        // Instruction field config
+        instruction_style: item.instruction_style ?? null,
       }));
 
       if (items.length > 0) {

@@ -19,11 +19,10 @@ import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../const
 import {
   launchCamera,
   launchImageLibrary,
-  launchVideoCamera,
-  launchVideoLibrary,
   requestCameraPermissions,
 } from '../../services/imagePicker';
 import { persistFile } from '../../services/filePersistence';
+import { uploadSignature } from '../../services/reports';
 import type { HomeStackParamList } from '../../navigation/MainNavigator';
 import type { TemplateItem } from '../../services/templates';
 
@@ -48,7 +47,6 @@ export function InspectionScreen() {
     setResponse,
     addPhoto,
     removePhoto,
-    addVideo,
     nextSection,
     previousSection,
     goToSection,
@@ -168,61 +166,37 @@ export function InspectionScreen() {
     }
   }, [addPhoto]);
 
-  // Handle video recording for an item
-  const handleAddVideo = useCallback(async (templateItemId: string) => {
-    // Request camera permissions first
-    const hasPermission = await requestCameraPermissions();
-
-    if (!hasPermission) {
-      showConfirm(
-        'Camera Permission Required',
-        'Please enable camera access in your device settings to record videos.',
-        () => {
-          // Try from library instead
-          handlePickVideoFromLibrary(templateItemId);
-        },
-        undefined,
-        'Choose from Library',
-        'Cancel'
-      );
-      return;
+  // Handle signature capture - uploads to storage and returns path
+  // Falls back to returning base64 directly if upload fails
+  const handleSignatureCapture = useCallback(async (base64Data: string): Promise<string> => {
+    if (!report) {
+      console.warn('[InspectionScreen] No report, storing signature as base64');
+      return base64Data; // Fallback to base64
     }
 
-    // Show options to record video or choose from library
-    showConfirm(
-      'Add Video',
-      'How would you like to add a video?',
-      async () => {
-        // Record video with camera
-        const result = await launchVideoCamera();
+    try {
+      console.log('[InspectionScreen] Uploading signature...');
+      const result = await uploadSignature(report.id, 'signature', base64Data);
 
-        if (!result.canceled && result.asset) {
-          // Persist video to documents directory so it survives until synced
-          const persistedUri = await persistFile(result.asset.uri, 'video');
-          addVideo(templateItemId, persistedUri);
-          showNotification('Video Added', 'Video recorded successfully');
-        }
-      },
-      async () => {
-        // Choose from library
-        handlePickVideoFromLibrary(templateItemId);
-      },
-      'Record Video',
-      'Choose from Library'
-    );
-  }, [addVideo]);
+      if (result.error) {
+        console.error('[InspectionScreen] Signature upload failed:', result.error);
+        console.warn('[InspectionScreen] Falling back to base64 storage');
+        return base64Data; // Fallback to base64
+      }
 
-  // Handle picking video from library
-  const handlePickVideoFromLibrary = useCallback(async (templateItemId: string) => {
-    const result = await launchVideoLibrary();
+      if (!result.data) {
+        console.warn('[InspectionScreen] No storage path returned, falling back to base64');
+        return base64Data; // Fallback to base64
+      }
 
-    if (!result.canceled && result.asset) {
-      // Persist video to documents directory so it survives until synced
-      const persistedUri = await persistFile(result.asset.uri, 'video');
-      addVideo(templateItemId, persistedUri);
-      showNotification('Video Added', 'Video added successfully');
+      console.log('[InspectionScreen] Signature uploaded:', result.data);
+      return result.data;
+    } catch (err) {
+      console.error('[InspectionScreen] Signature upload exception:', err);
+      console.warn('[InspectionScreen] Falling back to base64 storage');
+      return base64Data; // Fallback to base64
     }
-  }, [addVideo]);
+  }, [report]);
 
   const handleNext = async () => {
     // Auto-save when moving between sections
@@ -346,13 +320,17 @@ export function InspectionScreen() {
       >
         {getVisibleItems(currentSection.template_items).map((item, index) => {
           const response = responses.get(item.id);
+          // Display-only fields (instruction, title, paragraph) don't need a header
+          const isDisplayOnly = ['instruction', 'title', 'paragraph'].includes(item.item_type);
           return (
             <Card key={item.id} style={isMobile ? StyleSheet.flatten([styles.itemCard, styles.itemCardMobile]) : styles.itemCard}>
-              <View style={styles.itemHeader}>
-                <Text style={styles.itemNumber}>{index + 1}</Text>
-                <Text style={styles.itemLabel}>{item.label}</Text>
-                {item.is_required && <Text style={styles.requiredBadge}>Required</Text>}
-              </View>
+              {!isDisplayOnly && (
+                <View style={styles.itemHeader}>
+                  <Text style={styles.itemNumber}>{index + 1}</Text>
+                  <Text style={styles.itemLabel}>{item.label}</Text>
+                  {item.is_required && <Text style={styles.requiredBadge}>Required</Text>}
+                </View>
+              )}
               <ResponseInput
                 itemType={item.item_type}
                 value={response?.responseValue || null}
@@ -364,14 +342,13 @@ export function InspectionScreen() {
                 onAddPhoto={() => handleAddPhoto(item.id)}
                 onPickFromLibrary={() => handlePickFromLibrary(item.id)}
                 onRemovePhoto={(index) => removePhoto(item.id, index)}
-                videoCount={response?.videos?.length}
-                onAddVideo={() => handleAddVideo(item.id)}
                 helpText={item.help_text}
                 placeholder={item.placeholder_text}
                 datetimeMode={item.datetime_mode}
                 ratingMax={item.rating_max}
                 declarationText={item.declaration_text}
                 signatureRequiresName={item.signature_requires_name}
+                onSignatureCapture={handleSignatureCapture}
               />
             </Card>
           );

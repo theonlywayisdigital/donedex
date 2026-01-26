@@ -153,20 +153,6 @@ export function FieldTypeMiniPreview({ type, size = 40 }: FieldTypeMiniPreviewPr
           </View>
         );
 
-      case 'video':
-        return (
-          <View style={styles.iconContainer}>
-            <Icon name="video" size={18} color={colors.text.secondary} />
-          </View>
-        );
-
-      case 'audio':
-        return (
-          <View style={styles.iconContainer}>
-            <Icon name="mic" size={18} color={colors.text.secondary} />
-          </View>
-        );
-
       case 'signature':
         return (
           <View style={styles.iconContainer}>
@@ -354,6 +340,32 @@ export function FieldTypeMiniPreview({ type, size = 40 }: FieldTypeMiniPreviewPr
             <View style={styles.compositeBadge}>
               <Text style={styles.compositeBadgeText}>4</Text>
             </View>
+          </View>
+        );
+
+      // Display & Selection
+      case 'coloured_selection':
+        return (
+          <View style={styles.buttonRow}>
+            <View style={[styles.colorDot, { backgroundColor: colors.primary.DEFAULT }]} />
+            <View style={[styles.colorDot, { backgroundColor: colors.success }]} />
+            <View style={[styles.colorDot, { backgroundColor: colors.warning }]} />
+          </View>
+        );
+
+      case 'title':
+        return (
+          <View style={styles.iconContainer}>
+            <Icon name="heading" size={18} color={colors.text.secondary} />
+          </View>
+        );
+
+      case 'paragraph':
+        return (
+          <View style={styles.paragraphPreview}>
+            <View style={styles.paragraphLine} />
+            <View style={[styles.paragraphLine, { width: '80%' }]} />
+            <View style={[styles.paragraphLine, { width: '60%' }]} />
           </View>
         );
 
@@ -588,5 +600,24 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
+  },
+  // Coloured selection preview
+  colorDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  // Paragraph preview
+  paragraphPreview: {
+    gap: 2,
+    alignItems: 'flex-start',
+    width: '100%',
+    paddingHorizontal: 2,
+  },
+  paragraphLine: {
+    height: 2,
+    backgroundColor: colors.neutral[200],
+    borderRadius: 1,
+    width: '100%',
   },
 });

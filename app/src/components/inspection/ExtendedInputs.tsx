@@ -176,7 +176,7 @@ interface DateInputProps {
 }
 
 export function DateInput({ value, onChange }: DateInputProps) {
-  const [showPicker, setShowPicker] = useState(false);
+  const [showPicker, setShowPicker] = useState(Platform.OS === 'web');
   const currentValue = value ? new Date(value) : new Date();
 
   const handleChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
@@ -189,6 +189,18 @@ export function DateInput({ value, onChange }: DateInputProps) {
     }
   };
 
+  // On web, show the picker directly without a button
+  if (Platform.OS === 'web') {
+    return (
+      <DateTimePicker
+        value={currentValue}
+        mode="date"
+        onChange={handleChange}
+      />
+    );
+  }
+
+  // On native, use button + modal pattern
   return (
     <View>
       <TouchableOpacity
@@ -227,7 +239,7 @@ interface TimeInputProps {
 }
 
 export function TimeInput({ value, onChange }: TimeInputProps) {
-  const [showPicker, setShowPicker] = useState(false);
+  const [showPicker, setShowPicker] = useState(Platform.OS === 'web');
 
   const parseTimeValue = () => {
     if (!value) return new Date();
@@ -257,6 +269,18 @@ export function TimeInput({ value, onChange }: TimeInputProps) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  // On web, show the picker directly without a button
+  if (Platform.OS === 'web') {
+    return (
+      <DateTimePicker
+        value={parseTimeValue()}
+        mode="time"
+        onChange={handleChange}
+      />
+    );
+  }
+
+  // On native, use button + modal pattern
   return (
     <View>
       <TouchableOpacity
@@ -296,7 +320,7 @@ interface ExpiryDateInputProps {
 }
 
 export function ExpiryDateInput({ value, onChange, warningDaysBefore = 30 }: ExpiryDateInputProps) {
-  const [showPicker, setShowPicker] = useState(false);
+  const [showPicker, setShowPicker] = useState(Platform.OS === 'web');
   const currentValue = value ? new Date(value) : new Date();
 
   const getExpiryStatus = () => {
@@ -323,6 +347,25 @@ export function ExpiryDateInput({ value, onChange, warningDaysBefore = 30 }: Exp
 
   const expiryStatus = getExpiryStatus();
 
+  // On web, show the picker directly with status badge
+  if (Platform.OS === 'web') {
+    return (
+      <View style={styles.expiryWebContainer}>
+        <DateTimePicker
+          value={currentValue}
+          mode="date"
+          onChange={handleChange}
+        />
+        {expiryStatus && (
+          <View style={[styles.expiryBadge, { backgroundColor: expiryStatus.color }]}>
+            <Text style={styles.expiryBadgeText}>{expiryStatus.text}</Text>
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  // On native, use button + modal pattern
   return (
     <View>
       <TouchableOpacity
@@ -1075,6 +1118,11 @@ const styles = StyleSheet.create({
     fontSize: fontSize.caption,
     color: colors.white,
     fontWeight: fontWeight.medium,
+  },
+  expiryWebContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
   },
 
   // Counter styles

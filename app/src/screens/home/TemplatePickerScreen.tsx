@@ -139,6 +139,10 @@ export function TemplatePickerScreen() {
     });
   };
 
+  const handlePreview = (templateId: string) => {
+    navigation.navigate('TemplatePreview', { templateId });
+  };
+
   const renderSectionHeader = ({ section }: { section: TemplateSection }) => (
     <View style={styles.sectionHeader}>
       <View style={[styles.sectionIconContainer, { backgroundColor: `${section.color}15` }]}>
@@ -150,13 +154,13 @@ export function TemplatePickerScreen() {
   );
 
   const renderTemplate = ({ item }: { item: TemplateWithRecordType }) => (
-    <TouchableOpacity
-      style={styles.templateCard}
-      onPress={() => handleTemplateSelect(item)}
-      activeOpacity={0.7}
-    >
+    <View style={styles.templateCard}>
       <Card style={styles.templateCardInner}>
-        <View style={styles.templateContent}>
+        <TouchableOpacity
+          style={styles.templateContent}
+          onPress={() => handleTemplateSelect(item)}
+          activeOpacity={0.7}
+        >
           <Icon name="file-text" size={24} color={colors.primary.DEFAULT} />
           <View style={styles.templateInfo}>
             <Text style={styles.templateName}>{item.name}</Text>
@@ -167,9 +171,17 @@ export function TemplatePickerScreen() {
             )}
           </View>
           <Icon name="chevron-right" size={20} color={colors.text.tertiary} />
-        </View>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.previewButton}
+          onPress={() => handlePreview(item.id)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Icon name="eye" size={18} color={colors.primary.DEFAULT} />
+          <Text style={styles.previewButtonText}>Preview</Text>
+        </TouchableOpacity>
       </Card>
-    </TouchableOpacity>
+    </View>
   );
 
   const renderEmpty = () => {
@@ -372,6 +384,21 @@ const styles = StyleSheet.create({
     fontSize: fontSize.caption,
     color: colors.text.secondary,
     marginTop: spacing.xs,
+  },
+  previewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    marginTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.light,
+    gap: spacing.xs,
+  },
+  previewButtonText: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.medium,
+    color: colors.primary.DEFAULT,
   },
   emptyContainer: {
     flex: 1,

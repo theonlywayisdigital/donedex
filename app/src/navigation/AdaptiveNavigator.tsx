@@ -4,7 +4,7 @@
  * Mobile/Tablet/Native: Bottom tab navigation (existing MainNavigator)
  */
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { View, StyleSheet, Platform, Text, Pressable } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useNavigationState, useNavigation } from '@react-navigation/native';
@@ -32,7 +32,7 @@ import {
   InspectionReviewScreen,
   InspectionCompleteScreen,
 } from '../screens/inspection';
-import { TemplateListScreen, TemplateEditorScreen, NewTemplateScreen, AITemplateBuilderScreen } from '../screens/templates';
+import { TemplateListScreen, TemplateDetailScreen, TemplateEditorScreen, NewTemplateScreen, AITemplateBuilderScreen, TemplatePreviewScreen, DocumentImportScreen } from '../screens/templates';
 import {
   SiteListScreen as AdminSiteListScreen,
   SiteEditorScreen,
@@ -86,9 +86,12 @@ export type DesktopStackParamList = {
   ReportDetail: { reportId: string };
   // Templates
   TemplateList: undefined;
+  TemplateDetail: { templateId: string };
+  TemplatePreview: { templateId: string };
   NewTemplate: undefined;
   TemplateEditor: { templateId?: string; initialData?: unknown };
   AITemplateBuilder: undefined;
+  DocumentImport: undefined;
   // Records/Sites
   RecordTypesList: undefined;
   RecordsList: { recordTypeId: string };
@@ -140,9 +143,12 @@ const ROUTE_TO_SIDEBAR_KEY: Record<string, string> = {
   ReportList: 'reports',
   ReportDetail: 'reports',
   TemplateList: 'templates',
+  TemplateDetail: 'templates',
+  TemplatePreview: 'templates',
   NewTemplate: 'templates',
   TemplateEditor: 'templates',
   AITemplateBuilder: 'templates',
+  DocumentImport: 'templates',
   RecordTypesList: 'records',
   RecordsList: 'records',
   SiteList: 'records',
@@ -181,6 +187,22 @@ const webStyles: Record<string, React.CSSProperties> = Platform.OS === 'web' ? {
     minHeight: '100vh',
     overflowY: 'auto' as const,
   },
+  desktopContainer: {
+    minHeight: '100vh',
+  },
+  desktopContentWrapper: {
+    flex: 1,
+    display: 'flex',
+    justifyContent: 'center',
+    backgroundColor: '#f1f5f9', // Slightly darker bg to show content area
+    minHeight: '100vh',
+  },
+  desktopContent: {
+    width: '100%',
+    maxWidth: 1400,
+    minHeight: '100vh',
+    overflowY: 'auto' as const,
+  },
 } : {};
 
 // Custom header left button for desktop web
@@ -198,8 +220,7 @@ function DesktopBackButton() {
         pressed && desktopHeaderStyles.backButtonPressed,
       ]}
     >
-      <Icon name="arrow-left" size={18} color={colors.primary.DEFAULT} />
-      <Text style={desktopHeaderStyles.backButtonText}>Back</Text>
+      <Icon name="arrow-left" size={20} color={colors.primary.DEFAULT} />
     </Pressable>
   );
 }
@@ -217,14 +238,10 @@ const desktopHeaderStyles = StyleSheet.create({
   backButtonPressed: {
     backgroundColor: colors.primary.light,
   },
-  backButtonText: {
-    fontSize: fontSize.body,
-    color: colors.primary.DEFAULT,
-    fontWeight: fontWeight.medium,
-  },
 });
 
 // Screens that should show a header with back button on desktop web
+// NOTE: Do NOT include screens that render their own custom headers (e.g., AITemplateBuilder, DocumentImport)
 const SCREENS_WITH_BACK_BUTTON = new Set([
   'RecordSearch',
   'QuickCreateRecord',
@@ -234,9 +251,11 @@ const SCREENS_WITH_BACK_BUTTON = new Set([
   'InspectionReview',
   'InspectionComplete',
   'ReportDetail',
+  'TemplateDetail',
+  'TemplatePreview',
   'NewTemplate',
   'TemplateEditor',
-  'AITemplateBuilder',
+  // AITemplateBuilder and DocumentImport have their own custom headers
   'RecordsList',
   'SiteEditor',
   'SiteAssignTemplates',
@@ -265,9 +284,11 @@ const SCREEN_TITLES: Record<string, string> = {
   InspectionReview: 'Review',
   InspectionComplete: 'Complete',
   ReportDetail: 'Report',
+  TemplateDetail: 'Template Details',
+  TemplatePreview: 'Template Preview',
   NewTemplate: 'New Template',
   TemplateEditor: 'Edit Template',
-  AITemplateBuilder: 'AI Template Builder',
+  // AITemplateBuilder and DocumentImport have their own headers
   RecordsList: 'Records',
   SiteEditor: 'Edit Record',
   SiteAssignTemplates: 'Assign Templates',
@@ -330,9 +351,12 @@ function DesktopStackNavigator() {
 
       {/* Templates */}
       <DesktopStack.Screen name="TemplateList" component={TemplateListScreen} />
+      <DesktopStack.Screen name="TemplateDetail" component={TemplateDetailScreen} />
+      <DesktopStack.Screen name="TemplatePreview" component={TemplatePreviewScreen} />
       <DesktopStack.Screen name="NewTemplate" component={NewTemplateScreen} />
       <DesktopStack.Screen name="TemplateEditor" component={TemplateEditorScreen} />
       <DesktopStack.Screen name="AITemplateBuilder" component={AITemplateBuilderScreen} />
+      <DesktopStack.Screen name="DocumentImport" component={DocumentImportScreen} />
 
       {/* Records / Sites */}
       <DesktopStack.Screen name="RecordTypesList" component={RecordTypesListScreen} />
@@ -475,6 +499,72 @@ function NavigationSidebar({
 }
 
 /**
+ * Impersonation Banner - shows at top of screen when super admin is viewing as another org
+ */
+function ImpersonationBanner({
+  orgName,
+  onEndImpersonation
+}: {
+  orgName: string | null;
+  onEndImpersonation: () => void;
+}) {
+  return (
+    <View style={impersonationStyles.banner}>
+      <View style={impersonationStyles.bannerContent}>
+        <Icon name="eye" size={18} color={colors.white} />
+        <Text style={impersonationStyles.bannerText}>
+          Viewing as: {orgName || 'Organisation'}
+        </Text>
+      </View>
+      <Pressable
+        onPress={onEndImpersonation}
+        style={({ pressed }) => [
+          impersonationStyles.endButton,
+          pressed && impersonationStyles.endButtonPressed,
+        ]}
+      >
+        <Text style={impersonationStyles.endButtonText}>End Session</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const impersonationStyles = StyleSheet.create({
+  banner: {
+    backgroundColor: colors.warning,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  bannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  bannerText: {
+    color: colors.white,
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.medium,
+  },
+  endButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+  },
+  endButtonPressed: {
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  endButtonText: {
+    color: colors.white,
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.semibold,
+  },
+});
+
+/**
  * Desktop Navigator with Sidebar Layout
  * Wraps the stack navigator with sidebar in a row layout
  */
@@ -482,12 +572,30 @@ function DesktopNavigator() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const role = useAuthStore((state) => state.role);
   const isSuperAdmin = useAuthStore((state) => state.isSuperAdmin);
-  const isAdmin = role === 'admin' || role === 'owner';
+  const impersonationContext = useAuthStore((state) => state.impersonationContext);
+  const endImpersonation = useAuthStore((state) => state.endImpersonation);
+
+  // Check impersonation from context directly (more reliable than getter)
+  const isImpersonating = impersonationContext?.isImpersonating === true;
+  const impersonatedRole = impersonationContext?.impersonatedRole;
+
+  // When impersonating, use the impersonated role for nav
+  const effectiveRole = isImpersonating ? impersonatedRole : role;
+  const isAdmin = effectiveRole === 'admin' || effectiveRole === 'owner';
+
+  // Handler to end impersonation session
+  const handleEndImpersonation = useCallback(async () => {
+    const result = await endImpersonation();
+    if (result.error) {
+      console.error('Failed to end impersonation:', result.error);
+    }
+    // Navigation will update automatically as impersonationContext changes
+  }, [endImpersonation]);
 
   // Build sections based on user role
   const sections: SidebarSection[] = useMemo(() => {
-    // Super Admin gets a completely different nav structure
-    if (isSuperAdmin) {
+    // Super Admin gets a completely different nav structure (but not when impersonating)
+    if (isSuperAdmin && !isImpersonating) {
       return [
         {
           items: [
@@ -556,22 +664,32 @@ function DesktopNavigator() {
     });
 
     return items;
-  }, [isAdmin, isSuperAdmin]);
+  }, [isAdmin, isSuperAdmin, isImpersonating]);
 
   return (
-    <View style={styles.desktopContainer}>
+    <View style={[styles.desktopContainer, webStyles.desktopContainer as any]}>
       {/* Sidebar */}
       <Sidebar
         sections={sections}
         collapsed={sidebarCollapsed}
         onCollapsedChange={setSidebarCollapsed}
-        userRole={role || 'user'}
-        isSuperAdmin={isSuperAdmin}
+        userRole={effectiveRole || 'user'}
+        isSuperAdmin={isSuperAdmin && !isImpersonating}
       />
 
-      {/* Main content area */}
-      <View style={styles.desktopContent}>
-        <DesktopStackNavigator />
+      {/* Main content wrapper - centers content on wide screens */}
+      <View style={[styles.desktopContentWrapper, webStyles.desktopContentWrapper as any]}>
+        {/* Impersonation banner - shown when viewing as another org */}
+        {isImpersonating && (
+          <ImpersonationBanner
+            orgName={impersonationContext?.impersonatedOrgName || null}
+            onEndImpersonation={handleEndImpersonation}
+          />
+        )}
+        {/* Main content area - constrained to max-width */}
+        <View style={[styles.desktopContent, webStyles.desktopContent as any]}>
+          <DesktopStackNavigator />
+        </View>
       </View>
     </View>
   );
@@ -579,15 +697,36 @@ function DesktopNavigator() {
 
 /**
  * AdaptiveNavigator - Main export
- * Renders desktop layout with sidebar on web desktop,
- * or mobile tab navigator on smaller screens/native
- * Super admins always get sidebar on web for full admin access
+ * Renders desktop layout with sidebar on web for:
+ * - Desktop screens (≥1024px)
+ * - Tablets in landscape mode (768-1023px, landscape)
+ * - Super admins (always, for full admin access)
+ *
+ * Mobile/tablet portrait uses bottom tab navigation.
+ * Native apps always use bottom tabs (or SuperAdminNavigator).
+ *
+ * Note: Layout choice is locked on initial load to prevent navigation
+ * state loss when resizing/rotating the browser window.
  */
 export function AdaptiveNavigator() {
-  const { isWeb, isDesktop } = useResponsive();
+  const { isWeb, isDesktop, isTablet, isLandscape } = useResponsive();
   const isSuperAdmin = useAuthStore((state) => state.isSuperAdmin);
   const organisation = useAuthStore((state) => state.organisation);
   const loadBilling = useBillingStore((state) => state.loadAll);
+
+  // Determine if we should show sidebar layout
+  // - Desktop (≥1024px): always sidebar
+  // - Tablet in landscape (768-1023px): sidebar (better use of horizontal space)
+  // - Tablet in portrait / Mobile: bottom tabs
+  const shouldShowSidebar = isDesktop || (isTablet && isLandscape);
+
+  // Lock the initial layout choice to prevent navigator swap on resize/rotate
+  // This preserves navigation state when resizing browser window
+  const initialSidebarRef = useRef<boolean | null>(null);
+  if (initialSidebarRef.current === null) {
+    initialSidebarRef.current = shouldShowSidebar;
+  }
+  const lockedShowSidebar = initialSidebarRef.current;
 
   // Initialize billing data when organisation is available
   useEffect(() => {
@@ -606,8 +745,9 @@ export function AdaptiveNavigator() {
     return <DesktopNavigator />;
   }
 
-  // Desktop web: Sidebar navigation for regular users
-  if (isWeb && isDesktop) {
+  // Web with sidebar: Desktop or tablet in landscape
+  // Uses locked initial value to prevent navigator swap on resize/rotate
+  if (isWeb && lockedShowSidebar) {
     return <DesktopNavigator />;
   }
 
@@ -634,6 +774,10 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     backgroundColor: colors.background,
+  },
+  desktopContentWrapper: {
+    flex: 1,
+    backgroundColor: '#f1f5f9', // Subtle bg to distinguish from content
   },
   desktopContent: {
     flex: 1,

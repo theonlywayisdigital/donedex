@@ -6,9 +6,9 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  Dimensions,
   TextInput,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -26,9 +26,7 @@ interface RecordTypeWithCount extends RecordType {
   record_count: number;
 }
 
-const { width } = Dimensions.get('window');
-const CARD_GAP = spacing.md;
-const CARD_WIDTH = (width - spacing.md * 2 - CARD_GAP) / 2;
+const isWeb = Platform.OS === 'web';
 
 // Map library icon names to our IconName type
 const iconNameMap: Record<string, IconName> = {
@@ -152,16 +150,19 @@ export function RecordTypesListScreen() {
         <View style={[styles.iconContainer, { backgroundColor: recordType.color + '20' }]}>
           <Icon
             name={getIconName(recordType.icon)}
-            size={32}
+            size={24}
             color={recordType.color}
           />
         </View>
-        <Text style={styles.cardName} numberOfLines={1}>
-          {recordType.name}
-        </Text>
-        <Text style={styles.cardCount}>
-          {recordType.record_count} {recordType.record_count === 1 ? recordType.name_singular.toLowerCase() : recordType.name.toLowerCase()}
-        </Text>
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardName} numberOfLines={1}>
+            {recordType.name}
+          </Text>
+          <Text style={styles.cardCount}>
+            {recordType.record_count} {recordType.record_count === 1 ? recordType.name_singular.toLowerCase() : recordType.name.toLowerCase()}
+          </Text>
+        </View>
+        <Icon name="chevron-right" size={20} color={colors.neutral[400]} />
       </TouchableOpacity>
       <View style={styles.cardActions}>
         <TouchableOpacity
@@ -169,7 +170,7 @@ export function RecordTypesListScreen() {
           onPress={() => handleEditType(recordType)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Icon name="edit" size={16} color={colors.primary.DEFAULT} />
+          <Icon name="edit" size={14} color={colors.primary.DEFAULT} />
           <Text style={styles.actionButtonText}>Edit</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -177,7 +178,7 @@ export function RecordTypesListScreen() {
           onPress={() => handleDeleteType(recordType)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Icon name="trash-2" size={16} color={colors.danger} />
+          <Icon name="trash-2" size={14} color={colors.danger} />
           <Text style={styles.deleteButtonText}>Delete</Text>
         </TouchableOpacity>
       </View>
@@ -190,9 +191,10 @@ export function RecordTypesListScreen() {
       onPress={handleAddType}
     >
       <View style={[styles.iconContainer, styles.addIconContainer]}>
-        <Icon name="folder-plus" size={32} color={colors.primary.DEFAULT} />
+        <Icon name="folder-plus" size={24} color={colors.primary.DEFAULT} />
       </View>
-      <Text style={styles.addCardText}>Add Type</Text>
+      <Text style={styles.addCardText}>Add Record Type</Text>
+      <View style={styles.addCardSpacer} />
     </TouchableOpacity>
   );
 
@@ -336,6 +338,7 @@ const styles = StyleSheet.create({
     height: 44,
     fontSize: fontSize.body,
     color: colors.text.primary,
+    ...(isWeb && { outlineStyle: 'none' } as any),
   },
   resultCount: {
     fontSize: fontSize.caption,
@@ -349,35 +352,42 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: CARD_GAP,
+    gap: spacing.sm,
   },
   card: {
-    width: CARD_WIDTH,
     backgroundColor: colors.white,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border.DEFAULT,
     ...shadows.card,
   },
   cardContent: {
+    flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
+    gap: spacing.md,
+  },
+  cardInfo: {
+    flex: 1,
   },
   addCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
     borderStyle: 'dashed',
     borderColor: colors.primary.DEFAULT,
     backgroundColor: colors.primary.light,
   },
+  addCardSpacer: {
+    flex: 1,
+  },
   iconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.sm,
   },
   addIconContainer: {
     backgroundColor: colors.white,
@@ -386,23 +396,20 @@ const styles = StyleSheet.create({
     fontSize: fontSize.body,
     fontWeight: fontWeight.semibold,
     color: colors.text.primary,
-    textAlign: 'center',
-    marginBottom: spacing.xs,
   },
   cardCount: {
     fontSize: fontSize.caption,
     color: colors.text.secondary,
-    textAlign: 'center',
+    marginTop: 2,
   },
   addCardText: {
     fontSize: fontSize.body,
     fontWeight: fontWeight.medium,
     color: colors.primary.DEFAULT,
-    marginTop: spacing.xs,
   },
   cardActions: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     marginTop: spacing.sm,
     paddingTop: spacing.sm,
     borderTopWidth: 1,

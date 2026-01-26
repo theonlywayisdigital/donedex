@@ -154,7 +154,6 @@ export function PageLayout({
         ]}
       >
         <Icon name="arrow-left" size={20} color={colors.primary.DEFAULT} />
-        <Text style={styles.backButtonText}>Back</Text>
       </Pressable>
     );
   };
@@ -293,11 +292,6 @@ const styles = StyleSheet.create({
   },
   backButtonPressed: {
     backgroundColor: colors.primary.light,
-  },
-  backButtonText: {
-    fontSize: fontSize.body,
-    color: colors.primary.DEFAULT,
-    fontWeight: fontWeight.medium,
   },
 });
 

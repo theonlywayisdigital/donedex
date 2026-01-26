@@ -13,14 +13,13 @@ import { showNotification } from '../../utils/alert';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { ReportsStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
-import { Icon, IconName, VideoPlayer } from '../../components/ui';
+import { Icon, IconName } from '../../components/ui';
 import {
   fetchReportById,
   fetchReportResponses,
   ReportWithDetails,
   ReportResponse,
   getPhotoUrl,
-  getVideoUrl,
   getSignatureUrl,
 } from '../../services/reports';
 import { fetchTemplateWithSections, TemplateWithSections } from '../../services/templates';
@@ -62,11 +61,29 @@ export function ReportDetailScreen() {
 
       // Load responses
       const { data: responsesData } = await fetchReportResponses(reportId);
+      console.log('[ReportDetailScreen] Loaded responses:', responsesData.length);
       const responsesMap = new Map<string, ResponseWithPhotos>();
+
+      // Debug: collect photo responses for alert
+      const photoDebugInfo: string[] = [];
+
       responsesData.forEach((r) => {
+        console.log(`[ReportDetailScreen] Response ${r.template_item_id} (${r.item_type}): value = ${r.response_value?.substring(0, 100) || 'null'}`);
+
+        // Collect photo debug info
+        if (['photo', 'photo_before_after', 'annotated_photo'].includes(r.item_type)) {
+          photoDebugInfo.push(`${r.item_label}: ${r.response_value || 'NULL'}`);
+        }
+
         responsesMap.set(r.template_item_id, r);
       });
       setResponses(responsesMap);
+
+      // Log photo responses for debugging (check Metro terminal)
+      if (photoDebugInfo.length > 0) {
+        console.log('[ReportDetailScreen] Photo responses found:', photoDebugInfo.length);
+        photoDebugInfo.forEach((info, i) => console.log(`[ReportDetailScreen] Photo ${i + 1}:`, info));
+      }
 
       // Load branding for PDF export
       const { data: brandingData } = await fetchBrandingContext(reportData.organisation_id);
@@ -200,9 +217,6 @@ export function ReportDetailScreen() {
       case 'annotated_photo':
         return { text: 'Photo captured', color: colors.success, icon: 'camera' };
 
-      case 'video':
-        return { text: 'Video captured', color: colors.success, icon: 'video' };
-
       case 'witness':
         // Mark for special rendering (has name + signature)
         return { text: '__WITNESS__', color: colors.success, icon: 'check-circle' };
@@ -329,23 +343,32 @@ export function ReportDetailScreen() {
     // Handle photo types (photo, photo_before_after, annotated_photo)
     const isPhotoType = ['photo', 'photo_before_after', 'annotated_photo'].includes(itemType);
     if (isPhotoType && response?.response_value) {
+      console.log(`[ReportDetailScreen] Photo response_value: ${response.response_value}`);
       const paths = getMediaPaths(response.response_value);
+      console.log(`[ReportDetailScreen] Parsed photo paths:`, paths);
       if (paths.length > 0) {
         return (
           <View style={styles.photoGallery}>
-            {paths.map((path, index) => (
-              <TouchableOpacity
-                key={index}
-                onPress={() => setSelectedPhoto(path)}
-                activeOpacity={0.8}
-              >
-                <Image
-                  source={{ uri: getPhotoUrl(path) }}
-                  style={styles.photoThumbnail}
-                  resizeMode="cover"
-                />
-              </TouchableOpacity>
-            ))}
+            {paths.map((path, index) => {
+              const photoUrl = getPhotoUrl(path);
+              console.log(`[ReportDetailScreen] Photo ${index} path: ${path}`);
+              console.log(`[ReportDetailScreen] Photo ${index} URL: ${photoUrl}`);
+              return (
+                <TouchableOpacity
+                  key={index}
+                  onPress={() => setSelectedPhoto(path)}
+                  activeOpacity={0.8}
+                >
+                  <Image
+                    source={{ uri: photoUrl }}
+                    style={styles.photoThumbnail}
+                    resizeMode="cover"
+                    onError={(e) => console.error(`[ReportDetailScreen] Image load error for ${photoUrl}:`, e.nativeEvent.error)}
+                    onLoad={() => console.log(`[ReportDetailScreen] Image loaded successfully: ${photoUrl}`)}
+                  />
+                </TouchableOpacity>
+              );
+            })}
           </View>
         );
       }
@@ -354,38 +377,6 @@ export function ReportDetailScreen() {
         <View style={styles.responseValueContainer}>
           <Icon name="camera" size={18} color={colors.success} style={styles.responseIcon} />
           <Text style={[styles.responseValue, { color: colors.success }]}>Photo captured</Text>
-        </View>
-      );
-    }
-
-    // Handle video with player
-    if (itemType === 'video' && response?.response_value) {
-      const paths = getMediaPaths(response.response_value);
-      if (paths.length > 0) {
-        return (
-          <View style={styles.videoContainer}>
-            <View style={styles.responseValueContainer}>
-              <Icon name="video" size={18} color={colors.success} style={styles.responseIcon} />
-              <Text style={[styles.responseValue, { color: colors.success }]}>
-                {paths.length === 1 ? 'Video captured' : `${paths.length} videos captured`}
-              </Text>
-            </View>
-            {paths.map((path, index) => {
-              const videoUrl = isStoragePath(path) ? getVideoUrl(path) : path;
-              return (
-                <View key={index} style={styles.videoPlayerWrapper}>
-                  <VideoPlayer uri={videoUrl} thumbnailMode />
-                </View>
-              );
-            })}
-          </View>
-        );
-      }
-      // Fallback for pending uploads
-      return (
-        <View style={styles.responseValueContainer}>
-          <Icon name="video" size={18} color={colors.success} style={styles.responseIcon} />
-          <Text style={[styles.responseValue, { color: colors.success }]}>Video captured</Text>
         </View>
       );
     }
@@ -755,14 +746,6 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.medium,
     color: colors.text.primary,
     marginBottom: spacing.xs,
-  },
-  videoContainer: {
-    alignItems: 'flex-start',
-    width: '100%',
-  },
-  videoPlayerWrapper: {
-    marginTop: spacing.sm,
-    width: '100%',
   },
   photoGallery: {
     flexDirection: 'row',

@@ -1,6 +1,6 @@
 /**
- * Sidebar - Desktop navigation sidebar for web
- * Only renders on web desktop; returns null on mobile/native
+ * Sidebar - Modern desktop navigation sidebar for web
+ * Inspired by apps like Linear, Notion, Slack
  */
 
 import React, { useState } from 'react';
@@ -11,11 +11,13 @@ import {
   StyleSheet,
   Platform,
   ScrollView,
+  Image,
 } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
 import { Icon, type IconName } from '../ui';
 import { NotificationBell } from '../notifications';
+import { useAuthStore } from '../../store/authStore';
 
 // Sidebar item definition
 export interface SidebarItem {
@@ -44,14 +46,25 @@ export interface SidebarProps {
   isSuperAdmin?: boolean;
   headerContent?: React.ReactNode;
   footerContent?: React.ReactNode;
-  /** Show notification bell in header */
   showNotifications?: boolean;
 }
 
 // Sidebar dimensions
-const SIDEBAR_WIDTH = 280;
-const SIDEBAR_COLLAPSED_WIDTH = 72;
-const ITEM_HEIGHT = 44;
+const SIDEBAR_WIDTH = 260;
+const SIDEBAR_COLLAPSED_WIDTH = 68;
+const ITEM_HEIGHT = 40;
+
+// Modern sidebar colors
+const sidebarColors = {
+  background: '#1a1d21', // Dark charcoal
+  backgroundHover: '#2a2d31',
+  backgroundActive: 'rgba(15, 76, 92, 0.3)', // Primary with transparency
+  border: '#2a2d31',
+  text: '#b4b7bc',
+  textActive: '#ffffff',
+  textMuted: '#6b6f76',
+  accent: colors.primary.DEFAULT,
+};
 
 // Web-specific styles
 const webStyles: Record<string, React.CSSProperties> = Platform.OS === 'web' ? {
@@ -63,7 +76,7 @@ const webStyles: Record<string, React.CSSProperties> = Platform.OS === 'web' ? {
   },
   item: {
     cursor: 'pointer',
-    transition: 'background-color 0.15s ease',
+    transition: 'all 0.15s ease',
   },
   scrollContainer: {
     overflowY: 'auto' as const,
@@ -84,6 +97,8 @@ export function Sidebar({
 }: SidebarProps) {
   const navigation = useNavigation<any>();
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const userProfile = useAuthStore((state) => state.profile);
+  const organisation = useAuthStore((state) => state.organisation);
 
   // Only render on web
   if (Platform.OS !== 'web') {
@@ -123,14 +138,17 @@ export function Sidebar({
           isActive && styles.itemActive,
           isHovered && !isActive && styles.itemHovered,
           { height: ITEM_HEIGHT },
+          webStyles.item as any,
         ]}
       >
         <View style={styles.itemContent}>
-          <Icon
-            name={item.icon}
-            size={20}
-            color={isActive ? colors.primary.DEFAULT : colors.text.secondary}
-          />
+          <View style={[styles.iconContainer, isActive && styles.iconContainerActive]}>
+            <Icon
+              name={item.icon}
+              size={18}
+              color={isActive ? sidebarColors.textActive : sidebarColors.text}
+            />
+          </View>
           {!collapsed && (
             <Text
               style={[
@@ -150,6 +168,7 @@ export function Sidebar({
             </View>
           )}
         </View>
+        {isActive && <View style={styles.activeIndicator} />}
       </Pressable>
     );
   };
@@ -164,7 +183,7 @@ export function Sidebar({
         {section.title && !collapsed && (
           <Text style={styles.sectionTitle}>{section.title}</Text>
         )}
-        {collapsed && section.title && (
+        {collapsed && index > 0 && (
           <View style={styles.sectionDivider} />
         )}
         {filteredItems.map(renderItem)}
@@ -180,49 +199,93 @@ export function Sidebar({
         webStyles.sidebar as any,
       ]}
     >
-      {/* Header */}
+      {/* Header with org/branding */}
       <View style={styles.header}>
         {headerContent || (
-          <View style={styles.logoContainer}>
-            {!collapsed ? (
-              <Text style={styles.logoText}>Donedex</Text>
-            ) : (
-              <Text style={styles.logoTextCollapsed}>DD</Text>
+          <View style={styles.brandContainer}>
+            <View style={styles.brandIcon}>
+              <Text style={styles.brandIconText}>
+                {organisation?.name?.charAt(0)?.toUpperCase() || 'D'}
+              </Text>
+            </View>
+            {!collapsed && (
+              <View style={styles.brandInfo}>
+                <Text style={styles.brandName} numberOfLines={1}>
+                  {organisation?.name || 'Donedex'}
+                </Text>
+                <Text style={styles.brandPlan} numberOfLines={1}>
+                  {isSuperAdmin ? 'Super Admin' : isAdmin ? 'Admin' : 'Team Member'}
+                </Text>
+              </View>
             )}
           </View>
         )}
-        <View style={styles.headerActions}>
-          {showNotifications && !collapsed && (
-            <NotificationBell size={20} color={colors.text.secondary} />
-          )}
-          {onCollapsedChange && (
-            <Pressable
-              style={styles.collapseButton}
-              onPress={() => onCollapsedChange(!collapsed)}
-            >
-              <Icon
-                name={collapsed ? 'chevron-right' : 'chevron-left'}
-                size={18}
-                color={colors.text.secondary}
-              />
-            </Pressable>
-          )}
-        </View>
+        {!collapsed && onCollapsedChange && (
+          <Pressable
+            style={({ hovered }: any) => [
+              styles.collapseButton,
+              hovered && styles.collapseButtonHovered,
+            ]}
+            onPress={() => onCollapsedChange(!collapsed)}
+          >
+            <Icon
+              name="panel-left-close"
+              size={16}
+              color={sidebarColors.textMuted}
+            />
+          </Pressable>
+        )}
       </View>
 
       {/* Navigation items */}
       <ScrollView
         style={[styles.scrollContainer, webStyles.scrollContainer as any]}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
       >
         {sections.map(renderSection)}
       </ScrollView>
 
-      {/* Footer */}
-      {footerContent && (
-        <View style={styles.footer}>
-          {footerContent}
-        </View>
+      {/* Footer with user info */}
+      <View style={styles.footer}>
+        {footerContent || (
+          <Pressable
+            style={({ hovered }: any) => [
+              styles.userSection,
+              hovered && styles.userSectionHovered,
+            ]}
+            onPress={() => navigation.navigate('Settings')}
+          >
+            <View style={styles.userAvatar}>
+              <Text style={styles.userAvatarText}>
+                {userProfile?.full_name?.charAt(0)?.toUpperCase() || 'U'}
+              </Text>
+            </View>
+            {!collapsed && (
+              <View style={styles.userInfo}>
+                <Text style={styles.userName} numberOfLines={1}>
+                  {userProfile?.full_name || 'User'}
+                </Text>
+                <Text style={styles.userEmail} numberOfLines={1}>
+                  {userProfile?.email || ''}
+                </Text>
+              </View>
+            )}
+            {!collapsed && (
+              <Icon name="settings" size={16} color={sidebarColors.textMuted} />
+            )}
+          </Pressable>
+        )}
+      </View>
+
+      {/* Expand button when collapsed */}
+      {collapsed && onCollapsedChange && (
+        <Pressable
+          style={styles.expandButton}
+          onPress={() => onCollapsedChange(false)}
+        >
+          <Icon name="panel-left-open" size={16} color={sidebarColors.textMuted} />
+        </Pressable>
       )}
     </View>
   );
@@ -230,67 +293,85 @@ export function Sidebar({
 
 const styles = StyleSheet.create({
   sidebar: {
-    backgroundColor: colors.white,
-    borderRightWidth: 1,
-    borderRightColor: colors.border.DEFAULT,
+    backgroundColor: sidebarColors.background,
     flexDirection: 'column',
+    borderRightWidth: 1,
+    borderRightColor: sidebarColors.border,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.lg,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
+    borderBottomColor: sidebarColors.border,
   },
-  logoContainer: {
-    flex: 1,
-  },
-  headerActions: {
+  brandContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
     gap: spacing.sm,
   },
-  logoText: {
-    fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.bold,
-    color: colors.primary.DEFAULT,
-  },
-  logoTextCollapsed: {
-    fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.bold,
-    color: colors.primary.DEFAULT,
-    textAlign: 'center',
-  },
-  collapseButton: {
+  brandIcon: {
     width: 32,
     height: 32,
     borderRadius: borderRadius.md,
-    backgroundColor: colors.neutral[100],
+    backgroundColor: colors.primary.DEFAULT,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  brandIconText: {
+    fontSize: 14,
+    fontWeight: fontWeight.bold,
+    color: colors.white,
+  },
+  brandInfo: {
+    flex: 1,
+  },
+  brandName: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.semibold,
+    color: sidebarColors.textActive,
+  },
+  brandPlan: {
+    fontSize: fontSize.caption - 1,
+    color: sidebarColors.textMuted,
+  },
+  collapseButton: {
+    width: 28,
+    height: 28,
+    borderRadius: borderRadius.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  collapseButtonHovered: {
+    backgroundColor: sidebarColors.backgroundHover,
   },
   scrollContainer: {
     flex: 1,
   },
-  section: {
+  scrollContent: {
     paddingVertical: spacing.sm,
   },
+  section: {
+    paddingVertical: spacing.xs,
+  },
   sectionTitle: {
-    fontSize: fontSize.caption,
-    fontWeight: fontWeight.medium,
-    color: colors.text.tertiary,
+    fontSize: 11,
+    fontWeight: fontWeight.semibold,
+    color: sidebarColors.textMuted,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
+    marginTop: spacing.sm,
   },
   sectionDivider: {
     height: 1,
-    backgroundColor: colors.border.light,
+    backgroundColor: sidebarColors.border,
     marginHorizontal: spacing.md,
-    marginVertical: spacing.xs,
+    marginVertical: spacing.sm,
   },
   item: {
     flexDirection: 'row',
@@ -298,6 +379,7 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.sm,
     paddingHorizontal: spacing.sm,
     borderRadius: borderRadius.md,
+    position: 'relative',
   },
   itemContent: {
     flex: 1,
@@ -305,43 +387,107 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
+  iconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: borderRadius.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconContainerActive: {
+    backgroundColor: 'rgba(15, 76, 92, 0.2)',
+  },
   itemActive: {
-    backgroundColor: colors.primary.light,
+    backgroundColor: sidebarColors.backgroundActive,
   },
   itemHovered: {
-    backgroundColor: colors.neutral[100],
+    backgroundColor: sidebarColors.backgroundHover,
   },
-  itemPressed: {
-    backgroundColor: colors.neutral[200],
+  activeIndicator: {
+    position: 'absolute',
+    left: 0,
+    top: '50%',
+    marginTop: -8,
+    width: 3,
+    height: 16,
+    backgroundColor: colors.primary.DEFAULT,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
   },
   itemLabel: {
     flex: 1,
-    fontSize: fontSize.body,
+    fontSize: fontSize.body - 1,
     fontWeight: fontWeight.medium,
-    color: colors.text.secondary,
+    color: sidebarColors.text,
   },
   itemLabelActive: {
-    color: colors.primary.DEFAULT,
+    color: sidebarColors.textActive,
     fontWeight: fontWeight.semibold,
   },
   badge: {
     backgroundColor: colors.danger,
     borderRadius: borderRadius.full,
-    paddingHorizontal: spacing.xs + 2,
+    paddingHorizontal: 6,
     paddingVertical: 2,
-    minWidth: 20,
+    minWidth: 18,
     alignItems: 'center',
   },
   badgeText: {
-    fontSize: 11,
-    fontWeight: fontWeight.semibold,
+    fontSize: 10,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
   footer: {
     borderTopWidth: 1,
-    borderTopColor: colors.border.light,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
+    borderTopColor: sidebarColors.border,
+    padding: spacing.sm,
+  },
+  userSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.sm,
+    borderRadius: borderRadius.md,
+    gap: spacing.sm,
+  },
+  userSectionHovered: {
+    backgroundColor: sidebarColors.backgroundHover,
+  },
+  userAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.full,
+    backgroundColor: sidebarColors.backgroundHover,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  userAvatarText: {
+    fontSize: 13,
+    fontWeight: fontWeight.semibold,
+    color: sidebarColors.text,
+  },
+  userInfo: {
+    flex: 1,
+  },
+  userName: {
+    fontSize: fontSize.body - 1,
+    fontWeight: fontWeight.medium,
+    color: sidebarColors.textActive,
+  },
+  userEmail: {
+    fontSize: fontSize.caption - 1,
+    color: sidebarColors.textMuted,
+  },
+  expandButton: {
+    position: 'absolute',
+    bottom: spacing.md,
+    left: '50%',
+    marginLeft: -14,
+    width: 28,
+    height: 28,
+    borderRadius: borderRadius.sm,
+    backgroundColor: sidebarColors.backgroundHover,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

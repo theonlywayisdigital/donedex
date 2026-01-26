@@ -109,6 +109,8 @@ import {
   ArrowUpRight,
   GripVertical,
   WifiOff,
+  Heading,
+  AlignLeft,
   type LucideIcon,
 } from 'lucide-react-native';
 import { colors } from '../../constants/theme';
@@ -222,6 +224,8 @@ const iconMap = {
   'phone': Phone,
   'grip-vertical': GripVertical,
   'wifi-off': WifiOff,
+  'heading': Heading,
+  'align-left': AlignLeft,
 } as const;
 
 export type IconName = keyof typeof iconMap;

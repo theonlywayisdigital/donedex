@@ -25,7 +25,6 @@ export interface LocalResponse {
   severity: 'low' | 'medium' | 'high' | null;
   notes: string | null;
   photos: string[]; // Local URIs
-  videos: string[]; // Local URIs for video recordings
 }
 
 interface InspectionState {
@@ -64,11 +63,9 @@ interface InspectionState {
 
   addPhoto: (templateItemId: string, photoUri: string) => void;
   removePhoto: (templateItemId: string, photoIndex: number) => void;
-  addVideo: (templateItemId: string, videoUri: string) => void;
-  removeVideo: (templateItemId: string, videoIndex: number) => void;
 
   saveResponses: () => Promise<{ error: string | null }>;
-  submitInspection: () => Promise<{ error: string | null }>;
+  submitInspection: () => Promise<{ error: string | null; warning?: string }>;
 
   nextSection: () => void;
   previousSection: () => void;
@@ -158,7 +155,6 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
             severity: null,
             notes: null,
             photos: [],
-            videos: [],
           });
         });
       });
@@ -248,7 +244,6 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
             severity: (mergedResponse?.severity as 'low' | 'medium' | 'high' | null) || null,
             notes: mergedResponse?.notes || null,
             photos: mergedResponse?.photos || localResponse?.photos || [],
-            videos: (localResponse as { videos?: string[] })?.videos || [],
           });
         });
       });
@@ -281,7 +276,6 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
       severity: null,
       notes: null,
       photos: [],
-      videos: [],
     };
 
     newResponses.set(templateItemId, {
@@ -345,36 +339,6 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
     }
   },
 
-  addVideo: (templateItemId, videoUri) => {
-    const { responses } = get();
-    const newResponses = new Map(responses);
-    const existing = newResponses.get(templateItemId);
-
-    if (existing) {
-      newResponses.set(templateItemId, {
-        ...existing,
-        videos: [...existing.videos, videoUri],
-      });
-      set({ responses: newResponses });
-    }
-  },
-
-  removeVideo: (templateItemId, videoIndex) => {
-    const { responses } = get();
-    const newResponses = new Map(responses);
-    const existing = newResponses.get(templateItemId);
-
-    if (existing) {
-      const newVideos = [...existing.videos];
-      newVideos.splice(videoIndex, 1);
-      newResponses.set(templateItemId, {
-        ...existing,
-        videos: newVideos,
-      });
-      set({ responses: newResponses });
-    }
-  },
-
   saveResponses: async () => {
     const { report, responses, template } = get();
     if (!report) return { error: 'No active inspection' };
@@ -410,9 +374,8 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
       responses.forEach((response) => {
         const hasValue = response.responseValue !== null;
         const hasPhotos = response.photos && response.photos.length > 0;
-        const hasVideos = response.videos && response.videos.length > 0;
 
-        if (hasValue || hasPhotos || hasVideos) {
+        if (hasValue || hasPhotos) {
           addToSyncQueue('response', {
             reportId: report.id,
             templateItemId: response.templateItemId,
@@ -428,23 +391,20 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
     }
 
     try {
-      // Save each response that has a value OR has photos/videos
+      // Save each response that has a value OR has photos
       const savePromises: Promise<unknown>[] = [];
 
       responses.forEach((response) => {
-        // Check if response has content (value, photos, or videos)
+        // Check if response has content (value or photos)
         const hasValue = response.responseValue !== null;
         const hasPhotos = response.photos && response.photos.length > 0;
-        const hasVideos = response.videos && response.videos.length > 0;
 
-        if (hasValue || hasPhotos || hasVideos) {
-          // For photo/video items without responseValue, set a placeholder
+        if (hasValue || hasPhotos) {
+          // For photo items without responseValue, set a placeholder
           // The actual storage paths will be set after upload in submitInspection
           let responseValue = response.responseValue;
           if (!responseValue && hasPhotos) {
             responseValue = `${response.photos.length} photo(s) pending upload`;
-          } else if (!responseValue && hasVideos) {
-            responseValue = `${response.videos.length} video(s) pending upload`;
           }
 
           savePromises.push(
@@ -469,9 +429,8 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
       responses.forEach((response) => {
         const hasValue = response.responseValue !== null;
         const hasPhotos = response.photos && response.photos.length > 0;
-        const hasVideos = response.videos && response.videos.length > 0;
 
-        if (hasValue || hasPhotos || hasVideos) {
+        if (hasValue || hasPhotos) {
           addToSyncQueue('response', {
             reportId: report.id,
             templateItemId: response.templateItemId,
@@ -502,69 +461,88 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
         return saveResult;
       }
 
-      // Upload all photos and videos before submitting
-      // Note: Photos/videos are uploaded to storage with reportId/templateItemId path
+      // Upload all photos before submitting
+      // Note: Photos are uploaded to storage with reportId/templateItemId path
       // The reports service handles compression for photos
       // Track storage paths by template item ID so we can update response records
-      const mediaPathsByItem = new Map<string, { photoPaths: string[]; videoPaths: string[] }>();
+      const mediaPathsByItem = new Map<string, string[]>();
+
+      // Count total photos to upload
+      let totalPhotos = 0;
+      let failedUploads = 0;
+      const failedItems: string[] = [];
+      responses.forEach((r) => { totalPhotos += r.photos.length; });
+      console.log(`[submitInspection] Starting upload of ${totalPhotos} photos`);
 
       for (const response of responses.values()) {
+        if (response.photos.length === 0) continue;
+
+        console.log(`[submitInspection] Uploading ${response.photos.length} photo(s) for item ${response.templateItemId} (${response.itemLabel})`);
         const photoPaths: string[] = [];
-        const videoPaths: string[] = [];
+        let itemHadFailure = false;
 
         // Upload photos (reports service handles compression)
         for (const photoUri of response.photos) {
+          console.log(`[submitInspection] Uploading photo: ${photoUri ? photoUri.substring(0, 50) : 'NULL'}...`);
           const result = await reportsService.uploadMediaFile(report.id, response.templateItemId, photoUri, 'photo');
           if (result.error) {
-            console.error('Failed to upload photo:', result.error);
+            console.error('[submitInspection] Failed to upload photo:', result.error);
+            failedUploads++;
+            itemHadFailure = true;
           } else if (result.data) {
+            console.log(`[submitInspection] Photo uploaded successfully. Storage path: ${result.data}`);
             photoPaths.push(result.data);
+          } else {
+            console.error('[submitInspection] Upload returned no data or error');
+            failedUploads++;
+            itemHadFailure = true;
           }
         }
 
-        // Upload videos
-        for (const videoUri of response.videos) {
-          const result = await reportsService.uploadMediaFile(report.id, response.templateItemId, videoUri, 'video');
-          if (result.error) {
-            console.error('Failed to upload video:', result.error);
-          } else if (result.data) {
-            videoPaths.push(result.data);
-          }
+        // Track items with failures
+        if (itemHadFailure) {
+          failedItems.push(response.itemLabel);
         }
 
         // Store paths for this item if we uploaded anything
-        if (photoPaths.length > 0 || videoPaths.length > 0) {
-          mediaPathsByItem.set(response.templateItemId, { photoPaths, videoPaths });
+        if (photoPaths.length > 0) {
+          mediaPathsByItem.set(response.templateItemId, photoPaths);
         }
       }
 
+      // Log summary
+      console.log(`[submitInspection] Upload complete: ${totalPhotos - failedUploads}/${totalPhotos} photos succeeded`);
+      if (failedUploads > 0) {
+        console.error(`[submitInspection] ${failedUploads} photos failed to upload for items:`, failedItems);
+      }
+
+      console.log(`[submitInspection] Photo upload complete. Updating ${mediaPathsByItem.size} response records`);
+
       // Update response records with actual storage paths
-      for (const [templateItemId, paths] of mediaPathsByItem) {
+      for (const [templateItemId, photoPaths] of mediaPathsByItem) {
         const response = responses.get(templateItemId);
         if (response) {
-          let responseValue: string | null = null;
-          if (paths.photoPaths.length > 0) {
-            // Store the first photo path (or all paths as JSON if multiple)
-            responseValue = paths.photoPaths.length === 1
-              ? paths.photoPaths[0]
-              : JSON.stringify(paths.photoPaths);
-          } else if (paths.videoPaths.length > 0) {
-            // Store the first video path (or all paths as JSON if multiple)
-            responseValue = paths.videoPaths.length === 1
-              ? paths.videoPaths[0]
-              : JSON.stringify(paths.videoPaths);
-          }
+          // Store the first photo path (or all paths as JSON if multiple)
+          const responseValue = photoPaths.length === 1
+            ? photoPaths[0]
+            : JSON.stringify(photoPaths);
 
-          if (responseValue) {
-            await reportsService.upsertResponse({
-              report_id: report.id,
-              template_item_id: templateItemId,
-              item_label: response.itemLabel,
-              item_type: response.itemType,
-              response_value: responseValue,
-              severity: response.severity,
-              notes: response.notes,
-            });
+          console.log(`[submitInspection] Updating response ${templateItemId} with value: ${responseValue}`);
+
+          const updateResult = await reportsService.upsertResponse({
+            report_id: report.id,
+            template_item_id: templateItemId,
+            item_label: response.itemLabel,
+            item_type: response.itemType,
+            response_value: responseValue,
+            severity: response.severity,
+            notes: response.notes,
+          });
+
+          if (updateResult.error) {
+            console.error(`[submitInspection] Failed to update response ${templateItemId}:`, updateResult.error);
+          } else {
+            console.log(`[submitInspection] Response ${templateItemId} updated successfully`);
           }
         }
       }
@@ -582,6 +560,15 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
         report: { ...report, status: 'submitted', submitted_at: new Date().toISOString() },
         isSaving: false,
       });
+
+      // Return success, but with warning if photos failed
+      if (failedUploads > 0) {
+        // Report was submitted but some photos failed
+        return {
+          error: null,
+          warning: `${failedUploads} photo(s) failed to upload. Report was submitted but photos for: ${failedItems.join(', ')} may be missing.`,
+        };
+      }
 
       return { error: null };
     } catch (err) {

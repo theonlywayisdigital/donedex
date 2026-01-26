@@ -11,11 +11,12 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
-import { ItemType, PhotoRule, DatetimeMode, ConditionOperator, RatingStyle, UnitType, InstructionStyle, SubItem } from '../../services/templates';
-import { FIELD_TYPE_CONFIG, UNIT_PRESETS } from '../../constants/fieldTypes';
+import { ItemType, PhotoRule, DatetimeMode, ConditionOperator, RatingStyle, UnitType, InstructionStyle, SubItem, DisplayStyle } from '../../services/templates';
+import { FIELD_TYPE_CONFIG, UNIT_PRESETS, getDefaultPhotoRule } from '../../constants/fieldTypes';
 import { FieldTypeCategoryPicker, FieldTypeCategory, FIELD_TYPE_CATEGORIES_V2 } from './FieldTypeCategoryPicker';
 import { FieldTypeListPicker } from './FieldTypeListPicker';
 import { FieldTypeMiniPreview } from './FieldTypeMiniPreview';
+import { ColouredOptionsEditor } from './ColouredOptionsEditor';
 import { Icon, ProBadge, DragHandle } from '../ui';
 import { useBillingStore } from '../../store/billingStore';
 
@@ -60,6 +61,10 @@ interface LocalItem {
   instruction_image_url?: string | null;
   instruction_style?: InstructionStyle | null;
   asset_types?: string[] | null;
+  // Coloured selection options
+  coloured_options?: { label: string; color: string }[] | null;
+  // Title/paragraph display style
+  display_style?: DisplayStyle | null;
 }
 
 interface Section {
@@ -97,11 +102,62 @@ const DATETIME_MODES: { value: DatetimeMode; label: string }[] = [
   { value: 'datetime', label: 'Date & Time' },
 ];
 
-const PHOTO_RULES: { value: PhotoRule; label: string; description: string }[] = [
-  { value: 'never', label: 'Never', description: 'No photo option' },
-  { value: 'on_fail', label: 'On Issue', description: 'Show photo option when issue detected' },
-  { value: 'always', label: 'Always', description: 'Always show photo option' },
+// Field types that should NOT have a photo rule option at all
+const NO_PHOTO_RULE_TYPES: ItemType[] = [
+  // Composites - data entry, not inspection items
+  'composite_person_name', 'composite_contact', 'composite_address_uk',
+  'composite_address_us', 'composite_address_intl', 'composite_vehicle',
+  // Media fields - they ARE photo capture
+  'photo', 'photo_before_after', 'annotated_photo',
+  // People fields - reference/identity, not inspection
+  'person_picker', 'contractor', 'witness',
+  // Auto-filled fields - no user input
+  'auto_timestamp', 'auto_weather',
+  // Container fields - items inside have their own rules
+  'conditional', 'repeater',
 ];
+
+// Get photo rules based on field type (returns null if field type has no photo option)
+const getPhotoRulesForFieldType = (fieldType: ItemType): { value: PhotoRule; label: string; description: string }[] | null => {
+  // Return null for field types that shouldn't have photo options
+  if (NO_PHOTO_RULE_TYPES.includes(fieldType)) {
+    return null;
+  }
+
+  switch (fieldType) {
+    case 'pass_fail':
+      return [
+        { value: 'never', label: 'Never', description: 'No photo option' },
+        { value: 'on_pass', label: 'On Pass', description: 'Photo when Pass selected' },
+        { value: 'on_fail', label: 'On Fail', description: 'Photo when Fail selected' },
+        { value: 'always', label: 'Always', description: 'Always show photo option' },
+      ];
+    case 'yes_no':
+      return [
+        { value: 'never', label: 'Never', description: 'No photo option' },
+        { value: 'on_yes', label: 'On Yes', description: 'Photo when Yes selected' },
+        { value: 'on_no', label: 'On No', description: 'Photo when No selected' },
+        { value: 'always', label: 'Always', description: 'Always show photo option' },
+      ];
+    case 'condition':
+    case 'severity':
+    case 'traffic_light':
+      return [
+        { value: 'never', label: 'Never', description: 'No photo option' },
+        { value: 'on_fail', label: 'On Issue', description: 'Photo when issue detected' },
+        { value: 'always', label: 'Always', description: 'Always show photo option' },
+      ];
+    default:
+      // All other fields: Never + Always only
+      return [
+        { value: 'never', label: 'Never', description: 'No photo option' },
+        { value: 'always', label: 'Always', description: 'Always show photo option' },
+      ];
+  }
+};
+
+// Legacy constant for backward compatibility
+const PHOTO_RULES = getPhotoRulesForFieldType('text');
 
 export function ItemEditor({
   item,
@@ -140,6 +196,7 @@ export function ItemEditor({
   const [showCustomOptionsModal, setShowCustomOptionsModal] = useState(false);
   const [customOptionsText, setCustomOptionsText] = useState(item.options?.join('\n') || '');
   const [showMoveToSectionModal, setShowMoveToSectionModal] = useState(false);
+  const [showColouredOptionsEditor, setShowColouredOptionsEditor] = useState(false);
 
   // Find the selected condition field
   const selectedConditionField = availableConditionFields.find(
@@ -173,7 +230,9 @@ export function ItemEditor({
 
   // Get selected type config from FIELD_TYPE_CONFIG
   const selectedTypeConfig = FIELD_TYPE_CONFIG[item.item_type];
-  const selectedPhotoRule = PHOTO_RULES.find((r) => r.value === item.photo_rule);
+  // Get photo rules for current field type (null if field type doesn't support photo rules)
+  const photoRulesForType = getPhotoRulesForFieldType(item.item_type);
+  const selectedPhotoRule = photoRulesForType?.find((r) => r.value === item.photo_rule);
   const selectedDatetimeMode = DATETIME_MODES.find((m) => m.value === item.datetime_mode);
 
   // Handlers for two-tier picker
@@ -184,12 +243,25 @@ export function ItemEditor({
   };
 
   const handleTypeSelect = (type: ItemType) => {
+    // Determine the appropriate photo rule for the new type
+    const rulesForNewType = getPhotoRulesForFieldType(type);
+    let newPhotoRule = item.photo_rule;
+
+    if (rulesForNewType === null) {
+      // Field type doesn't support photo rules - set to 'never'
+      newPhotoRule = 'never';
+    } else {
+      // Check if current photo_rule is valid for the new type
+      const currentRuleValid = rulesForNewType.some(r => r.value === item.photo_rule);
+      if (!currentRuleValid) {
+        // Apply the default photo rule for this field type
+        newPhotoRule = getDefaultPhotoRule(type);
+      }
+    }
+
     onUpdate({
       item_type: type,
-      // Reset photo_rule if switching to photo/media types
-      photo_rule: ['photo', 'photo_before_after', 'video', 'audio', 'annotated_photo'].includes(type)
-        ? 'always'
-        : item.photo_rule,
+      photo_rule: newPhotoRule,
       // Reset options if not a select type
       options: type === 'select' || type === 'multi_select' || type === 'checklist'
         ? item.options
@@ -219,7 +291,13 @@ export function ItemEditor({
   const needsDeclarationConfig = item.item_type === 'declaration';
   const needsNumberConfig = item.item_type === 'number';
   const needsConditionSeverityConfig = item.item_type === 'condition' || item.item_type === 'severity';
-  const showPhotoRuleOption = !['photo', 'signature', 'declaration'].includes(item.item_type);
+  const needsPassFailConfig = item.item_type === 'pass_fail';
+  const needsYesNoConfig = item.item_type === 'yes_no';
+  const needsColouredSelectionConfig = item.item_type === 'coloured_selection';
+  const needsTitleConfig = item.item_type === 'title';
+  const needsParagraphConfig = item.item_type === 'paragraph';
+  // Show photo rule option only if field type supports it
+  const showPhotoRuleOption = photoRulesForType !== null;
 
   // Count configured advanced options
   const advancedOptionsCount = [
@@ -258,6 +336,137 @@ export function ItemEditor({
               : 'Configure options...'}
           </Text>
         </TouchableOpacity>
+      )}
+
+      {/* Pass/Fail default value selector */}
+      {needsPassFailConfig && (
+        <View style={styles.typeConfigRow}>
+          <Text style={styles.typeConfigLabel}>Default:</Text>
+          <View style={styles.typeConfigOptions}>
+            {[
+              { value: null, label: 'None' },
+              { value: 'pass', label: 'Pass' },
+              { value: 'fail', label: 'Fail' },
+            ].map((option) => (
+              <TouchableOpacity
+                key={option.label}
+                style={[
+                  styles.typeConfigChip,
+                  item.default_value === option.value && styles.typeConfigChipSelected,
+                ]}
+                onPress={() => onUpdate({ default_value: option.value })}
+              >
+                <Text
+                  style={[
+                    styles.typeConfigChipText,
+                    item.default_value === option.value && styles.typeConfigChipTextSelected,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Yes/No default value selector */}
+      {needsYesNoConfig && (
+        <View style={styles.typeConfigRow}>
+          <Text style={styles.typeConfigLabel}>Default:</Text>
+          <View style={styles.typeConfigOptions}>
+            {[
+              { value: null, label: 'None' },
+              { value: 'yes', label: 'Yes' },
+              { value: 'no', label: 'No' },
+            ].map((option) => (
+              <TouchableOpacity
+                key={option.label}
+                style={[
+                  styles.typeConfigChip,
+                  item.default_value === option.value && styles.typeConfigChipSelected,
+                ]}
+                onPress={() => onUpdate({ default_value: option.value })}
+              >
+                <Text
+                  style={[
+                    styles.typeConfigChipText,
+                    item.default_value === option.value && styles.typeConfigChipTextSelected,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Coloured Selection config (Pro feature) */}
+      {needsColouredSelectionConfig && (
+        <View style={styles.typeConfigContainer}>
+          <View style={styles.customOptionsHeader}>
+            <Text style={styles.typeConfigLabel}>Coloured Options:</Text>
+            <ProBadge />
+          </View>
+          {isPro ? (
+            <TouchableOpacity
+              style={styles.optionsButton}
+              onPress={() => setShowColouredOptionsEditor(true)}
+            >
+              <Text style={styles.optionsButtonText}>
+                {item.coloured_options && item.coloured_options.length > 0
+                  ? `${item.coloured_options.length} coloured options configured`
+                  : 'Configure coloured options...'}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={styles.proFeatureDisabled}>
+              Upgrade to Pro to use coloured selection fields
+            </Text>
+          )}
+        </View>
+      )}
+
+      {/* Title display style selector */}
+      {needsTitleConfig && (
+        <View style={styles.typeConfigRow}>
+          <Text style={styles.typeConfigLabel}>Style:</Text>
+          <View style={styles.typeConfigOptions}>
+            {[
+              { value: 'heading1', label: 'H1' },
+              { value: 'heading2', label: 'H2' },
+              { value: 'heading3', label: 'H3' },
+            ].map((style) => (
+              <TouchableOpacity
+                key={style.value}
+                style={[
+                  styles.typeConfigChip,
+                  (item.display_style || 'heading2') === style.value && styles.typeConfigChipSelected,
+                ]}
+                onPress={() => onUpdate({ display_style: style.value as DisplayStyle })}
+              >
+                <Text
+                  style={[
+                    styles.typeConfigChipText,
+                    (item.display_style || 'heading2') === style.value && styles.typeConfigChipTextSelected,
+                  ]}
+                >
+                  {style.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Paragraph - uses label as content, no additional config needed */}
+      {needsParagraphConfig && (
+        <View style={styles.typeConfigContainer}>
+          <Text style={styles.typeConfigLabel}>
+            The field label will be displayed as paragraph text.
+          </Text>
+        </View>
       )}
 
       {/* DateTime mode selector */}
@@ -785,7 +994,7 @@ export function ItemEditor({
         >
           <View style={[styles.modalContent, { maxWidth: modalMaxWidth }]}>
             <Text style={styles.modalTitle}>Photo Requirement</Text>
-            {PHOTO_RULES.map((rule) => (
+            {photoRulesForType?.map((rule) => (
               <TouchableOpacity
                 key={rule.value}
                 style={[
@@ -927,6 +1136,21 @@ export function ItemEditor({
           </View>
         </View>
       </Modal>
+
+      {/* Coloured Options Editor */}
+      <ColouredOptionsEditor
+        visible={showColouredOptionsEditor}
+        options={item.coloured_options || [
+          { label: 'Option 1', color: '#22C55E' },
+          { label: 'Option 2', color: '#F59E0B' },
+          { label: 'Option 3', color: '#EF4444' },
+        ]}
+        onSave={(options) => {
+          onUpdate({ coloured_options: options });
+          setShowColouredOptionsEditor(false);
+        }}
+        onClose={() => setShowColouredOptionsEditor(false)}
+      />
     </>
   );
 

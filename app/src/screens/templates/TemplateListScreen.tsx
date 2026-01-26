@@ -77,6 +77,11 @@ export function TemplateListScreen() {
     navigation.navigate('TemplateEditor', { templateId });
   };
 
+  const handlePreviewTemplate = (templateId: string) => {
+    console.log('[TemplateListScreen] Navigating to preview:', templateId);
+    navigation.navigate('TemplatePreview', { templateId });
+  };
+
   const handleDeleteTemplate = (template: Template) => {
     showDestructiveConfirm(
       'Delete Template',
@@ -132,26 +137,36 @@ export function TemplateListScreen() {
           <Icon name="chevron-right" size={20} color={colors.text.tertiary} />
         </View>
       </TouchableOpacity>
-      {isAdmin && (
-        <View style={styles.cardActions}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => handleEditTemplate(item.id)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Icon name="edit" size={16} color={colors.primary.DEFAULT} />
-            <Text style={styles.actionButtonText}>Edit</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.deleteButton]}
-            onPress={() => handleDeleteTemplate(item)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Icon name="trash-2" size={16} color={colors.danger} />
-            <Text style={styles.deleteButtonText}>Delete</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      <View style={styles.cardActions}>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={() => handlePreviewTemplate(item.id)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Icon name="eye" size={16} color={colors.primary.DEFAULT} />
+          <Text style={styles.actionButtonText}>Preview</Text>
+        </TouchableOpacity>
+        {isAdmin && (
+          <>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => handleEditTemplate(item.id)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Icon name="edit" size={16} color={colors.primary.DEFAULT} />
+              <Text style={styles.actionButtonText}>Edit</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.deleteButton]}
+              onPress={() => handleDeleteTemplate(item)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Icon name="trash-2" size={16} color={colors.danger} />
+              <Text style={styles.deleteButtonText}>Delete</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
     </View>
   );
 

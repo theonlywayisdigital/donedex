@@ -176,7 +176,7 @@ export async function getAllInspectionDrafts(): Promise<InspectionDraft[]> {
 
 export interface SyncQueueItem {
   id: string;
-  type: 'response' | 'photo' | 'video' | 'report_submit';
+  type: 'response' | 'photo' | 'report_submit';
   data: Record<string, unknown>;
   createdAt: string;
   retryCount: number;

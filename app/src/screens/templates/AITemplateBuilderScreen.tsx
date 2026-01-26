@@ -58,7 +58,7 @@ export function AITemplateBuilderScreen() {
   useEffect(() => {
     const initialMessage = createChatMessage(
       'assistant',
-      "Hi! I'll help you create an inspection template.\n\nTell me what you need to inspect - it could be anything from a daily site check, vehicle inspection, equipment maintenance, safety audit, or something else entirely. Just describe what you're looking for and I'll help build the right template."
+      "Hi, I'm Dexter! I'll help you build the perfect inspection template.\n\nWhat industry are you in? Property, construction, fleet, food service, healthcare, or something else? Once I know that, I can ask the right questions to create a template that really works for you."
     );
     setMessages([initialMessage]);
     setQuickReplies([]); // No predefined options - let user type freely
@@ -201,6 +201,8 @@ export function AITemplateBuilderScreen() {
             instruction_image_url: null,
             instruction_style: null,
             asset_types: null,
+            coloured_options: null,
+            display_style: null,
           });
 
           if (itemError) {
@@ -247,7 +249,7 @@ export function AITemplateBuilderScreen() {
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <ArrowLeft size={24} color={colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create with AI</Text>
+        <Text style={styles.headerTitle}>Create with Dexter</Text>
         <Text style={styles.stepIndicator}>{STEP_LABELS[currentStep]}</Text>
       </View>
 

@@ -3,8 +3,61 @@
  * Uses browser's native print functionality and Blob API
  */
 
-import { generateHtml } from './htmlGenerator';
-import type { ExportOptions, ExportResult } from './types';
+import { generateHtml, collectImageUrls } from './htmlGenerator';
+import type { ExportOptions, ExportResult, ImageDataMap } from './types';
+
+/**
+ * Convert an image URL to base64 data URI
+ */
+async function imageUrlToBase64(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.warn(`Failed to fetch image: ${url}`);
+      return null;
+    }
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        resolve(reader.result as string);
+      };
+      reader.onerror = () => {
+        console.warn(`Failed to convert image to base64: ${url}`);
+        resolve(null);
+      };
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.warn(`Error converting image to base64: ${url}`, error);
+    return null;
+  }
+}
+
+/**
+ * Pre-load all images as base64 data URIs
+ */
+async function preloadImages(options: ExportOptions): Promise<ImageDataMap> {
+  const imageUrls = collectImageUrls(options);
+  const imageDataMap: ImageDataMap = new Map();
+
+  // Fetch all images in parallel
+  const results = await Promise.all(
+    imageUrls.map(async (url) => {
+      const base64 = await imageUrlToBase64(url);
+      return { url, base64 };
+    })
+  );
+
+  // Build the map
+  for (const { url, base64 } of results) {
+    if (base64) {
+      imageDataMap.set(url, base64);
+    }
+  }
+
+  return imageDataMap;
+}
 
 /**
  * Generate and download a PDF report on web
@@ -12,7 +65,10 @@ import type { ExportOptions, ExportResult } from './types';
  */
 export async function exportReportToPdf(options: ExportOptions): Promise<ExportResult> {
   try {
-    const html = generateHtml(options);
+    // Pre-load all images as base64 for reliable PDF embedding
+    const imageDataMap = await preloadImages(options);
+
+    const html = generateHtml({ ...options, imageDataMap });
 
     // Create a Blob with the HTML content
     const blob = new Blob([html], { type: 'text/html' });
@@ -96,7 +152,10 @@ export async function printReport(options: ExportOptions): Promise<ExportResult>
  */
 export async function downloadAsHtml(options: ExportOptions): Promise<ExportResult> {
   try {
-    const html = generateHtml(options);
+    // Pre-load all images as base64 for reliable embedding
+    const imageDataMap = await preloadImages(options);
+
+    const html = generateHtml({ ...options, imageDataMap });
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
 

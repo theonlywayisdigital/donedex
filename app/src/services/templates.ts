@@ -33,8 +33,6 @@ export type ItemType =
   | 'currency'
   // Evidence & Media
   | 'photo_before_after'
-  | 'video'
-  | 'audio'
   | 'annotated_photo'
   // Location & Assets
   | 'gps_location'
@@ -57,16 +55,21 @@ export type ItemType =
   | 'composite_address_uk'
   | 'composite_address_us'
   | 'composite_address_intl'
-  | 'composite_vehicle';
+  | 'composite_vehicle'
+  // Display & Selection
+  | 'coloured_selection'
+  | 'title'
+  | 'paragraph';
 
 export type DatetimeMode = 'date' | 'time' | 'datetime';
 export type ConditionOperator = 'equals' | 'not_equals' | 'not_empty' | 'greater_than' | 'less_than' | 'contains';
 export type RatingStyle = 'stars' | 'numeric' | 'slider';
 export type InstructionStyle = 'info' | 'warning' | 'tip';
-export type MediaType = 'photo' | 'video' | 'audio' | 'annotated_photo' | 'signature';
+export type DisplayStyle = 'heading1' | 'heading2' | 'heading3' | 'body';
+export type MediaType = 'photo' | 'annotated_photo' | 'signature';
 export type UnitType = 'length' | 'temperature' | 'currency' | 'weight' | 'volume' | 'area';
 
-export type PhotoRule = 'never' | 'on_fail' | 'always';
+export type PhotoRule = 'never' | 'on_fail' | 'always' | 'on_pass' | 'on_yes' | 'on_no';
 
 export interface Template {
   id: string;
@@ -154,6 +157,12 @@ export interface TemplateItem {
 
   // Asset lookup config
   asset_types: string[] | null;
+
+  // Coloured selection config
+  coloured_options: { label: string; color: string }[] | null;
+
+  // Title/paragraph display style
+  display_style: DisplayStyle | null;
 }
 
 // Sub-item definition for checklist and repeater fields

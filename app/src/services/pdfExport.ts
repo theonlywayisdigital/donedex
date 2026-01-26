@@ -268,11 +268,9 @@ function getResponseDisplay(
         return { text: value, color: '#111827' };
       }
 
-    // Media types (photo, video, audio)
+    // Media types (photo)
     case 'photo':
     case 'photo_before_after':
-    case 'video':
-    case 'audio':
     case 'annotated_photo':
       return { text: 'Media attached', color: '#059669' };
 

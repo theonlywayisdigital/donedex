@@ -7,13 +7,13 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
-import { showNotification, showConfirm } from '../../utils/alert';
+import { showNotification, showConfirm, showDestructiveConfirm } from '../../utils/alert';
 import { useNavigation, useRoute, useFocusEffect, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
 import { useAuthStore } from '../../store/authStore';
 import { Icon } from '../../components/ui';
-import { fetchUserDetails } from '../../services/superAdmin';
+import { fetchUserDetails, removeUserFromOrganisation, deleteUserAccount } from '../../services/superAdmin';
 import type { UserSummary } from '../../types/superAdmin';
 import type { SuperAdminStackParamList } from '../../navigation/SuperAdminNavigator';
 
@@ -44,6 +44,7 @@ export function UserDetailScreen() {
   const [organisations, setOrganisations] = useState<Array<{ id: string; name: string; role: string }>>([]);
 
   const canImpersonate = hasSuperAdminPermission('impersonate_users');
+  const canEdit = hasSuperAdminPermission('edit_all_users');
 
   const loadData = useCallback(async () => {
     try {
@@ -98,6 +99,46 @@ export function UserDetailScreen() {
 
   const handleViewOrganisation = (orgId: string) => {
     navigation.navigate('OrganisationDetail', { orgId });
+  };
+
+  const handleRemoveFromOrg = (org: { id: string; name: string }) => {
+    if (!user) return;
+
+    showDestructiveConfirm(
+      'Remove from Organisation',
+      `Are you sure you want to remove ${user.full_name || 'this user'} from ${org.name}? They will lose access to all data in this organisation.`,
+      async () => {
+        const result = await removeUserFromOrganisation(userId, org.id);
+        if (result.error) {
+          showNotification('Error', result.error.message);
+        } else {
+          showNotification('Removed', `User removed from ${org.name}`);
+          loadData();
+        }
+      },
+      undefined,
+      'Remove'
+    );
+  };
+
+  const handleDeleteUser = () => {
+    if (!user) return;
+
+    showDestructiveConfirm(
+      'Delete User Account',
+      `Are you sure you want to permanently delete ${user.full_name || 'this user'}? This will:\n\n• Remove them from all organisations\n• Delete their profile\n• This action cannot be undone`,
+      async () => {
+        const result = await deleteUserAccount(userId);
+        if (result.error) {
+          showNotification('Error', result.error.message);
+        } else {
+          showNotification('Deleted', 'User account has been deleted');
+          navigation.goBack();
+        }
+      },
+      undefined,
+      'Delete User'
+    );
   };
 
   const formatDate = (dateString: string) => {
@@ -155,6 +196,19 @@ export function UserDetailScreen() {
         )}
       </View>
 
+      {/* Action Buttons */}
+      {canEdit && (
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.deleteBtn]}
+            onPress={handleDeleteUser}
+          >
+            <Icon name="trash-2" size={18} color={colors.danger} />
+            <Text style={[styles.actionBtnText, styles.deleteBtnText]}>Delete User</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Organisations */}
       <Text style={styles.sectionTitle}>Organisations ({organisations.length})</Text>
       {organisations.length === 0 ? (
@@ -182,17 +236,28 @@ export function UserDetailScreen() {
               <Icon name="chevron-right" size={20} color={colors.neutral[300]} />
             </TouchableOpacity>
 
-            {canImpersonate && (
+            {(canImpersonate || canEdit) && (
               <View style={styles.orgActions}>
-                <TouchableOpacity
-                  style={styles.impersonateButton}
-                  onPress={() => handleImpersonate(org)}
-                >
-                  <Icon name="eye" size={16} color={colors.warning} />
-                  <Text style={styles.impersonateButtonText}>
-                    Impersonate as {user.full_name?.split(' ')[0] || 'User'} in this org
-                  </Text>
-                </TouchableOpacity>
+                {canImpersonate && (
+                  <TouchableOpacity
+                    style={styles.impersonateButton}
+                    onPress={() => handleImpersonate(org)}
+                  >
+                    <Icon name="eye" size={16} color={colors.warning} />
+                    <Text style={styles.impersonateButtonText}>
+                      Impersonate as {user.full_name?.split(' ')[0] || 'User'} in this org
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {canEdit && (
+                  <TouchableOpacity
+                    style={styles.removeButton}
+                    onPress={() => handleRemoveFromOrg(org)}
+                  >
+                    <Icon name="x-circle" size={16} color={colors.danger} />
+                    <Text style={styles.removeButtonText}>Remove from this org</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </View>
@@ -324,5 +389,50 @@ const styles = StyleSheet.create({
     fontSize: fontSize.body,
     fontWeight: fontWeight.medium,
     color: colors.warning,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+    ...shadows.card,
+  },
+  actionBtnText: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.primary.DEFAULT,
+  },
+  deleteBtn: {
+    borderColor: colors.danger + '30',
+    backgroundColor: colors.danger + '05',
+  },
+  deleteBtnText: {
+    color: colors.danger,
+  },
+  removeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.danger + '10',
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    marginTop: spacing.sm,
+  },
+  removeButtonText: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.danger,
   },
 });

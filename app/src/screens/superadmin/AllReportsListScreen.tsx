@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   TextInput,
+  ScrollView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
@@ -57,6 +58,7 @@ export function AllReportsListScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [showOrgFilter, setShowOrgFilter] = useState(false);
+  const [clientSearchQuery, setClientSearchQuery] = useState('');
   const [total, setTotal] = useState(0);
 
   const loadData = useCallback(async (orgFilter?: string) => {
@@ -125,7 +127,12 @@ export function AllReportsListScreen() {
 
   const selectedOrgName = selectedOrgId
     ? organisations.find((o) => o.id === selectedOrgId)?.name || 'Unknown'
-    : 'All Organisations';
+    : 'All Clients';
+
+  // Filter organisations by search query
+  const filteredOrganisations = organisations.filter((org) =>
+    org.name.toLowerCase().includes(clientSearchQuery.toLowerCase())
+  );
 
   const renderReport = ({ item }: { item: ReportSummary }) => {
     const statusConfig = STATUS_CONFIG[item.status] || STATUS_CONFIG.in_progress;
@@ -197,11 +204,16 @@ export function AllReportsListScreen() {
         )}
       </View>
 
-      {/* Organisation Filter */}
+      {/* Client Filter */}
       <View style={styles.filterRow}>
         <TouchableOpacity
           style={styles.filterButton}
-          onPress={() => setShowOrgFilter(!showOrgFilter)}
+          onPress={() => {
+            setShowOrgFilter(!showOrgFilter);
+            if (!showOrgFilter) {
+              setClientSearchQuery('');
+            }
+          }}
         >
           <Icon name="building-2" size={16} color={colors.primary.DEFAULT} />
           <Text style={styles.filterButtonText}>{selectedOrgName}</Text>
@@ -213,39 +225,71 @@ export function AllReportsListScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Organisation Filter Dropdown */}
+      {/* Client Filter Dropdown */}
       {showOrgFilter && (
         <View style={styles.filterDropdown}>
-          <TouchableOpacity
-            style={[styles.filterOption, !selectedOrgId && styles.filterOptionActive]}
-            onPress={() => handleOrgFilter(null)}
-          >
-            <Text
-              style={[styles.filterOptionText, !selectedOrgId && styles.filterOptionTextActive]}
-            >
-              All Organisations
-            </Text>
-            {!selectedOrgId && <Icon name="check" size={16} color={colors.primary.DEFAULT} />}
-          </TouchableOpacity>
-          {organisations.map((org) => (
-            <TouchableOpacity
-              key={org.id}
-              style={[styles.filterOption, selectedOrgId === org.id && styles.filterOptionActive]}
-              onPress={() => handleOrgFilter(org.id)}
-            >
-              <Text
-                style={[
-                  styles.filterOptionText,
-                  selectedOrgId === org.id && styles.filterOptionTextActive,
-                ]}
+          {/* Search Input */}
+          <View style={styles.dropdownSearchContainer}>
+            <Icon name="search" size={16} color={colors.text.tertiary} />
+            <TextInput
+              style={styles.dropdownSearchInput}
+              placeholder="Search clients..."
+              placeholderTextColor={colors.text.tertiary}
+              value={clientSearchQuery}
+              onChangeText={setClientSearchQuery}
+              autoFocus
+            />
+            {clientSearchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setClientSearchQuery('')}>
+                <Icon name="x" size={16} color={colors.text.secondary} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Options List */}
+          <ScrollView style={styles.dropdownScrollView} keyboardShouldPersistTaps="handled">
+            {/* All Clients option - only show if no search or matches */}
+            {(!clientSearchQuery || 'all clients'.includes(clientSearchQuery.toLowerCase())) && (
+              <TouchableOpacity
+                style={[styles.filterOption, !selectedOrgId && styles.filterOptionActive]}
+                onPress={() => handleOrgFilter(null)}
               >
-                {org.name}
-              </Text>
-              {selectedOrgId === org.id && (
-                <Icon name="check" size={16} color={colors.primary.DEFAULT} />
-              )}
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[styles.filterOptionText, !selectedOrgId && styles.filterOptionTextActive]}
+                >
+                  All Clients
+                </Text>
+                {!selectedOrgId && <Icon name="check" size={16} color={colors.primary.DEFAULT} />}
+              </TouchableOpacity>
+            )}
+
+            {filteredOrganisations.map((org) => (
+              <TouchableOpacity
+                key={org.id}
+                style={[styles.filterOption, selectedOrgId === org.id && styles.filterOptionActive]}
+                onPress={() => handleOrgFilter(org.id)}
+              >
+                <Text
+                  style={[
+                    styles.filterOptionText,
+                    selectedOrgId === org.id && styles.filterOptionTextActive,
+                  ]}
+                >
+                  {org.name}
+                </Text>
+                {selectedOrgId === org.id && (
+                  <Icon name="check" size={16} color={colors.primary.DEFAULT} />
+                )}
+              </TouchableOpacity>
+            ))}
+
+            {/* No results message */}
+            {clientSearchQuery && filteredOrganisations.length === 0 && (
+              <View style={styles.noResultsContainer}>
+                <Text style={styles.noResultsText}>No clients found</Text>
+              </View>
+            )}
+          </ScrollView>
         </View>
       )}
 
@@ -340,8 +384,26 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: colors.border.DEFAULT,
-    maxHeight: 300,
+    maxHeight: 350,
     ...shadows.card,
+  },
+  dropdownSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.DEFAULT,
+    gap: spacing.sm,
+  },
+  dropdownSearchInput: {
+    flex: 1,
+    fontSize: fontSize.body,
+    color: colors.text.primary,
+    paddingVertical: spacing.xs,
+  },
+  dropdownScrollView: {
+    maxHeight: 280,
   },
   filterOption: {
     flexDirection: 'row',
@@ -351,6 +413,14 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
+  },
+  noResultsContainer: {
+    padding: spacing.lg,
+    alignItems: 'center',
+  },
+  noResultsText: {
+    fontSize: fontSize.body,
+    color: colors.text.secondary,
   },
   filterOptionActive: {
     backgroundColor: colors.primary.light,
