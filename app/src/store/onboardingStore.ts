@@ -99,27 +99,18 @@ export const useOnboardingStore = create<OnboardingStoreState>((set, get) => ({
   isSaving: false,
   error: null,
 
-  // Computed getters
-  get needsOnboarding() {
-    const state = get();
-    return !state.isComplete && !state.organisationId;
-  },
-  get progressPercent() {
-    return getProgressPercent(get().completedSteps);
-  },
-  get canGoBack() {
-    return getPreviousStep(get().currentStep) !== null;
-  },
-  get canGoNext() {
-    return getNextStep(get().currentStep) !== null;
-  },
+  // Computed values (not getters - getters cause issues with Zustand initialization)
+  needsOnboarding: true, // Default to true, will be updated by initialize()
+  progressPercent: 0,
+  canGoBack: false,
+  canGoNext: true,
 
   // Initialize
   initialize: async () => {
     const { needsOnboarding } = await onboardingService.checkNeedsOnboarding();
 
     if (!needsOnboarding) {
-      set({ isComplete: true, needsOnboarding: false });
+      set({ isComplete: true, needsOnboarding: false, organisationId: 'existing' });
       return;
     }
 
@@ -163,9 +154,16 @@ export const useOnboardingStore = create<OnboardingStoreState>((set, get) => ({
           organisationId: data.organisation_id,
         };
 
-        set({ ...appState, isLoading: false });
+        // Calculate computed values
+        const needsOnboarding = !appState.isComplete && !appState.organisationId;
+        const progressPercent = getProgressPercent(appState.completedSteps);
+        const canGoBack = getPreviousStep(appState.currentStep) !== null;
+        const canGoNext = getNextStep(appState.currentStep) !== null;
+
+        set({ ...appState, isLoading: false, needsOnboarding, progressPercent, canGoBack, canGoNext });
       } else {
-        set({ isLoading: false });
+        // No data - calculate defaults
+        set({ isLoading: false, needsOnboarding: true, progressPercent: 0, canGoBack: false, canGoNext: true });
       }
     } catch (err) {
       console.error('Error loading onboarding state:', err);
@@ -214,7 +212,9 @@ export const useOnboardingStore = create<OnboardingStoreState>((set, get) => ({
 
   // Step navigation
   goToStep: async (step: OnboardingStep) => {
-    set({ currentStep: step });
+    const canGoBack = getPreviousStep(step) !== null;
+    const canGoNext = getNextStep(step) !== null;
+    set({ currentStep: step, canGoBack, canGoNext });
     await get().saveToServer();
   },
 
@@ -234,10 +234,12 @@ export const useOnboardingStore = create<OnboardingStoreState>((set, get) => ({
 
   completeCurrentStep: async () => {
     const { currentStep, completedSteps } = get();
+    const newCompletedSteps = completedSteps.includes(currentStep)
+      ? completedSteps
+      : [...completedSteps, currentStep];
+    const progressPercent = getProgressPercent(newCompletedSteps);
 
-    if (!completedSteps.includes(currentStep)) {
-      set({ completedSteps: [...completedSteps, currentStep] });
-    }
+    set({ completedSteps: newCompletedSteps, progressPercent });
 
     await get().saveToServer();
     await get().goNext();

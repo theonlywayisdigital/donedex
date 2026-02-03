@@ -151,14 +151,13 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: spacing.xl,
+    marginBottom: spacing.md,
   },
   logo: {
-    width: '100%',
-    maxWidth: 400,
-    height: undefined,
-    aspectRatio: 700 / 210, // Maintain original aspect ratio (10:3)
-    marginBottom: 0,
+    width: 200,
+    height: 200,
+    marginBottom: -spacing.lg,
+    marginTop: -spacing.xl,
   },
   subtitle: {
     fontSize: fontSize.body,
