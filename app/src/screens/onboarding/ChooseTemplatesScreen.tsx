@@ -3,7 +3,7 @@
  * Allows selecting starter templates during onboarding
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Button } from '../../components/ui';
 import { useOnboardingStore } from '../../store/onboardingStore';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
+import { ALL_TEMPLATES, RECORD_TYPES } from '../../constants/starterTemplates';
 import type { OnboardingStackParamList } from '../../navigation/OnboardingNavigator';
 
 type ChooseTemplatesScreenNavigationProp = NativeStackNavigationProp<
@@ -28,15 +29,36 @@ interface Props {
   navigation: ChooseTemplatesScreenNavigationProp;
 }
 
-// Starter templates - currently empty, will be re-added once field types are finalized
-// TODO: Re-populate with proper starter templates from library_templates table
-const STARTER_TEMPLATES: Array<{
-  id: string;
-  name: string;
-  description: string;
-  sections: number;
-  icon: string;
-}> = [];
+// Map record type IDs to icons (emoji for display)
+const RECORD_TYPE_ICONS: Record<string, string> = {
+  property: '🏠',
+  construction: '🏗️',
+  hospitality: '🏨',
+  healthcare: '🏥',
+  food: '🍽️',
+  education: '🏫',
+  fleet: '🚛',
+  retail: '🏪',
+  manufacturing: '🏭',
+  facilities: '🏢',
+  events: '🎪',
+  agriculture: '🌾',
+  marine: '⚓',
+  'compliance-uk': '🇬🇧',
+  'compliance-us': '🇺🇸',
+  'compliance-intl': '🌍',
+  'compliance-au': '🇦🇺',
+};
+
+// Build starter templates from local library
+const STARTER_TEMPLATES = ALL_TEMPLATES.map((t) => ({
+  id: t.id,
+  name: t.name,
+  description: t.description,
+  sections: t.sections.length,
+  icon: RECORD_TYPE_ICONS[t.record_type_id] || '📋',
+  category: t.record_type_id,
+}));
 
 export function ChooseTemplatesScreen({ navigation }: Props) {
   const {
@@ -47,7 +69,34 @@ export function ChooseTemplatesScreen({ navigation }: Props) {
   } = useOnboardingStore();
 
   const [selectedIds, setSelectedIds] = useState<string[]>(selectedTemplateIds);
-  const [isLoading, setIsLoading] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+
+  // Group templates by record type category
+  const groupedTemplates = useMemo(() => {
+    const groups: Record<string, typeof STARTER_TEMPLATES> = {};
+    for (const t of STARTER_TEMPLATES) {
+      if (!groups[t.category]) groups[t.category] = [];
+      groups[t.category].push(t);
+    }
+    return groups;
+  }, []);
+
+  const categories = useMemo(() => {
+    return RECORD_TYPES.map((rt) => ({
+      id: rt.id,
+      name: rt.name,
+      icon: RECORD_TYPE_ICONS[rt.id] || '📋',
+      count: groupedTemplates[rt.id]?.length || 0,
+    })).filter((c) => c.count > 0);
+  }, [groupedTemplates]);
+
+  // Templates to display (filtered by category or all)
+  const visibleTemplates = useMemo(() => {
+    if (activeCategory) {
+      return groupedTemplates[activeCategory] || [];
+    }
+    return STARTER_TEMPLATES;
+  }, [activeCategory, groupedTemplates]);
 
   const handleToggleTemplate = (templateId: string) => {
     setSelectedIds((prev) => {
@@ -59,7 +108,7 @@ export function ChooseTemplatesScreen({ navigation }: Props) {
   };
 
   const handleSelectAll = () => {
-    setSelectedIds(STARTER_TEMPLATES.map((t) => t.id));
+    setSelectedIds(visibleTemplates.map((t) => t.id));
   };
 
   const handleClearAll = () => {
@@ -107,20 +156,50 @@ export function ChooseTemplatesScreen({ navigation }: Props) {
           </Text>
         </View>
 
+        {/* Category Filter */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.categoryScroll}
+          contentContainerStyle={styles.categoryContent}
+        >
+          <TouchableOpacity
+            style={[styles.categoryChip, !activeCategory && styles.categoryChipActive]}
+            onPress={() => setActiveCategory(null)}
+          >
+            <Text style={[styles.categoryChipText, !activeCategory && styles.categoryChipTextActive]}>
+              {`All (${STARTER_TEMPLATES.length})`}
+            </Text>
+          </TouchableOpacity>
+          {categories.map((cat) => (
+            <TouchableOpacity
+              key={cat.id}
+              style={[styles.categoryChip, activeCategory === cat.id && styles.categoryChipActive]}
+              onPress={() => setActiveCategory(activeCategory === cat.id ? null : cat.id)}
+            >
+              <Text style={[styles.categoryChipText, activeCategory === cat.id && styles.categoryChipTextActive]}>
+                {`${cat.icon} ${cat.name} (${cat.count})`}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
         {/* Quick Actions */}
         <View style={styles.quickActions}>
           <TouchableOpacity onPress={handleSelectAll}>
-            <Text style={styles.quickActionText}>Select All</Text>
+            <Text style={styles.quickActionText}>
+              {activeCategory ? 'Select category' : 'Select all'}
+            </Text>
           </TouchableOpacity>
           <Text style={styles.quickActionDivider}>•</Text>
           <TouchableOpacity onPress={handleClearAll}>
-            <Text style={styles.quickActionText}>Clear All</Text>
+            <Text style={styles.quickActionText}>Clear all</Text>
           </TouchableOpacity>
         </View>
 
         {/* Templates Grid */}
         <View style={styles.templatesContainer}>
-          {STARTER_TEMPLATES.map((template) => {
+          {visibleTemplates.map((template) => {
             const isSelected = selectedIds.includes(template.id);
             return (
               <TouchableOpacity
@@ -237,6 +316,32 @@ const styles = StyleSheet.create({
     fontSize: fontSize.body,
     color: colors.text.secondary,
   },
+  categoryScroll: {
+    marginBottom: spacing.md,
+  },
+  categoryContent: {
+    gap: spacing.sm,
+  },
+  categoryChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+  },
+  categoryChipActive: {
+    backgroundColor: colors.primary.DEFAULT,
+    borderColor: colors.primary.DEFAULT,
+  },
+  categoryChipText: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.medium,
+    color: colors.text.secondary,
+  },
+  categoryChipTextActive: {
+    color: colors.white,
+  },
   quickActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -297,7 +402,7 @@ const styles = StyleSheet.create({
   },
   templateName: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },

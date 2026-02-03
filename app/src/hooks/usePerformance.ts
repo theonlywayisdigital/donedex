@@ -92,10 +92,6 @@ export function useRenderCount(componentName: string): number {
   const renderCount = useRef(0);
   renderCount.current += 1;
 
-  if (__DEV__) {
-    console.log(`[Perf] ${componentName} render #${renderCount.current}`);
-  }
-
   return renderCount.current;
 }
 

@@ -371,7 +371,7 @@ const styles = StyleSheet.create({
   },
   submitButtonText: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
 });

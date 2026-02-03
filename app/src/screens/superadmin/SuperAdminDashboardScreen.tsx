@@ -13,7 +13,6 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
 import { useAuthStore } from '../../store/authStore';
 import { Icon } from '../../components/ui';
@@ -30,16 +29,14 @@ import type {
   AttentionItem,
   AuditLogEntry,
 } from '../../types/superAdmin';
-import type { SuperAdminStackParamList } from '../../navigation/SuperAdminNavigator';
-
-type NavigationProp = NativeStackNavigationProp<SuperAdminStackParamList, 'SuperAdminDashboard'>;
 
 export function SuperAdminDashboardScreen() {
-  const navigation = useNavigation<NavigationProp>();
+  const navigation = useNavigation<any>();
   const { profile, impersonationContext, endImpersonation } = useAuthStore();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [subscriptions, setSubscriptions] = useState<SubscriptionBreakdownType[]>([]);
   const [attentionItems, setAttentionItems] = useState<AttentionItem[]>([]);
@@ -47,6 +44,7 @@ export function SuperAdminDashboardScreen() {
 
   const loadData = useCallback(async () => {
     try {
+      setError(null);
       const [metricsResult, subscriptionsResult, attentionResult, logsResult] = await Promise.all([
         fetchDashboardMetrics(),
         fetchSubscriptionBreakdown(),
@@ -66,8 +64,14 @@ export function SuperAdminDashboardScreen() {
       if (logsResult.data) {
         setRecentActivity(logsResult.data.logs);
       }
+
+      // Check if all fetches failed
+      if (metricsResult.error && subscriptionsResult.error && attentionResult.error) {
+        setError('Failed to load dashboard data. Pull to refresh to try again.');
+      }
     } catch (err) {
       console.error('Error loading dashboard data:', err);
+      setError('An unexpected error occurred. Pull to refresh to try again.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -92,8 +96,16 @@ export function SuperAdminDashboardScreen() {
     }
   };
 
+  // Navigate across tabs in the super admin bottom tab navigator
+  const navigateToTab = (tabName: string, screenName: string, params?: Record<string, unknown>) => {
+    const parent = navigation.getParent();
+    if (parent) {
+      parent.navigate(tabName, { screen: screenName, params });
+    }
+  };
+
   const handleAttentionItemPress = (item: AttentionItem) => {
-    navigation.navigate('OrganisationDetail', { orgId: item.id });
+    navigateToTab('OrgsTab', 'OrganisationDetail', { orgId: item.id });
   };
 
   const formatTimeAgo = (dateString: string) => {
@@ -143,6 +155,14 @@ export function SuperAdminDashboardScreen() {
         </View>
       )}
 
+      {/* Error Banner */}
+      {error && (
+        <View style={styles.errorBanner}>
+          <Icon name="alert-circle" size={20} color={colors.danger} />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
+
       {/* Welcome Header */}
       <View style={styles.header}>
         <Text style={styles.welcomeText}>Super Admin</Text>
@@ -159,7 +179,7 @@ export function SuperAdminDashboardScreen() {
           iconBgColor={colors.primary.light}
           change={metrics?.new_orgs_30d}
           changeLabel="last 30 days"
-          onPress={() => navigation.navigate('OrganisationsList')}
+          onPress={() => navigateToTab('OrgsTab', 'OrganisationsList')}
         />
         <MetricCard
           label="Total Users"
@@ -169,7 +189,7 @@ export function SuperAdminDashboardScreen() {
           iconBgColor={colors.success + '20'}
           change={metrics?.new_users_30d}
           changeLabel="last 30 days"
-          onPress={() => navigation.navigate('UsersList')}
+          onPress={() => navigateToTab('UsersTab', 'UsersList')}
         />
       </View>
 
@@ -183,14 +203,14 @@ export function SuperAdminDashboardScreen() {
           iconBgColor={colors.warning + '20'}
           change={metrics?.new_reports_30d}
           changeLabel="last 30 days"
-          onPress={() => navigation.navigate('AllReportsList')}
+          onPress={() => navigateToTab('ReportsTab', 'AllReportsList')}
         />
         <MetricCard
           label="Active Orgs"
           value={metrics?.active_orgs_7d || 0}
           icon="activity"
-          iconColor="#8B5CF6"
-          iconBgColor="#8B5CF620"
+          iconColor={colors.primary.mid}
+          iconBgColor={colors.primary.mid + '20'}
           changeLabel="last 7 days"
         />
       </View>
@@ -238,7 +258,7 @@ export function SuperAdminDashboardScreen() {
       <View style={styles.actionsGrid}>
         <TouchableOpacity
           style={[styles.actionCard, styles.actionCardPrimary]}
-          onPress={() => navigation.navigate('CreateOrganisation')}
+          onPress={() => navigateToTab('OrgsTab', 'CreateOrganisation')}
         >
           <Icon name="plus" size={24} color={colors.white} />
           <Text style={styles.actionTextPrimary}>Create Organisation</Text>
@@ -246,7 +266,7 @@ export function SuperAdminDashboardScreen() {
 
         <TouchableOpacity
           style={styles.actionCard}
-          onPress={() => navigation.navigate('OrganisationsList')}
+          onPress={() => navigateToTab('OrgsTab', 'OrganisationsList')}
         >
           <Icon name="building-2" size={24} color={colors.primary.DEFAULT} />
           <Text style={styles.actionText}>View Organisations</Text>
@@ -254,7 +274,7 @@ export function SuperAdminDashboardScreen() {
 
         <TouchableOpacity
           style={styles.actionCard}
-          onPress={() => navigation.navigate('UsersList')}
+          onPress={() => navigateToTab('UsersTab', 'UsersList')}
         >
           <Icon name="users" size={24} color={colors.primary.DEFAULT} />
           <Text style={styles.actionText}>View All Users</Text>
@@ -262,7 +282,7 @@ export function SuperAdminDashboardScreen() {
 
         <TouchableOpacity
           style={styles.actionCard}
-          onPress={() => navigation.navigate('AuditLogs')}
+          onPress={() => navigateToTab('AuditTab', 'AuditLogs')}
         >
           <Icon name="shield" size={24} color={colors.primary.DEFAULT} />
           <Text style={styles.actionText}>Audit Logs</Text>
@@ -346,6 +366,22 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.medium,
     color: colors.white,
   },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.danger + '10',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.danger + '30',
+  },
+  errorText: {
+    fontSize: fontSize.caption,
+    color: colors.danger,
+    flex: 1,
+  },
   header: {
     marginBottom: spacing.lg,
   },
@@ -371,7 +407,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.sm,
     marginBottom: spacing.md,

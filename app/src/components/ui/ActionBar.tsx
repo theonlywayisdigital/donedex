@@ -485,7 +485,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   filterButtonActive: {
-    backgroundColor: colors.primary.light,
+    backgroundColor: '#EDF7F9',
     borderWidth: 1,
     borderColor: colors.primary.DEFAULT,
   },
@@ -515,7 +515,7 @@ const styles = StyleSheet.create({
   },
   bulkText: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
   clearButton: {
@@ -580,7 +580,7 @@ const styles = StyleSheet.create({
   },
   dropdownTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   dropdownClearText: {
@@ -623,7 +623,7 @@ const styles = StyleSheet.create({
   dropdownApplyText: {
     color: colors.white,
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
 });
 

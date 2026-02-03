@@ -2,6 +2,14 @@ import { supabase } from './supabase';
 import { compressImageToBase64 } from './imageCompression';
 import { Platform } from 'react-native';
 import { decode as base64Decode } from 'base-64';
+import {
+  type PaginationParams,
+  type PaginatedResult,
+  getValidPageSize,
+  decodeCursor,
+  processPaginatedResults,
+  emptyPaginatedResult,
+} from './pagination';
 
 // Types matching database schema
 export interface Report {
@@ -327,6 +335,157 @@ export async function fetchAllReports(): Promise<{ data: ReportWithDetails[]; er
   return { data: reportsWithDetails, error: null };
 }
 
+// ============================================
+// Paginated & Filtered Reports
+// ============================================
+
+export interface FetchReportsPaginatedOptions {
+  /** Search query (searches template name, record name, user name) */
+  search?: string;
+  /** Filter by status */
+  status?: 'all' | 'submitted' | 'draft';
+  /** Filter by record ID */
+  recordId?: string | null;
+  /** Filter by organisation ID (super admin) */
+  organisationId?: string | null;
+  /** Filter by date - start (ISO string) */
+  dateFrom?: string | null;
+  /** Filter by date - end (ISO string) */
+  dateTo?: string | null;
+  /** Pagination parameters */
+  pagination?: PaginationParams;
+}
+
+/**
+ * Fetch reports with cursor-based pagination and server-side filters.
+ * Search is still client-side (across joined fields), but status/record/date/org
+ * filters are applied server-side.
+ */
+export async function fetchReportsPaginated(
+  options: FetchReportsPaginatedOptions = {}
+): Promise<PaginatedResult<ReportWithDetails>> {
+  try {
+    const {
+      search,
+      status,
+      recordId,
+      organisationId,
+      dateFrom,
+      dateTo,
+      pagination = {},
+    } = options;
+
+    const { cursor } = pagination;
+    const limit = getValidPageSize(pagination.limit);
+    const fetchLimit = limit + 1;
+
+    let query = supabase
+      .from('reports')
+      .select(
+        `
+        *,
+        record:records(name),
+        template:templates(name)
+      `,
+        { count: 'exact' }
+      );
+
+    // Server-side filters
+    if (status && status !== 'all') {
+      query = query.eq('status', status);
+    }
+
+    if (recordId) {
+      query = query.eq('record_id', recordId);
+    }
+
+    if (organisationId) {
+      query = query.eq('organisation_id', organisationId);
+    }
+
+    if (dateFrom) {
+      query = query.gte('created_at', dateFrom);
+    }
+
+    if (dateTo) {
+      const endDate = new Date(dateTo);
+      endDate.setDate(endDate.getDate() + 1);
+      query = query.lt('created_at', endDate.toISOString());
+    }
+
+    // Cursor pagination (descending order - forward means older)
+    if (cursor) {
+      const cursorData = decodeCursor(cursor);
+      if (cursorData) {
+        query = query.or(
+          `created_at.lt.${cursorData.timestamp},and(created_at.eq.${cursorData.timestamp},id.lt.${cursorData.id})`
+        );
+      }
+    }
+
+    query = query
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(fetchLimit);
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      console.error('Error fetching paginated reports:', error);
+      return emptyPaginatedResult();
+    }
+
+    const rawReports = (data || []) as Array<
+      Report & { record: { name: string } | null; template: { name: string } | null }
+    >;
+
+    // Fetch user profiles in batch
+    const userIds = [...new Set(rawReports.map((r) => r.user_id).filter(Boolean))];
+    let profilesMap: Record<string, { full_name: string }> = {};
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('user_profiles')
+        .select('id, full_name')
+        .in('id', userIds);
+      profilesMap = ((profiles || []) as Array<{ id: string; full_name: string }>).reduce(
+        (acc, p) => {
+          acc[p.id] = { full_name: p.full_name };
+          return acc;
+        },
+        {} as Record<string, { full_name: string }>
+      );
+    }
+
+    let reports: ReportWithDetails[] = rawReports.map((r) => ({
+      ...r,
+      record: r.record || { name: 'Unknown' },
+      template: r.template || { name: 'Unknown' },
+      user_profile: profilesMap[r.user_id] || null,
+    }));
+
+    // Client-side search (across joined fields that can't be filtered server-side)
+    if (search && search.trim().length > 0) {
+      const q = search.toLowerCase().trim();
+      reports = reports.filter(
+        (r) =>
+          r.template?.name?.toLowerCase().includes(q) ||
+          r.record?.name?.toLowerCase().includes(q) ||
+          r.user_profile?.full_name?.toLowerCase().includes(q)
+      );
+    }
+
+    const result = processPaginatedResults(reports, limit, cursor);
+
+    if (count !== null) {
+      result.pageInfo.totalCount = search ? reports.length : count;
+    }
+
+    return result;
+  } catch {
+    return emptyPaginatedResult();
+  }
+}
+
 /**
  * Upload a photo for a response
  * Photos are automatically compressed to max 2000px before upload
@@ -414,15 +573,11 @@ export async function uploadSignature(
   base64Data: string
 ): Promise<{ data: string | null; error: { message: string } | null }> {
   try {
-    console.log('[uploadSignature] Starting signature upload');
-    console.log(`[uploadSignature] Base64 data length: ${base64Data?.length || 0}`);
-
     // Generate unique filename
     const filename = `${reportId}/${responseId}/${Date.now()}.png`;
 
     // Remove data URL prefix if present
     const base64Content = base64Data.replace(/^data:image\/\w+;base64,/, '');
-    console.log(`[uploadSignature] Cleaned base64 length: ${base64Content.length}`);
 
     // Convert base64 to ArrayBuffer using reliable method for React Native
     const binaryString = base64Decode(base64Content);
@@ -430,7 +585,6 @@ export async function uploadSignature(
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
-    console.log(`[uploadSignature] ArrayBuffer size: ${bytes.length} bytes`);
 
     // Upload to Supabase Storage (signatures bucket) using ArrayBuffer
     const { error: uploadError } = await supabase.storage
@@ -444,7 +598,6 @@ export async function uploadSignature(
       return { data: null, error: { message: uploadError.message } };
     }
 
-    console.log(`[uploadSignature] Upload successful: ${filename}`);
     return { data: filename, error: null };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
@@ -477,29 +630,20 @@ export async function uploadMediaFile(
   mediaType: 'photo'
 ): Promise<{ data: string | null; error: { message: string } | null }> {
   try {
-    console.log(`[uploadMediaFile] Starting upload for report ${reportId}, item ${templateItemId}`);
-    console.log(`[uploadMediaFile] Source URI: ${fileUri ? fileUri.substring(0, 100) : 'NULL'}...`);
-    console.log(`[uploadMediaFile] Platform: ${Platform.OS}`);
-
     // Generate unique filename using reportId and templateItemId
     const filename = `${reportId}/${templateItemId}/${Date.now()}.jpg`;
-    console.log(`[uploadMediaFile] Target filename: ${filename}`);
 
     // Compress image and get base64 - this works reliably on all platforms
-    console.log('[uploadMediaFile] Compressing image to base64...');
     const compressed = await compressImageToBase64(fileUri, {
       maxWidth: 2000,
       maxHeight: 2000,
       quality: 0.8,
     });
-    console.log(`[uploadMediaFile] Compressed to ${compressed.width}x${compressed.height}`);
 
     if (!compressed.base64) {
       console.error('[uploadMediaFile] No base64 data returned from compression');
       return { data: null, error: { message: 'Image compression failed - no data returned' } };
     }
-
-    console.log(`[uploadMediaFile] Base64 length: ${compressed.base64.length} chars`);
 
     // Convert base64 to ArrayBuffer for upload
     // This method works reliably on React Native
@@ -508,10 +652,8 @@ export async function uploadMediaFile(
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
-    console.log(`[uploadMediaFile] ArrayBuffer size: ${bytes.length} bytes`);
 
     // Upload to Supabase Storage using ArrayBuffer
-    console.log('[uploadMediaFile] Uploading to Supabase Storage...');
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('report-photos')
       .upload(filename, bytes, { contentType: 'image/jpeg' });
@@ -520,13 +662,6 @@ export async function uploadMediaFile(
       console.error('[uploadMediaFile] Upload error:', uploadError);
       return { data: null, error: { message: uploadError.message } };
     }
-
-    console.log('[uploadMediaFile] Upload successful:', uploadData);
-    console.log(`[uploadMediaFile] Storage path: ${filename}`);
-
-    // Also log the public URL for debugging
-    const publicUrl = getPhotoUrl(filename);
-    console.log(`[uploadMediaFile] Public URL: ${publicUrl}`);
 
     return { data: filename, error: null };
   } catch (err) {

@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
   },
   actionText: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   closeButton: {
     padding: spacing.xs,

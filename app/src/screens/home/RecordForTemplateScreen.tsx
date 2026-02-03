@@ -16,7 +16,7 @@ import { showNotification } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Card, Button, Icon } from '../../components/ui';
+import { Card, Button, Icon, FullScreenLoader } from '../../components/ui';
 import { useAuthStore } from '../../store/authStore';
 import { useInspectionStore } from '../../store/inspectionStore';
 import { useQuickStartStore } from '../../store/quickStartStore';
@@ -307,9 +307,7 @@ export function RecordForTemplateScreen() {
   if (isLoading && records.length === 0) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
-        </View>
+        <FullScreenLoader message="Loading..." />
       </SafeAreaView>
     );
   }
@@ -480,7 +478,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   headerSubtitle: {
@@ -518,7 +516,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.secondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -594,7 +592,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.md,
     marginBottom: spacing.sm,
@@ -672,7 +670,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   modalCloseButton: {

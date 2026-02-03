@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
   },
   itemLabelActive: {
     color: colors.primary.DEFAULT,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   badge: {
     backgroundColor: colors.danger,
@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     fontSize: 11,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
 });

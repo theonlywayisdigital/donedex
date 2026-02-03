@@ -14,13 +14,15 @@ import type {
   BillingSummary,
   BillingInterval,
   PlanFeature,
+  StorageAddOn,
 } from '../types/billing';
 import {
   planToDisplay,
   formatPrice,
   isUnlimited,
   daysUntilTrialEnds,
-  BASIC_CHECK_FIELD_TYPES,
+  FREE_TIER_FIELD_TYPES,
+  FREE_TIER_CATEGORIES,
 } from '../types/billing';
 
 interface BillingStoreState {
@@ -30,12 +32,14 @@ interface BillingStoreState {
   plans: SubscriptionPlan[];
   invoices: Invoice[];
   summary: BillingSummary | null;
+  storageAddOn: StorageAddOn | null;
 
   // Loading states
   isLoading: boolean;
   isLoadingPlans: boolean;
   isLoadingUsage: boolean;
   isLoadingInvoices: boolean;
+  isLoadingStorageAddOn: boolean;
   error: string | null;
 
   // Current organisation ID
@@ -74,12 +78,17 @@ interface BillingStoreState {
   canUseCustomBranding: () => boolean;
   isOnFreePlan: () => boolean;
 
+  // Storage add-on
+  loadStorageAddOn: (orgId?: string) => Promise<void>;
+  purchaseStorageAddOn: (quantityBlocks: number, successUrl?: string, cancelUrl?: string) => Promise<{ url: string | null; error: string | null }>;
+  getTotalStorageGb: () => number;
+  getAddonStorageGb: () => number;
+
   // Checkout
   createCheckoutSession: (
     planId: string,
     billingInterval: BillingInterval,
-    successUrl?: string,
-    cancelUrl?: string
+    options?: { userCount?: number; successUrl?: string; cancelUrl?: string }
   ) => Promise<{ url: string | null; error: string | null }>;
   openCustomerPortal: (returnUrl?: string) => Promise<{ url: string | null; error: string | null }>;
 
@@ -98,11 +107,13 @@ export const useBillingStore = create<BillingStoreState>((set, get) => ({
   plans: [],
   invoices: [],
   summary: null,
+  storageAddOn: null,
 
   isLoading: false,
   isLoadingPlans: false,
   isLoadingUsage: false,
   isLoadingInvoices: false,
+  isLoadingStorageAddOn: false,
   error: null,
 
   organisationId: null,
@@ -145,6 +156,7 @@ export const useBillingStore = create<BillingStoreState>((set, get) => ({
       get().loadBilling(targetOrgId),
       get().loadUsage(targetOrgId),
       get().loadInvoices(targetOrgId),
+      get().loadStorageAddOn(targetOrgId),
     ]);
 
     set({ isLoading: false });
@@ -162,17 +174,6 @@ export const useBillingStore = create<BillingStoreState>((set, get) => ({
         set({ error });
         return;
       }
-
-      // Debug logging
-      console.log('[BillingStore] Loaded billing data:', JSON.stringify({
-        hasPlan: !!data?.current_plan,
-        planName: data?.current_plan?.name,
-        planSlug: data?.current_plan?.slug,
-        feature_ai_templates: data?.current_plan?.feature_ai_templates,
-        feature_photos: data?.current_plan?.feature_photos,
-        feature_starter_templates: data?.current_plan?.feature_starter_templates,
-        feature_all_field_types: data?.current_plan?.feature_all_field_types,
-      }, null, 2));
 
       set({ billing: data });
     } catch (err) {
@@ -312,8 +313,15 @@ export const useBillingStore = create<BillingStoreState>((set, get) => ({
     if (get().isFeatureAvailable('feature_all_field_types')) {
       return true;
     }
-    // Otherwise only allow basic check field types
-    return BASIC_CHECK_FIELD_TYPES.includes(fieldType as typeof BASIC_CHECK_FIELD_TYPES[number]);
+    // Check plan's allowed_field_categories if available
+    const plan = get().billing?.current_plan;
+    if (plan?.allowed_field_categories?.length) {
+      // Field type allowed if it's in the FREE_TIER_FIELD_TYPES
+      // (plan categories are checked at the category level)
+      return FREE_TIER_FIELD_TYPES.includes(fieldType as typeof FREE_TIER_FIELD_TYPES[number]);
+    }
+    // Default: only free tier field types
+    return FREE_TIER_FIELD_TYPES.includes(fieldType as typeof FREE_TIER_FIELD_TYPES[number]);
   },
 
   isCategoryAllowed: (categoryKey: string) => {
@@ -321,8 +329,13 @@ export const useBillingStore = create<BillingStoreState>((set, get) => ({
     if (get().isFeatureAvailable('feature_all_field_types')) {
       return true;
     }
-    // Otherwise only allow 'basic' category
-    return categoryKey === 'basic';
+    // Check plan's allowed_field_categories if available
+    const plan = get().billing?.current_plan;
+    if (plan?.allowed_field_categories?.length) {
+      return plan.allowed_field_categories.includes(categoryKey);
+    }
+    // Default: only free tier categories (basic + evidence)
+    return FREE_TIER_CATEGORIES.includes(categoryKey as typeof FREE_TIER_CATEGORIES[number]);
   },
 
   canUsePhotos: () => {
@@ -341,8 +354,65 @@ export const useBillingStore = create<BillingStoreState>((set, get) => ({
     return get().isFeatureAvailable('feature_custom_branding');
   },
 
+  // Storage add-on
+  loadStorageAddOn: async (orgId) => {
+    const targetOrgId = orgId || get().organisationId;
+    if (!targetOrgId) return;
+
+    set({ isLoadingStorageAddOn: true });
+
+    try {
+      const { data, error } = await billingService.fetchStorageAddOn(targetOrgId);
+
+      if (error) {
+        set({ error, isLoadingStorageAddOn: false });
+        return;
+      }
+
+      set({ storageAddOn: data, isLoadingStorageAddOn: false });
+    } catch (err) {
+      console.error('Error loading storage add-on:', err);
+      set({ error: 'Failed to load storage add-on', isLoadingStorageAddOn: false });
+    }
+  },
+
+  purchaseStorageAddOn: async (quantityBlocks, successUrl, cancelUrl) => {
+    const orgId = get().organisationId;
+    if (!orgId) {
+      return { url: null, error: 'No organisation selected' };
+    }
+
+    const { data, error } = await billingService.purchaseStorageAddOn(
+      orgId,
+      quantityBlocks,
+      successUrl,
+      cancelUrl
+    );
+
+    if (error || !data) {
+      return { url: null, error: error || 'Failed to purchase storage add-on' };
+    }
+
+    return { url: data.url, error: null };
+  },
+
+  getTotalStorageGb: () => {
+    const plan = get().billing?.current_plan;
+    const addon = get().storageAddOn;
+    const baseGb = plan?.max_storage_gb ?? 1;
+    if (baseGb === -1) return -1; // unlimited
+    const addonGb = addon?.is_active ? addon.quantity_blocks * addon.block_size_gb : 0;
+    return baseGb + addonGb;
+  },
+
+  getAddonStorageGb: () => {
+    const addon = get().storageAddOn;
+    if (!addon?.is_active) return 0;
+    return addon.quantity_blocks * addon.block_size_gb;
+  },
+
   // Create checkout session
-  createCheckoutSession: async (planId, billingInterval, successUrl, cancelUrl) => {
+  createCheckoutSession: async (planId, billingInterval, options) => {
     const orgId = get().organisationId;
     if (!orgId) {
       return { url: null, error: 'No organisation selected' };
@@ -352,8 +422,7 @@ export const useBillingStore = create<BillingStoreState>((set, get) => ({
       orgId,
       planId,
       billingInterval,
-      successUrl,
-      cancelUrl
+      options
     );
 
     if (error || !data) {
@@ -397,10 +466,12 @@ export const useBillingStore = create<BillingStoreState>((set, get) => ({
       plans: [],
       invoices: [],
       summary: null,
+      storageAddOn: null,
       isLoading: false,
       isLoadingPlans: false,
       isLoadingUsage: false,
       isLoadingInvoices: false,
+      isLoadingStorageAddOn: false,
       error: null,
       organisationId: null,
     });

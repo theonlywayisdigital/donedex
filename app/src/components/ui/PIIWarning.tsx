@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
 
   dismissButton: {

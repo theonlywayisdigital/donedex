@@ -242,7 +242,7 @@ export function Icon({
   name,
   size = 24,
   color = colors.text.primary,
-  strokeWidth = 2,
+  strokeWidth = 1.75,
   style,
 }: IconProps) {
   const IconComponent = iconMap[name] as LucideIcon;

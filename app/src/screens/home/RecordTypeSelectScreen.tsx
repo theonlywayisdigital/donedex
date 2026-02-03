@@ -186,7 +186,7 @@ const styles = StyleSheet.create({
   },
   recordTypeName: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   recordTypeSingular: {

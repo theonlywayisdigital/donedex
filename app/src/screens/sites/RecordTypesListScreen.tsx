@@ -14,7 +14,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SitesStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
-import { Icon, IconName } from '../../components/ui';
+import { Icon, IconName, FullScreenLoader } from '../../components/ui';
 import { fetchRecordTypes, archiveRecordType } from '../../services/recordTypes';
 import { supabase } from '../../services/supabase';
 import { showDestructiveConfirm, showNotification } from '../../utils/alert';
@@ -162,7 +162,7 @@ export function RecordTypesListScreen() {
             {recordType.record_count} {recordType.record_count === 1 ? recordType.name_singular.toLowerCase() : recordType.name.toLowerCase()}
           </Text>
         </View>
-        <Icon name="chevron-right" size={20} color={colors.neutral[400]} />
+        <Icon name="chevron-right" size={20} color={colors.neutral[500]} />
       </TouchableOpacity>
       <View style={styles.cardActions}>
         <TouchableOpacity
@@ -257,12 +257,7 @@ export function RecordTypesListScreen() {
   );
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
-        <Text style={styles.loadingText}>Loading record types...</Text>
-      </View>
-    );
+    return <FullScreenLoader message="Loading..." />;
   }
 
   if (recordTypes.length === 0) {
@@ -394,7 +389,7 @@ const styles = StyleSheet.create({
   },
   cardName: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   cardCount: {
@@ -447,7 +442,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.md,
     marginBottom: spacing.sm,
@@ -467,7 +462,7 @@ const styles = StyleSheet.create({
   emptyButtonText: {
     color: colors.white,
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   clearSearchButton: {
     paddingHorizontal: spacing.lg,

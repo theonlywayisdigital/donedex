@@ -35,10 +35,7 @@ interface ServiceResult<T> {
  * Check if the current user is a super admin
  */
 export async function checkIsSuperAdmin(): Promise<boolean> {
-  console.log('[SuperAdmin] Calling is_super_admin RPC...');
   const { data, error } = await supabase.rpc('is_super_admin' as any);
-
-  console.log('[SuperAdmin] is_super_admin result:', { data, error: error?.message });
 
   if (error) {
     console.error('[SuperAdmin] Error checking super admin status:', error);
@@ -46,7 +43,6 @@ export async function checkIsSuperAdmin(): Promise<boolean> {
   }
 
   const result = data === true;
-  console.log('[SuperAdmin] User is super admin:', result);
   return result;
 }
 
@@ -54,14 +50,10 @@ export async function checkIsSuperAdmin(): Promise<boolean> {
  * Check if the super admin has a specific permission
  */
 export async function hasPermission(permission: SuperAdminPermission): Promise<boolean> {
-  console.log('[SuperAdmin] Checking permission:', permission);
-
   // Use raw query to call the function with enum parameter
   const { data, error } = await (supabase.rpc as any)('super_admin_has_permission', {
     perm: permission,
   });
-
-  console.log('[SuperAdmin] hasPermission result:', { permission, data, error: error?.message });
 
   if (error) {
     console.error('[SuperAdmin] Error checking permission:', error);
@@ -260,7 +252,7 @@ export async function fetchOrganisationDetails(orgId: string): Promise<ServiceRe
       .in('id', userIds);
 
     if (profiles) {
-      profileMap = profiles.reduce((acc, p) => {
+      profileMap = (profiles as { id: string; full_name: string | null }[]).reduce((acc, p) => {
         acc[p.id] = p.full_name;
         return acc;
       }, {} as Record<string, string | null>);
@@ -295,11 +287,8 @@ export async function fetchOrganisationDetails(orgId: string): Promise<ServiceRe
  * Queries user_profiles as base to include ALL users (including super admins without org membership)
  */
 export async function fetchAllUsers(orgFilter?: string): Promise<ServiceResult<UserSummary[]>> {
-  console.log('[SuperAdmin] fetchAllUsers called');
   const canView = await hasPermission('view_all_users');
-  console.log('[SuperAdmin] fetchAllUsers canView:', canView);
   if (!canView) {
-    console.log('[SuperAdmin] fetchAllUsers - permission denied');
     return { data: null, error: { message: 'Permission denied' } };
   }
 
@@ -310,11 +299,6 @@ export async function fetchAllUsers(orgFilter?: string): Promise<ServiceResult<U
     .select('id, full_name, created_at')
     .order('created_at', { ascending: false });
 
-  console.log('[SuperAdmin] fetchAllUsers profiles result:', {
-    profilesCount: profiles?.length,
-    error: profilesError?.message
-  });
-
   if (profilesError) {
     return { data: null, error: { message: profilesError.message } };
   }
@@ -323,7 +307,6 @@ export async function fetchAllUsers(orgFilter?: string): Promise<ServiceResult<U
   const profileList = (profiles as ProfileRow[]) || [];
 
   if (profileList.length === 0) {
-    console.log('[SuperAdmin] No user profiles found');
     return { data: [], error: null };
   }
 
@@ -345,11 +328,6 @@ export async function fetchAllUsers(orgFilter?: string): Promise<ServiceResult<U
 
   const { data: orgMemberships, error: orgError } = await orgQuery;
 
-  console.log('[SuperAdmin] fetchAllUsers org memberships:', {
-    count: orgMemberships?.length,
-    error: orgError?.message
-  });
-
   if (orgError) {
     console.error('[SuperAdmin] Error fetching org memberships:', orgError);
   }
@@ -368,11 +346,6 @@ export async function fetchAllUsers(orgFilter?: string): Promise<ServiceResult<U
     .select('user_id, name, email')
     .in('user_id', userIds)
     .eq('is_active', true);
-
-  console.log('[SuperAdmin] fetchAllUsers super admins:', {
-    count: superAdmins?.length,
-    error: saError?.message
-  });
 
   type SuperAdminRow = { user_id: string; name: string; email: string };
   const superAdminList = (superAdmins as SuperAdminRow[]) || [];
@@ -409,7 +382,6 @@ export async function fetchAllUsers(orgFilter?: string): Promise<ServiceResult<U
     };
   });
 
-  console.log('[SuperAdmin] fetchAllUsers final users:', users.length);
   return { data: users, error: null };
 }
 
@@ -613,7 +585,6 @@ export async function startImpersonation(
     }
   } catch (err) {
     // Table might not exist, continue with local session
-    console.log('[SuperAdmin] Using local impersonation session');
   }
 
   // Log the action
@@ -627,7 +598,8 @@ export async function startImpersonation(
     impersonating_org_id: orgId,
     is_active: true,
     expires_at: expiresAt,
-    created_at: new Date().toISOString(),
+    started_at: new Date().toISOString(),
+    ended_at: null,
   };
 
   return { data: syntheticSession, error: null };
@@ -648,7 +620,6 @@ export async function endImpersonation(sessionId: string): Promise<ServiceResult
         .eq('id', sessionId);
     } catch (err) {
       // Table might not exist, continue anyway
-      console.log('[SuperAdmin] Could not update session in database');
     }
   }
 
@@ -1264,7 +1235,7 @@ export async function updateOrganisation(
     orgId,
     orgId,
     oldValues,
-    updates
+    updates as Record<string, unknown>
   );
 
   return { data: org as { id: string; name: string }, error: null };
@@ -1495,7 +1466,7 @@ export async function deleteOrganisationPermanently(orgId: string): Promise<Serv
   // 4. Delete template_items (FK to template_sections)
   await (supabase.from('template_items') as any)
     .delete()
-    .in('section_id', supabase.from('template_sections').select('id').in('template_id', supabase.from('templates').select('id').eq('organisation_id', orgId)));
+    .in('section_id', supabase.from('template_sections').select('id').in('template_id', supabase.from('templates').select('id').eq('organisation_id', orgId) as any) as any);
 
   // 5. Delete template_sections (FK to templates)
   await (supabase.from('template_sections') as any)
@@ -1642,6 +1613,62 @@ export async function deleteUserAccount(
 
   // Log the action
   await logAction('delete_user_account', 'user_management', 'user_profiles', userId, undefined);
+
+  return { data: null, error: null };
+}
+
+// ============================================
+// USER ROLE CHANGE
+// ============================================
+
+/**
+ * Change a user's role within an organisation
+ */
+export async function changeUserRole(
+  userId: string,
+  orgId: string,
+  newRole: 'owner' | 'admin' | 'user'
+): Promise<ServiceResult<null>> {
+  const canEdit = await hasPermission('edit_all_users');
+  if (!canEdit) {
+    return { data: null, error: { message: 'Permission denied' } };
+  }
+
+  // Get current role for audit log
+  const { data: current, error: fetchError } = await (supabase
+    .from('organisation_users') as any)
+    .select('role')
+    .eq('user_id', userId)
+    .eq('organisation_id', orgId)
+    .single();
+
+  if (fetchError) {
+    return { data: null, error: { message: `Failed to fetch current role: ${fetchError.message}` } };
+  }
+
+  const oldRole = current?.role;
+
+  // Update the role
+  const { error } = await (supabase
+    .from('organisation_users') as any)
+    .update({ role: newRole })
+    .eq('user_id', userId)
+    .eq('organisation_id', orgId);
+
+  if (error) {
+    return { data: null, error: { message: error.message } };
+  }
+
+  // Log the action
+  await logAction(
+    'change_user_role',
+    'user_management',
+    'organisation_users',
+    userId,
+    orgId,
+    { role: oldRole },
+    { role: newRole }
+  );
 
   return { data: null, error: null };
 }

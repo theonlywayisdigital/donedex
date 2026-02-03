@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
   },
   errorTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.md,
   },
@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.danger,
   },
   adminInfo: {
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
   },
   adminName: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   adminEmail: {
@@ -339,7 +339,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.md,
   },

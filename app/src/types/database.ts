@@ -29,7 +29,10 @@ export interface Database {
           current_plan_id: string | null;
           trial_ends_at: string | null;
           subscription_ends_at: string | null;
-          // Archive/delete
+          // Block/archive
+          blocked: boolean;
+          blocked_at: string | null;
+          blocked_reason: string | null;
           archived: boolean;
           archived_at: string | null;
           // Onboarding
@@ -49,6 +52,9 @@ export interface Database {
           current_plan_id?: string | null;
           trial_ends_at?: string | null;
           subscription_ends_at?: string | null;
+          blocked?: boolean;
+          blocked_at?: string | null;
+          blocked_reason?: string | null;
           archived?: boolean;
           archived_at?: string | null;
           onboarding_completed_at?: string | null;
@@ -66,6 +72,9 @@ export interface Database {
           current_plan_id?: string | null;
           trial_ends_at?: string | null;
           subscription_ends_at?: string | null;
+          blocked?: boolean;
+          blocked_at?: string | null;
+          blocked_reason?: string | null;
           archived?: boolean;
           archived_at?: string | null;
           onboarding_completed_at?: string | null;

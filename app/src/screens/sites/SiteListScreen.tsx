@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
   },
   folderName: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   folderCount: {
@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.sm,
   },
@@ -440,7 +440,7 @@ const styles = StyleSheet.create({
   emptyButtonText: {
     color: colors.white,
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   fab: {
     position: 'absolute',

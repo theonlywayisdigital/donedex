@@ -357,7 +357,7 @@ const styles = StyleSheet.create({
   },
   piiBadgeText: {
     fontSize: 10,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
 
@@ -457,7 +457,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     padding: spacing.md,
     borderBottomWidth: 1,

@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },
@@ -410,7 +410,7 @@ const styles = StyleSheet.create({
   },
   libraryCardName: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   libraryCardDescription: {
@@ -465,12 +465,12 @@ const styles = StyleSheet.create({
   },
   previewTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   previewAdd: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
   previewAddDisabled: {
@@ -494,7 +494,7 @@ const styles = StyleSheet.create({
   },
   previewTypeName: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },
@@ -511,7 +511,7 @@ const styles = StyleSheet.create({
   },
   previewSectionTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.md,
   },

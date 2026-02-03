@@ -185,11 +185,6 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
       // Fetch report
       const reportResult = await reportsService.fetchReportById(reportId);
       if (reportResult.error || !reportResult.data) {
-        // If offline and we have local draft, try to use cached template
-        if (localDraft) {
-          console.log('Using local draft for offline inspection');
-          // For MVP, we need the template to be fetched - show error if truly offline
-        }
         set({ isLoading: false, error: reportResult.error?.message || 'Failed to load report' });
         return { error: reportResult.error?.message || 'Failed to load report' };
       }
@@ -222,10 +217,6 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
         allTemplateItems,
         'newest-wins' as ConflictResolutionStrategy
       );
-
-      if (conflictCount > 0) {
-        console.log(`Resolved ${conflictCount} conflicts using newest-wins strategy`);
-      }
 
       // Initialize responses map from merged data
       const responses = new Map<string, LocalResponse>();
@@ -472,25 +463,21 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
       let failedUploads = 0;
       const failedItems: string[] = [];
       responses.forEach((r) => { totalPhotos += r.photos.length; });
-      console.log(`[submitInspection] Starting upload of ${totalPhotos} photos`);
 
       for (const response of responses.values()) {
         if (response.photos.length === 0) continue;
 
-        console.log(`[submitInspection] Uploading ${response.photos.length} photo(s) for item ${response.templateItemId} (${response.itemLabel})`);
         const photoPaths: string[] = [];
         let itemHadFailure = false;
 
         // Upload photos (reports service handles compression)
         for (const photoUri of response.photos) {
-          console.log(`[submitInspection] Uploading photo: ${photoUri ? photoUri.substring(0, 50) : 'NULL'}...`);
           const result = await reportsService.uploadMediaFile(report.id, response.templateItemId, photoUri, 'photo');
           if (result.error) {
             console.error('[submitInspection] Failed to upload photo:', result.error);
             failedUploads++;
             itemHadFailure = true;
           } else if (result.data) {
-            console.log(`[submitInspection] Photo uploaded successfully. Storage path: ${result.data}`);
             photoPaths.push(result.data);
           } else {
             console.error('[submitInspection] Upload returned no data or error');
@@ -510,13 +497,9 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
         }
       }
 
-      // Log summary
-      console.log(`[submitInspection] Upload complete: ${totalPhotos - failedUploads}/${totalPhotos} photos succeeded`);
       if (failedUploads > 0) {
         console.error(`[submitInspection] ${failedUploads} photos failed to upload for items:`, failedItems);
       }
-
-      console.log(`[submitInspection] Photo upload complete. Updating ${mediaPathsByItem.size} response records`);
 
       // Update response records with actual storage paths
       for (const [templateItemId, photoPaths] of mediaPathsByItem) {
@@ -526,8 +509,6 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
           const responseValue = photoPaths.length === 1
             ? photoPaths[0]
             : JSON.stringify(photoPaths);
-
-          console.log(`[submitInspection] Updating response ${templateItemId} with value: ${responseValue}`);
 
           const updateResult = await reportsService.upsertResponse({
             report_id: report.id,
@@ -541,8 +522,6 @@ export const useInspectionStore = create<InspectionState>((set, get) => ({
 
           if (updateResult.error) {
             console.error(`[submitInspection] Failed to update response ${templateItemId}:`, updateResult.error);
-          } else {
-            console.log(`[submitInspection] Response ${templateItemId} updated successfully`);
           }
         }
       }

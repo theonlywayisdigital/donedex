@@ -75,7 +75,6 @@ export async function persistFile(
     // Copy to persistent location
     await sourceFile.copy(destFile);
 
-    console.log(`File persisted: ${sourceUri} -> ${destFile.uri}`);
     return destFile.uri;
   } catch (error) {
     console.error('Error persisting file:', error);
@@ -95,7 +94,6 @@ export async function deletePersistedFile(fileUri: string): Promise<void> {
 
   // Only delete files in our pending uploads directory
   if (!fileUri.includes(PENDING_UPLOADS_DIR)) {
-    console.log('Not deleting file outside pending uploads:', fileUri);
     return;
   }
 
@@ -103,7 +101,6 @@ export async function deletePersistedFile(fileUri: string): Promise<void> {
     const file = new File(fileUri);
     if (file.exists) {
       await file.delete();
-      console.log('Deleted persisted file:', fileUri);
     }
   } catch (error) {
     console.error('Error deleting persisted file:', error);
@@ -144,7 +141,6 @@ export async function cleanupAllPendingUploads(): Promise<void> {
         await file.delete();
       }
     }
-    console.log(`Cleaned up ${fileUris.length} pending upload files`);
   } catch (error) {
     console.error('Error cleaning up pending uploads:', error);
   }

@@ -94,8 +94,6 @@ export function AITemplateBuilderScreen() {
       }
 
       if (data) {
-        console.log('AI Response data:', JSON.stringify(data, null, 2));
-
         // Add AI response
         const aiMessage = createChatMessage('assistant', data.message);
         setMessages([...updatedMessages, aiMessage]);
@@ -103,7 +101,6 @@ export function AITemplateBuilderScreen() {
         setCurrentStep(data.suggestedStep as ConversationStep);
 
         if (data.generatedTemplate) {
-          console.log('Setting generated template:', data.generatedTemplate.name);
           setGeneratedTemplate(data.generatedTemplate);
         }
       }
@@ -335,7 +332,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     flex: 1,
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   stepIndicator: {

@@ -653,7 +653,7 @@ const styles = StyleSheet.create({
   },
   pickerDone: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
   // Select Modal
@@ -673,7 +673,7 @@ const styles = StyleSheet.create({
   },
   selectModalTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     padding: spacing.md,
     borderBottomWidth: 1,
@@ -752,7 +752,7 @@ const styles = StyleSheet.create({
   },
   piiFieldBadgeText: {
     fontSize: 10,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
 });

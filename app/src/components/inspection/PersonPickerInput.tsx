@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   searchContainer: {
@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
   },
   memberAvatarText: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
   memberInfo: {
@@ -361,7 +361,7 @@ const styles = StyleSheet.create({
   },
   selectedAvatarText: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
   selectedInfo: {

@@ -112,7 +112,7 @@ const styles = StyleSheet.create({
   },
   endButtonText: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.warning,
   },
 });

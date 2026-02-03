@@ -89,7 +89,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.md,
   },

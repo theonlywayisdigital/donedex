@@ -324,7 +324,7 @@ function DesktopStackNavigator() {
           },
           headerTitleStyle: {
             fontSize: fontSize.sectionTitle,
-            fontWeight: fontWeight.semibold,
+            fontWeight: fontWeight.bold,
             color: colors.text.primary,
           },
           headerShadowVisible: true,
@@ -560,7 +560,7 @@ const impersonationStyles = StyleSheet.create({
   endButtonText: {
     color: colors.white,
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
 });
 
@@ -730,12 +730,7 @@ export function AdaptiveNavigator() {
 
   // Initialize billing data when organisation is available
   useEffect(() => {
-    console.log('[AdaptiveNavigator] Organisation check:', {
-      hasOrg: !!organisation,
-      orgId: organisation?.id,
-    });
     if (organisation?.id) {
-      console.log('[AdaptiveNavigator] Loading billing for org:', organisation.id);
       loadBilling(organisation.id);
     }
   }, [organisation?.id, loadBilling]);

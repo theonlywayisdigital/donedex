@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
 
   title: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     textAlign: 'center',
   },

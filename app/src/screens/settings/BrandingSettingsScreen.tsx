@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { Icon } from '../../components/ui';
+import { Icon, FullScreenLoader } from '../../components/ui';
 import { useAuthStore } from '../../store/authStore';
 import {
   fetchOrganisationBranding,
@@ -29,6 +29,7 @@ import {
   resetBrandingToDefaults,
 } from '../../services/branding';
 import { showAlert, showDestructiveConfirm } from '../../utils/alert';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
 import type { OrganisationBranding } from '../../types/branding';
 import { isValidHexColor, DEFAULT_BRANDING } from '../../types/branding';
@@ -85,6 +86,9 @@ export function BrandingSettingsScreen() {
       secondaryColor !== (originalBranding.secondary_color || DEFAULT_BRANDING.secondaryColor)
     );
   }, [displayName, primaryColor, secondaryColor, originalBranding]);
+
+  // Warn user on back navigation with unsaved changes
+  useUnsavedChanges(hasChanges());
 
   // Save branding changes
   const handleSave = async () => {
@@ -214,10 +218,7 @@ export function BrandingSettingsScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
-          <Text style={styles.loadingText}>Loading branding settings...</Text>
-        </View>
+        <FullScreenLoader message="Loading branding..." />
       </SafeAreaView>
     );
   }
@@ -392,7 +393,7 @@ export function BrandingSettingsScreen() {
               <View
                 style={[
                   styles.previewButton,
-                  { backgroundColor: isValidHexColor(secondaryColor) ? secondaryColor : colors.primary.dark },
+                  { backgroundColor: isValidHexColor(secondaryColor) ? secondaryColor : colors.primary.mid },
                 ]}
               >
                 <Text style={styles.previewButtonText}>Download PDF</Text>
@@ -459,7 +460,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: fontSize.pageTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },
@@ -472,7 +473,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },
@@ -611,7 +612,7 @@ const styles = StyleSheet.create({
   },
   previewOrgName: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
   previewBody: {
@@ -619,7 +620,7 @@ const styles = StyleSheet.create({
   },
   previewTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.sm,
   },

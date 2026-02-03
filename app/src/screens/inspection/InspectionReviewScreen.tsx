@@ -397,7 +397,7 @@ const styles = StyleSheet.create({
   },
   summaryTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     textAlign: 'center',
     marginBottom: spacing.lg,
@@ -440,7 +440,7 @@ const styles = StyleSheet.create({
   },
   sectionName: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   editLink: {

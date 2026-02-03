@@ -78,15 +78,19 @@ export function UpgradeModal({
               <View style={styles.benefitsList}>
                 <View style={styles.benefitItem}>
                   <Icon name="check" size={16} color={colors.success} />
-                  <Text style={styles.benefitText}>All field types and categories</Text>
+                  <Text style={styles.benefitText}>All 46 field types (9 categories)</Text>
                 </View>
                 <View style={styles.benefitItem}>
                   <Icon name="check" size={16} color={colors.success} />
-                  <Text style={styles.benefitText}>Photo attachments</Text>
+                  <Text style={styles.benefitText}>AI Template Builder (Dexter)</Text>
                 </View>
                 <View style={styles.benefitItem}>
                   <Icon name="check" size={16} color={colors.success} />
-                  <Text style={styles.benefitText}>AI Template Builder</Text>
+                  <Text style={styles.benefitText}>Starter templates library</Text>
+                </View>
+                <View style={styles.benefitItem}>
+                  <Icon name="check" size={16} color={colors.success} />
+                  <Text style={styles.benefitText}>25 GB storage (expandable)</Text>
                 </View>
                 <View style={styles.benefitItem}>
                   <Icon name="check" size={16} color={colors.success} />
@@ -94,9 +98,14 @@ export function UpgradeModal({
                 </View>
                 <View style={styles.benefitItem}>
                   <Icon name="check" size={16} color={colors.success} />
-                  <Text style={styles.benefitText}>Starter templates</Text>
+                  <Text style={styles.benefitText}>100 reports per month</Text>
                 </View>
               </View>
+
+              {/* Pricing */}
+              <Text style={styles.pricing}>
+                {`From \u00A329/mo + \u00A39/user`}
+              </Text>
 
               {/* Buttons */}
               <View style={styles.buttons}>
@@ -153,7 +162,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.sm,
   },
@@ -178,7 +187,13 @@ const styles = StyleSheet.create({
   },
   benefitsList: {
     width: '100%',
+    marginBottom: spacing.sm,
+  },
+  pricing: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
     marginBottom: spacing.lg,
+    textAlign: 'center',
   },
   benefitItem: {
     flexDirection: 'row',

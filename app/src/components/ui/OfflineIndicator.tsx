@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform } from 'react-native';
 import { WifiOff, CloudOff, RefreshCw, Check } from 'lucide-react-native';
 import { useNetworkStatus } from '../../services/networkStatus';
 import { subscribeToSyncStatus, forceSyncNow } from '../../services/syncService';
@@ -32,6 +32,18 @@ export function OfflineIndicator({ showSyncStatus = false }: OfflineIndicatorPro
 
     return unsubscribe;
   }, []);
+
+  // Warn on web before closing tab/window with pending syncs
+  useEffect(() => {
+    if (Platform.OS !== 'web' || pendingItems === 0) return;
+
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [pendingItems]);
 
   // Animate in/out
   useEffect(() => {
@@ -139,6 +151,6 @@ const styles = StyleSheet.create({
   syncButtonText: {
     color: colors.white,
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
 });

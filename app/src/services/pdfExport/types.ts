@@ -16,6 +16,7 @@ export interface ExportOptions {
 export interface ExportResult {
   success: boolean;
   error?: string;
+  warning?: string;
 }
 
 export interface ResponseDisplay {

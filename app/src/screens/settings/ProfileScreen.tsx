@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Button, Input } from '../../components/ui';
 import { useAuthStore } from '../../store/authStore';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { supabase } from '../../services/supabase';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
 import type { SettingsStackParamList } from '../../navigation/MainNavigator';
@@ -35,6 +36,9 @@ export function ProfileScreen({ navigation }: Props) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+
+  // Warn user on back navigation with unsaved changes
+  useUnsavedChanges(hasChanges);
 
   useEffect(() => {
     // Track changes

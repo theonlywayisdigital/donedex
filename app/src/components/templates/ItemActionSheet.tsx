@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   headerSubtitle: {

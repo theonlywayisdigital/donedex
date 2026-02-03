@@ -5,6 +5,7 @@
 export interface ImagePickerResult {
   canceled: boolean;
   assets?: ImageAsset[];
+  error?: string;
 }
 
 export interface ImageAsset {

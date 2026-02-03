@@ -40,8 +40,6 @@ export async function analyzeDocument(
   messages?: ChatMessage[]
 ): Promise<ServiceResult<DocumentAnalysisResponse>> {
   try {
-    console.log('Analyzing document with', images.length, 'image(s)');
-
     const { data, error } = await supabase.functions.invoke<DocumentAnalysisResponse>(
       'template-from-document',
       {

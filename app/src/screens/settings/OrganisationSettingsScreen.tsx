@@ -16,8 +16,9 @@ import {
 import { showNotification } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Button, Input, Icon } from '../../components/ui';
+import { Button, Input, Icon, FullScreenLoader } from '../../components/ui';
 import { useAuthStore } from '../../store/authStore';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { supabase } from '../../services/supabase';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
 import type { SettingsStackParamList } from '../../navigation/MainNavigator';
@@ -57,6 +58,8 @@ export function OrganisationSettingsScreen({ navigation }: Props) {
 
   const [formData, setFormData] = useState<OrganisationData | null>(null);
   const [originalData, setOriginalData] = useState<OrganisationData | null>(null);
+
+  useUnsavedChanges(hasChanges);
 
   useEffect(() => {
     loadOrganisation();
@@ -147,10 +150,7 @@ export function OrganisationSettingsScreen({ navigation }: Props) {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
-          <Text style={styles.loadingText}>Loading organisation...</Text>
-        </View>
+        <FullScreenLoader message="Loading settings..." />
       </SafeAreaView>
     );
   }
@@ -292,6 +292,14 @@ export function OrganisationSettingsScreen({ navigation }: Props) {
                   />
                 </View>
               </View>
+
+              <Input
+                label="Country"
+                placeholder="Country"
+                value={formData.country || ''}
+                onChangeText={(val) => updateField('country', val)}
+                autoCapitalize="words"
+              />
             </View>
           </View>
 
@@ -341,7 +349,7 @@ const styles = StyleSheet.create({
   },
   errorTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.md,
     marginBottom: spacing.lg,

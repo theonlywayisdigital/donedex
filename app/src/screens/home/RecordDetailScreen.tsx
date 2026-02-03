@@ -24,7 +24,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as DocumentPicker from 'expo-document-picker';
-import { Card, Icon, EmptyState, StatusBadge, TabBar, type Tab } from '../../components/ui';
+import { Card, Icon, EmptyState, StatusBadge, TabBar, type Tab, FullScreenLoader } from '../../components/ui';
 import {
   fetchRecordWithType,
   fetchRecordReportsFiltered,
@@ -967,10 +967,7 @@ export function RecordDetailScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
-          <Text style={styles.loadingText}>Loading record...</Text>
-        </View>
+        <FullScreenLoader message="Loading record..." />
       </SafeAreaView>
     );
   }
@@ -1123,7 +1120,7 @@ const styles = StyleSheet.create({
   },
   recordName: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   recordAddress: {
@@ -1238,7 +1235,7 @@ const styles = StyleSheet.create({
   },
   sectionHeaderText: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.secondary,
     letterSpacing: 0.5,
   },
@@ -1320,7 +1317,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   filterSection: {
@@ -1480,7 +1477,7 @@ const styles = StyleSheet.create({
   },
   detailSectionTitle: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.secondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,

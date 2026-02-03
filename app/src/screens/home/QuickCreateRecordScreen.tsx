@@ -345,7 +345,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
   secondaryButton: {

@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   countBadge: {
@@ -156,7 +156,7 @@ const styles = StyleSheet.create({
   },
   countText: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.danger,
   },
   allGoodBadge: {

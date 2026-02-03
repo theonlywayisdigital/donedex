@@ -35,6 +35,8 @@ export interface SubscriptionPlan {
   stripe_product_id: string | null;
   stripe_price_id_monthly: string | null;
   stripe_price_id_annual: string | null;
+  stripe_per_user_price_id_monthly: string | null;
+  stripe_per_user_price_id_annual: string | null;
 
   // Usage limits (-1 = unlimited)
   max_users: number;
@@ -57,6 +59,12 @@ export interface SubscriptionPlan {
   // Pricing (in pence GBP)
   price_monthly_gbp: number;
   price_annual_gbp: number;
+  price_per_user_monthly_gbp: number;
+  price_per_user_annual_gbp: number;
+  base_users_included: number;
+
+  // Field type gating
+  allowed_field_categories: string[];
 
   // Meta
   is_active: boolean;
@@ -77,6 +85,10 @@ export interface SubscriptionPlanDisplay extends SubscriptionPlan {
   isUnlimitedRecords: boolean;
   isUnlimitedReports: boolean;
   isUnlimitedStorage: boolean;
+  // Per-user pricing display
+  hasPerUserPricing: boolean;
+  pricePerUserMonthlyFormatted: string; // "£9"
+  pricePerUserAnnualMonthlyFormatted: string; // "£7.20"
 }
 
 /**
@@ -88,6 +100,22 @@ export interface OrganisationBilling {
   current_plan: SubscriptionPlan | null;
   trial_ends_at: string | null;
   subscription_ends_at: string | null;
+}
+
+/**
+ * Storage add-on (purchased via Stripe)
+ */
+export interface StorageAddOn {
+  id: string;
+  organisation_id: string;
+  quantity_blocks: number;
+  block_size_gb: number; // 10
+  price_per_block_monthly_gbp: number; // 500 (£5 in pence)
+  stripe_subscription_item_id: string | null;
+  stripe_price_id: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 /**
@@ -111,6 +139,8 @@ export interface UsageLimits {
     current_bytes: number;
     current_gb: number;
     limit_gb: number;
+    base_limit_gb: number;
+    addon_gb: number;
   };
   plan: {
     id: string;
@@ -191,6 +221,9 @@ export interface BillingSummary {
     slug: PlanSlug;
     price_monthly_gbp: number;
     price_annual_gbp: number;
+    price_per_user_monthly_gbp: number;
+    price_per_user_annual_gbp: number;
+    base_users_included: number;
   } | null;
   latest_invoice: {
     amount_paid: number;
@@ -230,9 +263,10 @@ export type PlanFeature =
   | 'feature_all_field_types';
 
 /**
- * Basic field types available on Free plan
+ * Field types available on Free plan (basic + evidence categories)
  */
-export const BASIC_CHECK_FIELD_TYPES = [
+export const FREE_TIER_FIELD_TYPES = [
+  // Basic category (9 types)
   'pass_fail',
   'yes_no',
   'condition',
@@ -241,9 +275,27 @@ export const BASIC_CHECK_FIELD_TYPES = [
   'number',
   'select',
   'multi_select',
+  'coloured_selection',
+  // Evidence category (4 types)
+  'photo',
+  'photo_before_after',
+  'signature',
+  'annotated_photo',
 ] as const;
 
-export type BasicCheckFieldType = typeof BASIC_CHECK_FIELD_TYPES[number];
+export type FreeTierFieldType = typeof FREE_TIER_FIELD_TYPES[number];
+
+/**
+ * Field type categories available on Free plan
+ */
+export const FREE_TIER_CATEGORIES = ['basic', 'evidence'] as const;
+
+export type FreeTierCategory = typeof FREE_TIER_CATEGORIES[number];
+
+/** @deprecated Use FREE_TIER_FIELD_TYPES instead */
+export const BASIC_CHECK_FIELD_TYPES = FREE_TIER_FIELD_TYPES;
+/** @deprecated Use FreeTierFieldType instead */
+export type BasicCheckFieldType = FreeTierFieldType;
 
 /**
  * Helper functions for formatting
@@ -285,6 +337,9 @@ export const planToDisplay = (plan: SubscriptionPlan): SubscriptionPlanDisplay =
       ? Math.round(((plan.price_monthly_gbp * 12 - plan.price_annual_gbp) / (plan.price_monthly_gbp * 12)) * 100)
       : 0;
 
+  const hasPerUserPricing = plan.price_per_user_monthly_gbp > 0;
+  const perUserAnnualMonthly = plan.price_per_user_annual_gbp / 12;
+
   return {
     ...plan,
     priceMonthlyFormatted: formatPrice(plan.price_monthly_gbp),
@@ -295,5 +350,8 @@ export const planToDisplay = (plan: SubscriptionPlan): SubscriptionPlanDisplay =
     isUnlimitedRecords: isUnlimited(plan.max_records),
     isUnlimitedReports: isUnlimited(plan.max_reports_per_month),
     isUnlimitedStorage: isUnlimited(plan.max_storage_gb),
+    hasPerUserPricing,
+    pricePerUserMonthlyFormatted: formatPriceShort(plan.price_per_user_monthly_gbp),
+    pricePerUserAnnualMonthlyFormatted: formatPriceShort(perUserAnnualMonthly),
   };
 };

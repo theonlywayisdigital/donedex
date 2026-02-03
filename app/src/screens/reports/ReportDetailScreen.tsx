@@ -61,29 +61,12 @@ export function ReportDetailScreen() {
 
       // Load responses
       const { data: responsesData } = await fetchReportResponses(reportId);
-      console.log('[ReportDetailScreen] Loaded responses:', responsesData.length);
       const responsesMap = new Map<string, ResponseWithPhotos>();
 
-      // Debug: collect photo responses for alert
-      const photoDebugInfo: string[] = [];
-
       responsesData.forEach((r) => {
-        console.log(`[ReportDetailScreen] Response ${r.template_item_id} (${r.item_type}): value = ${r.response_value?.substring(0, 100) || 'null'}`);
-
-        // Collect photo debug info
-        if (['photo', 'photo_before_after', 'annotated_photo'].includes(r.item_type)) {
-          photoDebugInfo.push(`${r.item_label}: ${r.response_value || 'NULL'}`);
-        }
-
         responsesMap.set(r.template_item_id, r);
       });
       setResponses(responsesMap);
-
-      // Log photo responses for debugging (check Metro terminal)
-      if (photoDebugInfo.length > 0) {
-        console.log('[ReportDetailScreen] Photo responses found:', photoDebugInfo.length);
-        photoDebugInfo.forEach((info, i) => console.log(`[ReportDetailScreen] Photo ${i + 1}:`, info));
-      }
 
       // Load branding for PDF export
       const { data: brandingData } = await fetchBrandingContext(reportData.organisation_id);
@@ -127,6 +110,8 @@ export function ReportDetailScreen() {
 
     if (!result.success) {
       showNotification('Export Failed', result.error || 'Unable to export PDF');
+    } else if (result.warning) {
+      showNotification('Export Warning', result.warning);
     }
   };
 
@@ -144,6 +129,8 @@ export function ReportDetailScreen() {
 
     if (!result.success) {
       showNotification('Print Failed', result.error || 'Unable to print report');
+    } else if (result.warning) {
+      showNotification('Print Warning', result.warning);
     }
   };
 
@@ -343,16 +330,12 @@ export function ReportDetailScreen() {
     // Handle photo types (photo, photo_before_after, annotated_photo)
     const isPhotoType = ['photo', 'photo_before_after', 'annotated_photo'].includes(itemType);
     if (isPhotoType && response?.response_value) {
-      console.log(`[ReportDetailScreen] Photo response_value: ${response.response_value}`);
       const paths = getMediaPaths(response.response_value);
-      console.log(`[ReportDetailScreen] Parsed photo paths:`, paths);
       if (paths.length > 0) {
         return (
           <View style={styles.photoGallery}>
             {paths.map((path, index) => {
               const photoUrl = getPhotoUrl(path);
-              console.log(`[ReportDetailScreen] Photo ${index} path: ${path}`);
-              console.log(`[ReportDetailScreen] Photo ${index} URL: ${photoUrl}`);
               return (
                 <TouchableOpacity
                   key={index}
@@ -364,7 +347,6 @@ export function ReportDetailScreen() {
                     style={styles.photoThumbnail}
                     resizeMode="cover"
                     onError={(e) => console.error(`[ReportDetailScreen] Image load error for ${photoUrl}:`, e.nativeEvent.error)}
-                    onLoad={() => console.log(`[ReportDetailScreen] Image loaded successfully: ${photoUrl}`)}
                   />
                 </TouchableOpacity>
               );
@@ -606,7 +588,7 @@ const styles = StyleSheet.create({
   },
   templateName: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     flex: 1,
   },
@@ -647,7 +629,7 @@ const styles = StyleSheet.create({
   },
   exportButtonText: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
   printButton: {
@@ -663,7 +645,7 @@ const styles = StyleSheet.create({
   },
   printButtonText: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
   infoRow: {
@@ -685,7 +667,7 @@ const styles = StyleSheet.create({
   },
   sectionName: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.sm,
     paddingBottom: spacing.xs,

@@ -39,6 +39,10 @@ export function SignUpScreen({ navigation }: Props) {
       setError('Please enter your email address');
       return false;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError('Please enter a valid email address');
+      return false;
+    }
     if (!password) {
       setError('Please enter a password');
       return false;
@@ -258,6 +262,6 @@ const styles = StyleSheet.create({
   signInLink: {
     fontSize: fontSize.body,
     color: colors.primary.DEFAULT,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
 });

@@ -314,13 +314,6 @@ export function recordRenderTime(
 function recordMetric(metric: PerformanceMetric): void {
   metricsBuffer.push(metric);
 
-  if (config.debugLog) {
-    console.log(
-      `[Perf] ${metric.category}:${metric.name} - ${metric.duration.toFixed(2)}ms`,
-      metric.metadata || ''
-    );
-  }
-
   // Auto-flush if buffer is full
   if (metricsBuffer.length >= config.maxBufferSize) {
     flushMetrics();
@@ -336,17 +329,6 @@ export function flushMetrics(): void {
 
   const metrics = [...metricsBuffer];
   metricsBuffer = [];
-
-  if (config.debugLog) {
-    console.log(`[Perf] Flushing ${metrics.length} metrics`);
-  }
-
-  // In production, send to analytics service
-  // For now, just log summary if in debug mode
-  if (config.debugLog) {
-    const summary = summarizeMetrics(metrics);
-    console.log('[Perf] Summary:', JSON.stringify(summary, null, 2));
-  }
 
   // TODO: Send to analytics service (e.g., Supabase edge function, Sentry, etc.)
 }
@@ -473,10 +455,6 @@ export function initializePerformance(customConfig?: Partial<PerformanceConfig>)
   // Start flush timer
   if (config.enabled && config.flushInterval > 0 && !flushTimer) {
     flushTimer = setInterval(flushMetrics, config.flushInterval);
-  }
-
-  if (config.debugLog) {
-    console.log('[Perf] Performance monitoring initialized', config);
   }
 }
 

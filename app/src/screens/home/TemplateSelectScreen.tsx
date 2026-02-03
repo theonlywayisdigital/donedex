@@ -12,7 +12,7 @@ import { showNotification } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Card, Button } from '../../components/ui';
+import { Card, Button, FullScreenLoader } from '../../components/ui';
 import { useRecordsStore } from '../../store/recordsStore';
 import { useInspectionStore } from '../../store/inspectionStore';
 import { useAuthStore } from '../../store/authStore';
@@ -127,9 +127,7 @@ export function TemplateSelectScreen() {
   if (isLoading && !currentRecord) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
-        </View>
+        <FullScreenLoader message="Loading..." />
       </SafeAreaView>
     );
   }
@@ -202,7 +200,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   headerSubtitle: {
@@ -270,7 +268,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.sm,
   },

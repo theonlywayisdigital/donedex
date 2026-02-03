@@ -181,7 +181,7 @@ const styles = StyleSheet.create({
   },
   featureTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },

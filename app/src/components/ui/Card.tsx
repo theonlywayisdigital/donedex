@@ -6,11 +6,13 @@ interface CardProps {
   children: React.ReactNode;
   style?: ViewStyle;
   noPadding?: boolean;
+  /** Adds a left accent border in primary color */
+  accent?: boolean;
 }
 
-export function Card({ children, style, noPadding = false }: CardProps) {
+export function Card({ children, style, noPadding = false, accent = false }: CardProps) {
   return (
-    <View style={[styles.card, !noPadding && styles.padding, style]}>
+    <View style={[styles.card, !noPadding && styles.padding, accent && styles.accent, style]}>
       {children}
     </View>
   );
@@ -20,11 +22,13 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.white,
     borderRadius: components.card.borderRadius,
-    borderWidth: components.card.borderWidth,
-    borderColor: colors.border.DEFAULT,
     ...shadows.card,
   },
   padding: {
     padding: spacing.md,
+  },
+  accent: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary.DEFAULT,
   },
 });

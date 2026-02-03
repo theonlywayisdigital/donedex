@@ -577,7 +577,7 @@ function SignatureInput({
             <SignatureCanvas
               ref={signatureRef}
               onOK={handleSignature}
-              onEmpty={() => console.log('Signature is empty')}
+              onEmpty={() => {}}
               backgroundColor={colors.white}
               penColor={colors.text.primary}
               style={styles.signatureCanvas}
@@ -1665,7 +1665,7 @@ const styles = StyleSheet.create({
   },
   signatureModalTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   signatureModalDone: {
@@ -1674,7 +1674,7 @@ const styles = StyleSheet.create({
   signatureModalDoneText: {
     fontSize: fontSize.body,
     color: colors.primary.DEFAULT,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   signerNameContainer: {
     flexDirection: 'row',
@@ -1792,7 +1792,7 @@ const styles = StyleSheet.create({
   datetimeDoneText: {
     fontSize: fontSize.body,
     color: colors.primary.DEFAULT,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   // Rating styles
   ratingContainer: {
@@ -1872,7 +1872,7 @@ const styles = StyleSheet.create({
   },
   colouredOptionText: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   // Title display styles
   titleDisplayContainer: {
@@ -1880,7 +1880,7 @@ const styles = StyleSheet.create({
   },
   titleDisplayText: {
     color: colors.text.primary,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   titleHeading1: {
     fontSize: 28,
@@ -1888,11 +1888,11 @@ const styles = StyleSheet.create({
   },
   titleHeading2: {
     fontSize: 22,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   titleHeading3: {
     fontSize: 18,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   // Paragraph display styles
   paragraphDisplayContainer: {

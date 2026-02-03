@@ -190,7 +190,6 @@ export async function processSyncQueue(): Promise<{ success: number; failed: num
 
   try {
     const queue = await getSyncQueue();
-    console.log(`Processing sync queue: ${queue.length} items`);
 
     for (const item of queue) {
       const result = await processSyncItem(item);
@@ -218,8 +217,6 @@ export async function processSyncQueue(): Promise<{ success: number; failed: num
     if (success > 0) {
       await saveLastSyncTime();
     }
-
-    console.log(`Sync complete: ${success} success, ${failed} failed`);
   } catch (error) {
     console.error('Error during sync:', error);
   } finally {
@@ -238,7 +235,6 @@ export function initializeAutoSync(): () => void {
 
   const unsubscribe = subscribeToNetworkChanges(async (online) => {
     if (online && wasOffline) {
-      console.log('Network restored, starting sync...');
       await processSyncQueue();
     }
     wasOffline = !online;

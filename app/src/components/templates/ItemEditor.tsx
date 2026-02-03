@@ -1494,7 +1494,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.md,
     textAlign: 'center',
@@ -1528,7 +1528,7 @@ const styles = StyleSheet.create({
   },
   categoryHeader: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.secondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,

@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
   },
   orgName: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   orgDate: {
@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.md,
   },

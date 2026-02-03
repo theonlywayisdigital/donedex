@@ -341,7 +341,7 @@ const styles = StyleSheet.create({
   },
   roleButtonText: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.secondary,
     marginBottom: spacing.xs,
   },
@@ -369,7 +369,7 @@ const styles = StyleSheet.create({
   },
   invitesListTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.md,
   },

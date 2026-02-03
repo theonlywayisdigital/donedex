@@ -121,7 +121,6 @@ export function OrganisationDetailScreen() {
   const loadData = useCallback(async () => {
     try {
       const result = await fetchOrganisationDetails(orgId);
-      console.log('fetchOrganisationDetails result:', result);
       if (result.error) {
         console.error('Error fetching org:', result.error);
       }
@@ -134,9 +133,9 @@ export function OrganisationDetailScreen() {
       const billingResult = await fetchBillingStatus(orgId);
       if (billingResult.data) {
         setBilling({
-          plan_name: billingResult.data.plan?.name || null,
-          plan_slug: billingResult.data.plan?.slug || null,
-          plan_id: billingResult.data.plan?.id || null,
+          plan_name: billingResult.data.current_plan?.name || null,
+          plan_slug: billingResult.data.current_plan?.slug || null,
+          plan_id: billingResult.data.current_plan?.id || null,
           subscription_status: billingResult.data.subscription_status,
           trial_ends_at: billingResult.data.trial_ends_at,
           subscription_ends_at: billingResult.data.subscription_ends_at,
@@ -257,8 +256,8 @@ export function OrganisationDetailScreen() {
     setSaving(true);
     const result = await updateOrganisation(orgId, {
       name: editName.trim(),
-      contact_email: editEmail.trim() || null,
-      contact_phone: editPhone.trim() || null,
+      contact_email: editEmail.trim() || undefined,
+      contact_phone: editPhone.trim() || undefined,
     });
     setSaving(false);
 
@@ -433,8 +432,16 @@ export function OrganisationDetailScreen() {
             <Icon name="inbox" size={16} color={colors.warning} />
             <Text style={styles.archivedText}>This organisation is archived</Text>
             {canEdit && (
-              <TouchableOpacity style={styles.restoreButton} onPress={handleRestore}>
-                <Text style={styles.restoreButtonText}>Restore</Text>
+              <TouchableOpacity
+                style={[styles.restoreButton, saving && styles.disabledButton]}
+                onPress={handleRestore}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Text style={styles.restoreButtonText}>Restore</Text>
+                )}
               </TouchableOpacity>
             )}
           </View>
@@ -451,8 +458,16 @@ export function OrganisationDetailScreen() {
               )}
             </View>
             {canEdit && (
-              <TouchableOpacity style={styles.unblockButton} onPress={handleUnblock}>
-                <Text style={styles.unblockButtonText}>Unblock</Text>
+              <TouchableOpacity
+                style={[styles.unblockButton, saving && styles.disabledButton]}
+                onPress={handleUnblock}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Text style={styles.unblockButtonText}>Unblock</Text>
+                )}
               </TouchableOpacity>
             )}
           </View>
@@ -646,9 +661,13 @@ export function OrganisationDetailScreen() {
         )}
 
         {/* Billing History */}
-        {billingHistory.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Billing History</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Billing History</Text>
+          {billingHistory.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>No billing history yet</Text>
+            </View>
+          ) : (
             <View style={styles.infoCard}>
               {billingHistory.slice(0, 5).map((entry) => (
                 <View key={entry.id} style={styles.historyRow}>
@@ -665,8 +684,8 @@ export function OrganisationDetailScreen() {
                 </View>
               ))}
             </View>
-          </View>
-        )}
+          )}
+        </View>
 
         {/* Stats Summary */}
         <View style={styles.statsCard}>
@@ -803,27 +822,29 @@ export function OrganisationDetailScreen() {
             <Text style={styles.inputLabel}>Current Plan: {billing?.plan_name || 'Free'}</Text>
 
             <Text style={styles.inputLabel}>Change Plan</Text>
-            <View style={styles.planSelector}>
-              {plans.map((plan) => (
-                <TouchableOpacity
-                  key={plan.id}
-                  style={[
-                    styles.planOption,
-                    selectedPlanId === plan.id && styles.planOptionSelected,
-                  ]}
-                  onPress={() => setSelectedPlanId(plan.id)}
-                >
-                  <Text
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.planScrollView}>
+              <View style={styles.planSelector}>
+                {plans.map((plan) => (
+                  <TouchableOpacity
+                    key={plan.id}
                     style={[
-                      styles.planOptionText,
-                      selectedPlanId === plan.id && styles.planOptionTextSelected,
+                      styles.planOption,
+                      selectedPlanId === plan.id && styles.planOptionSelected,
                     ]}
+                    onPress={() => setSelectedPlanId(plan.id)}
                   >
-                    {plan.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                    <Text
+                      style={[
+                        styles.planOptionText,
+                        selectedPlanId === plan.id && styles.planOptionTextSelected,
+                      ]}
+                    >
+                      {plan.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
 
             <Text style={styles.inputLabel}>Trial End Date (optional)</Text>
             <TextInput
@@ -1041,7 +1062,7 @@ const styles = StyleSheet.create({
   restoreButtonText: {
     color: colors.white,
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   header: {
     alignItems: 'center',
@@ -1108,7 +1129,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.sm,
   },
@@ -1142,7 +1163,7 @@ const styles = StyleSheet.create({
   },
   planBadgeText: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   statsCard: {
     flexDirection: 'row',
@@ -1203,14 +1224,14 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   userDetails: {
     flex: 1,
   },
   userName: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },
@@ -1326,17 +1347,18 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
   disabledButton: {
     opacity: 0.5,
   },
+  planScrollView: {
+    marginTop: spacing.xs,
+  },
   planSelector: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.sm,
-    marginTop: spacing.xs,
   },
   planOption: {
     paddingHorizontal: spacing.md,
@@ -1356,7 +1378,7 @@ const styles = StyleSheet.create({
   },
   planOptionTextSelected: {
     color: colors.primary.DEFAULT,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   deleteWarning: {
     fontSize: fontSize.body,
@@ -1385,7 +1407,7 @@ const styles = StyleSheet.create({
   },
   deleteOptionTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },
@@ -1418,7 +1440,7 @@ const styles = StyleSheet.create({
   },
   permanentDeleteButtonText: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
   // Blocked banner styles
@@ -1454,7 +1476,7 @@ const styles = StyleSheet.create({
   unblockButtonText: {
     color: colors.white,
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   // Block button styles
   blockBtn: {
@@ -1538,7 +1560,7 @@ const styles = StyleSheet.create({
   },
   blockButtonText: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
 });

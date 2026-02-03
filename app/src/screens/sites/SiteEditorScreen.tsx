@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { showNotification } from '../../utils/alert';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SitesStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
@@ -20,6 +21,7 @@ import { fetchRecordTypeById } from '../../services/recordTypes';
 import { fetchRecordTypeFields } from '../../services/recordTypeFields';
 import { useAuthStore } from '../../store/authStore';
 import { RecordFieldInput } from '../../components/records/RecordFieldInput';
+import { FullScreenLoader } from '../../components/ui';
 import type { Record as RecordModel, RecordType, RecordTypeField } from '../../types';
 
 type NavigationProp = NativeStackNavigationProp<SitesStackParamList, 'SiteEditor'>;
@@ -43,6 +45,21 @@ export function SiteEditorScreen() {
   const [fields, setFields] = useState<RecordTypeField[]>([]);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
 
+  // Track original values for dirty detection
+  const originalValues = useRef({ name: '', address: '', fieldValues: {} as Record<string, string> });
+  const [isDirty, setIsDirty] = useState(false);
+
+  useUnsavedChanges(isDirty);
+
+  useEffect(() => {
+    if (loading) return;
+    const dirty =
+      name !== originalValues.current.name ||
+      address !== originalValues.current.address ||
+      JSON.stringify(fieldValues) !== JSON.stringify(originalValues.current.fieldValues);
+    setIsDirty(dirty);
+  }, [name, address, fieldValues, loading]);
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -60,9 +77,17 @@ export function SiteEditorScreen() {
             setRecordTypeId(record.record_type_id);
 
             // Load metadata field values
-            if (record.metadata && typeof record.metadata === 'object') {
-              setFieldValues(record.metadata as Record<string, string>);
-            }
+            const meta = (record.metadata && typeof record.metadata === 'object')
+              ? record.metadata as Record<string, string>
+              : {};
+            setFieldValues(meta);
+
+            // Capture original values for dirty detection
+            originalValues.current = {
+              name: record.name,
+              address: record.address || '',
+              fieldValues: { ...meta },
+            };
 
             // Load the record type and its fields
             if (record.record_type_id) {
@@ -165,12 +190,7 @@ export function SiteEditorScreen() {
   };
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
+    return <FullScreenLoader message="Loading..." />;
   }
 
   return (
@@ -293,7 +313,7 @@ const styles = StyleSheet.create({
   },
   recordTypeName: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
   field: {
@@ -327,7 +347,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.md,
   },

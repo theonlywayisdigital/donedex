@@ -1015,7 +1015,7 @@ const styles = StyleSheet.create({
   },
   numericRatingButtonText: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   numericRatingButtonTextSelected: {
@@ -1038,7 +1038,7 @@ const styles = StyleSheet.create({
   },
   sliderValue: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
   slider: {
@@ -1107,7 +1107,7 @@ const styles = StyleSheet.create({
   datetimeDoneText: {
     fontSize: fontSize.body,
     color: colors.primary.DEFAULT,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   expiryBadge: {
     paddingHorizontal: spacing.sm,
@@ -1235,7 +1235,7 @@ const styles = StyleSheet.create({
   },
   currencyButtonTextSelected: {
     color: colors.primary.DEFAULT,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   currencyInput: {
     flex: 1,
@@ -1388,7 +1388,7 @@ const styles = StyleSheet.create({
   },
   signatureModalTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   signatureModalDone: {
@@ -1397,7 +1397,7 @@ const styles = StyleSheet.create({
   signatureModalDoneText: {
     fontSize: fontSize.body,
     color: colors.primary.DEFAULT,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   signatureCanvasContainer: {
     flex: 1,

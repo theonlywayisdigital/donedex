@@ -10,7 +10,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SitesStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
-import { Icon } from '../../components/ui';
+import { Icon, FullScreenLoader } from '../../components/ui';
 import { fetchRecordById, fetchRecordTemplates } from '../../services/records';
 import type { Record as RecordModel, Template } from '../../types';
 
@@ -84,12 +84,7 @@ export function SiteAssignTemplatesScreen() {
   );
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
-        <Text style={styles.loadingText}>Loading templates...</Text>
-      </View>
-    );
+    return <FullScreenLoader message="Loading templates..." />;
   }
 
   return (
@@ -138,7 +133,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   headerSubtitle: {
@@ -166,7 +161,7 @@ const styles = StyleSheet.create({
   },
   templateName: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   templateDescription: {
@@ -185,7 +180,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.sm,
   },

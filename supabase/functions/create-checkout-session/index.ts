@@ -40,46 +40,23 @@ serve(async (req: Request) => {
       organisationId,
       planId,
       billingInterval = 'monthly',
+      userCount,
+      addOnType,
+      quantityBlocks,
       successUrl = DEFAULT_SUCCESS_URL,
       cancelUrl = DEFAULT_CANCEL_URL,
     } = await req.json();
 
     // Validate required fields
-    if (!organisationId || !planId) {
+    if (!organisationId) {
       return new Response(
-        JSON.stringify({ error: 'Missing required fields: organisationId, planId' }),
+        JSON.stringify({ error: 'Missing required field: organisationId' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     // Create Supabase client with service role
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-    // Get plan details
-    const { data: plan, error: planError } = await supabase
-      .from('subscription_plans')
-      .select('*')
-      .eq('id', planId)
-      .single();
-
-    if (planError || !plan) {
-      return new Response(
-        JSON.stringify({ error: 'Plan not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Check plan has Stripe price IDs
-    const priceId = billingInterval === 'annual'
-      ? plan.stripe_price_id_annual
-      : plan.stripe_price_id_monthly;
-
-    if (!priceId) {
-      return new Response(
-        JSON.stringify({ error: `No Stripe price configured for ${billingInterval} billing` }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
 
     // Get organisation details
     const { data: org, error: orgError } = await supabase
@@ -99,7 +76,6 @@ serve(async (req: Request) => {
     let customerId = org.stripe_customer_id;
 
     if (!customerId) {
-      // Create new Stripe customer
       const customer = await stripe.customers.create({
         email: org.billing_email || org.contact_email,
         name: org.name,
@@ -110,55 +86,132 @@ serve(async (req: Request) => {
       });
       customerId = customer.id;
 
-      // Save Stripe customer ID to organisation
       await supabase
         .from('organisations')
         .update({ stripe_customer_id: customerId })
         .eq('id', organisationId);
     }
 
-    // Create Stripe Checkout session
-    const session = await stripe.checkout.sessions.create({
-      customer: customerId,
-      mode: 'subscription',
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
+    let session: Stripe.Checkout.Session;
+
+    // ---- STORAGE ADD-ON CHECKOUT ----
+    if (addOnType === 'storage') {
+      const STORAGE_ADDON_PRICE_ID = Deno.env.get('STRIPE_STORAGE_ADDON_PRICE_ID') || '';
+      const blocks = quantityBlocks || 1;
+
+      if (!STORAGE_ADDON_PRICE_ID) {
+        return new Response(
+          JSON.stringify({ error: 'Storage add-on price not configured' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        mode: 'subscription',
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price: STORAGE_ADDON_PRICE_ID,
+            quantity: blocks,
+          },
+        ],
+        success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: cancelUrl,
+        metadata: {
+          organisation_id: organisationId,
+          add_on_type: 'storage',
+          quantity_blocks: String(blocks),
         },
-      ],
-      subscription_data: {
-        trial_period_days: 7, // 7-day free trial
+      });
+    }
+    // ---- PLAN SUBSCRIPTION CHECKOUT ----
+    else {
+      if (!planId) {
+        return new Response(
+          JSON.stringify({ error: 'Missing required field: planId' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Get plan details
+      const { data: plan, error: planError } = await supabase
+        .from('subscription_plans')
+        .select('*')
+        .eq('id', planId)
+        .single();
+
+      if (planError || !plan) {
+        return new Response(
+          JSON.stringify({ error: 'Plan not found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Build line items (base plan + per-user if applicable)
+      const lineItems: Array<{ price: string; quantity: number }> = [];
+
+      // Base plan price
+      const basePriceId = billingInterval === 'annual'
+        ? plan.stripe_price_id_annual
+        : plan.stripe_price_id_monthly;
+
+      if (!basePriceId) {
+        return new Response(
+          JSON.stringify({ error: `No Stripe price configured for ${billingInterval} billing` }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      lineItems.push({ price: basePriceId, quantity: 1 });
+
+      // Per-user price (additional users beyond base_users_included)
+      const perUserPriceId = billingInterval === 'annual'
+        ? plan.stripe_per_user_price_id_annual
+        : plan.stripe_per_user_price_id_monthly;
+
+      if (perUserPriceId && userCount && userCount > (plan.base_users_included || 0)) {
+        const additionalUsers = userCount - (plan.base_users_included || 0);
+        lineItems.push({ price: perUserPriceId, quantity: additionalUsers });
+      }
+
+      session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        mode: 'subscription',
+        payment_method_types: ['card'],
+        line_items: lineItems,
+        subscription_data: {
+          trial_period_days: 7,
+          metadata: {
+            organisation_id: organisationId,
+            plan_id: planId,
+            billing_interval: billingInterval,
+          },
+        },
+        success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: cancelUrl,
         metadata: {
           organisation_id: organisationId,
           plan_id: planId,
           billing_interval: billingInterval,
         },
-      },
-      success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: cancelUrl,
-      metadata: {
-        organisation_id: organisationId,
-        plan_id: planId,
-        billing_interval: billingInterval,
-      },
-      allow_promotion_codes: true,
-      billing_address_collection: 'required',
-      tax_id_collection: {
-        enabled: true,
-      },
-    });
+        allow_promotion_codes: true,
+        billing_address_collection: 'required',
+        tax_id_collection: {
+          enabled: true,
+        },
+      });
 
-    // Update onboarding state with checkout session ID
-    await supabase
-      .from('onboarding_state')
-      .update({
-        stripe_checkout_session_id: session.id,
-        selected_plan_id: planId,
-        billing_interval: billingInterval,
-      })
-      .eq('organisation_id', organisationId);
+      // Update onboarding state with checkout session ID
+      await supabase
+        .from('onboarding_state')
+        .update({
+          stripe_checkout_session_id: session.id,
+          selected_plan_id: planId,
+          billing_interval: billingInterval,
+        })
+        .eq('organisation_id', organisationId);
+    }
 
     // Return checkout URL
     return new Response(

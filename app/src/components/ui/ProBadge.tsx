@@ -34,7 +34,7 @@ export function ProBadge({ size = 'sm', style }: ProBadgeProps) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: colors.primary.DEFAULT,
+    backgroundColor: colors.accent.DEFAULT,
     borderRadius: borderRadius.sm,
     alignItems: 'center',
     justifyContent: 'center',
@@ -49,8 +49,8 @@ const styles = StyleSheet.create({
   },
   text: {
     color: colors.white,
-    fontWeight: fontWeight.semibold,
-    letterSpacing: 0.5,
+    fontWeight: fontWeight.bold,
+    letterSpacing: 0.8,
   },
   textSm: {
     fontSize: 10,

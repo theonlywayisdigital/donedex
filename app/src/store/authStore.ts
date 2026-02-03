@@ -35,6 +35,10 @@ interface AuthState {
   signOut: () => Promise<void>;
   setSession: (session: Session | null) => void;
 
+  // Refresh Actions
+  refreshOrgData: () => Promise<void>;
+  validateOrgStatus: () => Promise<{ valid: boolean; reason?: 'blocked' | 'archived' | 'removed' }>;
+
   // Super Admin Actions
   checkSuperAdminStatus: () => Promise<void>;
   hasSuperAdminPermission: (permission: SuperAdminPermission) => boolean;
@@ -256,6 +260,75 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       impersonationContext: null,
       isLoading: false,
     });
+  },
+
+  refreshOrgData: async () => {
+    const userId = get().user?.id;
+    if (!userId) return;
+
+    try {
+      const [profile, orgData] = await Promise.all([
+        authService.fetchUserProfile(userId),
+        authService.fetchUserOrganisation(userId),
+      ]);
+
+      // User removed from org or profile deleted
+      if (!orgData || !orgData.organisation) {
+        // Will be handled by validateOrgStatus returning 'removed'
+        set({
+          profile: profile || get().profile,
+          organisation: null,
+          role: null,
+        });
+        return;
+      }
+
+      set({
+        profile: profile || get().profile,
+        organisation: orgData.organisation as Organisation | null,
+        role: orgData.role as UserRole | null,
+      });
+
+      // Chain billing refresh if billing store has data
+      try {
+        const { useBillingStore } = await import('./billingStore');
+        const billingStore = useBillingStore.getState();
+        if (billingStore.billing && orgData.organisation) {
+          billingStore.loadBilling(orgData.organisation.id);
+        }
+      } catch {
+        // Billing refresh is non-critical
+      }
+    } catch (error) {
+      console.error('Error refreshing org data:', error);
+    }
+  },
+
+  validateOrgStatus: async () => {
+    const orgId = get().organisation?.id;
+    if (!orgId) {
+      // No org means user was removed
+      const userId = get().user?.id;
+      if (userId) {
+        // Double-check by re-fetching org data
+        const orgData = await authService.fetchUserOrganisation(userId);
+        if (!orgData || !orgData.organisation) {
+          return { valid: false, reason: 'removed' as const };
+        }
+      }
+      return { valid: true };
+    }
+
+    const status = await authService.fetchOrgStatus(orgId);
+    if (!status) return { valid: true }; // Can't reach server, don't block
+
+    if (status.blocked) {
+      return { valid: false, reason: 'blocked' as const };
+    }
+    if (status.archived) {
+      return { valid: false, reason: 'archived' as const };
+    }
+    return { valid: true };
   },
 
   setSession: (session: Session | null) => {

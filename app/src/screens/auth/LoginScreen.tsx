@@ -38,6 +38,10 @@ export function LoginScreen({ navigation }: Props) {
       setError('Please enter your email address');
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError('Please enter a valid email address');
+      return;
+    }
     if (!password) {
       setError('Please enter your password');
       return;
@@ -185,7 +189,7 @@ const styles = StyleSheet.create({
   forgotPasswordText: {
     color: colors.primary.DEFAULT,
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   signUpContainer: {
     flexDirection: 'row',
@@ -199,6 +203,6 @@ const styles = StyleSheet.create({
   signUpLink: {
     fontSize: fontSize.body,
     color: colors.primary.DEFAULT,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
 });

@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
     lineHeight: fontSize.body * 1.4,
   },
   userText: {
-    color: colors.primary.dark,
+    color: colors.primary.mid,
   },
   assistantText: {
     color: colors.text.primary,

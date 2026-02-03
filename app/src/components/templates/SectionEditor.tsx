@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
   sectionNameInput: {
     flex: 1,
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     padding: 0,
   },
@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
   },
   sectionNameInputMobile: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
     marginLeft: spacing.sm,
   },
@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
   },
   itemCountBadgeTextMobile: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
 });

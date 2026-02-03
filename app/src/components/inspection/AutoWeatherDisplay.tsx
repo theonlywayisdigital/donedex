@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
   },
   temperature: {
     fontSize: 28,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   conditions: {

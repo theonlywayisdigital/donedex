@@ -14,7 +14,7 @@ import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navig
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SitesStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
-import { Icon, IconName } from '../../components/ui';
+import { Icon, IconName, FullScreenLoader } from '../../components/ui';
 import { fetchRecordsPaginated, archiveRecord, type RecordWithRecordType } from '../../services/records';
 import { fetchRecordTypeById } from '../../services/recordTypes';
 import type { RecordType } from '../../types';
@@ -278,12 +278,7 @@ export function RecordsListScreen() {
   };
 
   if (loading && records.length === 0) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
+    return <FullScreenLoader message="Loading records..." />;
   }
 
   return (
@@ -407,7 +402,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   headerDescription: {
@@ -436,7 +431,7 @@ const styles = StyleSheet.create({
   },
   recordName: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   recordAddress: {
@@ -492,7 +487,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.md,
     marginBottom: spacing.sm,
@@ -513,7 +508,7 @@ const styles = StyleSheet.create({
   emptyButtonText: {
     color: colors.white,
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   clearSearchButton: {
     paddingHorizontal: spacing.lg,

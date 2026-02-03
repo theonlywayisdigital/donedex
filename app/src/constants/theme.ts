@@ -6,9 +6,18 @@
 export const colors = {
   // Primary palette (Deep Teal)
   primary: {
-    DEFAULT: '#0F4C5C',  // Deep Teal - logo, primary buttons, main actions
-    dark: '#1F6F8B',     // Medium Blue - hover states, secondary actions
-    light: '#E6F2F5',    // Light Blue - backgrounds, highlights, selected states
+    DEFAULT: '#0A3D4F',  // Deep Teal - logo, primary buttons, main actions
+    dark: '#062A36',     // Pressed states, button depth borders
+    mid: '#1B6B82',      // Hover states, secondary actions, highlights
+    light: '#E8F4F7',    // Backgrounds, highlights, selected states
+    subtle: '#F0F7F9',   // Barely-there tint for secondary button backgrounds
+  },
+
+  // Accent palette (Mint)
+  accent: {
+    DEFAULT: '#00C2A8',  // Vibrant mint teal - highlights, Pro badges
+    light: '#E6FAF6',    // Accent backgrounds
+    dark: '#00A08A',     // Pressed states
   },
 
   // Semantic colours
@@ -16,15 +25,15 @@ export const colors = {
   warning: '#D97706',
   danger: '#DC2626',
 
-  // Neutrals
+  // Neutrals (Warm Stone)
   neutral: {
-    900: '#1A1A1A',  // Dark Charcoal - primary text
-    700: '#374151',
-    500: '#6B7280',  // Mid Grey - secondary text, placeholders
-    300: '#D1D5DB',
-    200: '#E5E7EB',  // Light Grey - borders, dividers
-    100: '#F3F4F6',
-    50: '#F9FAFB',   // Page backgrounds
+    900: '#1C1917',  // Stone - primary text
+    700: '#44403C',  // Stone
+    500: '#78716C',  // Stone - secondary text, placeholders
+    300: '#D6D3D1',  // Stone
+    200: '#E7E5E4',  // Stone - borders, dividers
+    100: '#F5F5F4',  // Stone
+    50: '#FAFAF9',   // Stone - page backgrounds
   },
 
   white: '#FFFFFF',
@@ -32,15 +41,15 @@ export const colors = {
 
   // Semantic aliases
   text: {
-    primary: '#1A1A1A',    // Dark Charcoal
-    secondary: '#6B7280',  // Mid Grey
-    tertiary: '#9CA3AF',
+    primary: '#1C1917',    // Stone 900
+    secondary: '#78716C',  // Stone 500
+    tertiary: '#A8A29E',   // Stone 400
   },
   border: {
-    DEFAULT: '#E5E7EB',
-    light: '#F3F4F6',
+    DEFAULT: '#E7E5E4',  // Stone 200
+    light: '#F5F5F4',    // Stone 100
   },
-  background: '#F9FAFB',
+  background: '#FAFAF9',  // Stone 50
 } as const;
 
 export const spacing = {
@@ -54,8 +63,9 @@ export const spacing = {
 
 export const borderRadius = {
   sm: 4,
-  md: 8,
-  lg: 12,
+  md: 10,    // was 8 - rounder for buttons, inputs, chips
+  lg: 14,    // was 12 - rounder for cards
+  xl: 20,    // modals, bottom sheets
   full: 9999,
 } as const;
 
@@ -64,14 +74,22 @@ export const fontSize = {
   body: 16,
   bodyLarge: 18,
   sectionTitle: 20,
-  pageTitle: 28,
+  pageTitle: 32,  // was 28 - bolder heading presence
 } as const;
 
-// Inter font family (falls back to system fonts)
+export const letterSpacing = {
+  tighter: -0.8,  // Large display text
+  tight: -0.5,    // Page titles
+  normal: 0,      // Body text
+  wide: 0.3,      // Buttons, labels
+  wider: 0.8,     // Overlines, badges
+} as const;
+
+// DM Sans font family
 export const fontFamily = {
-  regular: 'Inter_400Regular',
-  medium: 'Inter_500Medium',
-  semibold: 'Inter_600SemiBold',
+  regular: 'DMSans_400Regular',
+  medium: 'DMSans_500Medium',
+  bold: 'DMSans_700Bold',
   // System font fallbacks
   system: 'System',
 } as const;
@@ -79,31 +97,37 @@ export const fontFamily = {
 export const fontWeight = {
   regular: '400' as const,
   medium: '500' as const,
-  semibold: '600' as const,
   bold: '700' as const,
 };
 
 export const shadows = {
   card: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    shadowColor: '#0A3D4F',  // Teal-tinted
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
     elevation: 2,
   },
   elevated: {
-    shadowColor: '#000',
+    shadowColor: '#0A3D4F',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
     elevation: 4,
   },
   modal: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
-    shadowRadius: 25,
+    shadowColor: '#0A3D4F',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
     elevation: 10,
+  },
+  focusRing: {
+    shadowColor: '#0A3D4F',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 0,
   },
 } as const;
 
@@ -119,7 +143,7 @@ export const components = {
   },
   card: {
     borderRadius: borderRadius.lg,
-    borderWidth: 1,
+    borderWidth: 0,  // was 1 - rely on tinted shadow instead
   },
   touchTarget: {
     minSize: 48,

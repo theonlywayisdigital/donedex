@@ -6,6 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { showNotification, showConfirm, showDestructiveConfirm } from '../../utils/alert';
 import { useNavigation, useRoute, useFocusEffect, RouteProp } from '@react-navigation/native';
@@ -13,7 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
 import { useAuthStore } from '../../store/authStore';
 import { Icon } from '../../components/ui';
-import { fetchUserDetails, removeUserFromOrganisation, deleteUserAccount } from '../../services/superAdmin';
+import { fetchUserDetails, removeUserFromOrganisation, deleteUserAccount, changeUserRole } from '../../services/superAdmin';
 import type { UserSummary } from '../../types/superAdmin';
 import type { SuperAdminStackParamList } from '../../navigation/SuperAdminNavigator';
 
@@ -32,6 +34,14 @@ const ROLE_COLORS: Record<string, string> = {
   user: colors.neutral[500],
 };
 
+const ROLE_DESCRIPTIONS: Record<string, string> = {
+  owner: 'Full control including billing, settings, and user management',
+  admin: 'Can manage templates, reports, and users but not billing',
+  user: 'Can complete inspections and view reports only',
+};
+
+const ROLE_OPTIONS: Array<'owner' | 'admin' | 'user'> = ['owner', 'admin', 'user'];
+
 export function UserDetailScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
@@ -42,6 +52,9 @@ export function UserDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState<UserSummary | null>(null);
   const [organisations, setOrganisations] = useState<Array<{ id: string; name: string; role: string }>>([]);
+  const [roleModalOrg, setRoleModalOrg] = useState<{ id: string; name: string; role: string } | null>(null);
+  const [selectedRole, setSelectedRole] = useState<'owner' | 'admin' | 'user'>('user');
+  const [savingRole, setSavingRole] = useState(false);
 
   const canImpersonate = hasSuperAdminPermission('impersonate_users');
   const canEdit = hasSuperAdminPermission('edit_all_users');
@@ -139,6 +152,34 @@ export function UserDetailScreen() {
       undefined,
       'Delete User'
     );
+  };
+
+  const handleOpenRoleModal = (org: { id: string; name: string; role: string }) => {
+    setRoleModalOrg(org);
+    setSelectedRole(org.role as 'owner' | 'admin' | 'user');
+  };
+
+  const handleSaveRole = async () => {
+    if (!roleModalOrg || !user) return;
+    if (selectedRole === roleModalOrg.role) {
+      setRoleModalOrg(null);
+      return;
+    }
+
+    setSavingRole(true);
+    const result = await changeUserRole(userId, roleModalOrg.id, selectedRole);
+    setSavingRole(false);
+
+    if (result.error) {
+      showNotification('Error', result.error.message);
+    } else {
+      showNotification(
+        'Role changed',
+        `${user.full_name || 'User'} is now ${ROLE_LABELS[selectedRole]} in ${roleModalOrg.name}`
+      );
+      setRoleModalOrg(null);
+      loadData();
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -250,19 +291,115 @@ export function UserDetailScreen() {
                   </TouchableOpacity>
                 )}
                 {canEdit && (
-                  <TouchableOpacity
-                    style={styles.removeButton}
-                    onPress={() => handleRemoveFromOrg(org)}
-                  >
-                    <Icon name="x-circle" size={16} color={colors.danger} />
-                    <Text style={styles.removeButtonText}>Remove from this org</Text>
-                  </TouchableOpacity>
+                  <View style={styles.editActions}>
+                    <TouchableOpacity
+                      style={styles.changeRoleButton}
+                      onPress={() => handleOpenRoleModal(org)}
+                    >
+                      <Icon name="shield" size={16} color={colors.primary.DEFAULT} />
+                      <Text style={styles.changeRoleButtonText}>Change role</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.removeButton}
+                      onPress={() => handleRemoveFromOrg(org)}
+                    >
+                      <Icon name="x-circle" size={16} color={colors.danger} />
+                      <Text style={styles.removeButtonText}>Remove from this org</Text>
+                    </TouchableOpacity>
+                  </View>
                 )}
               </View>
             )}
           </View>
         ))
       )}
+      {/* Role Change Modal */}
+      <Modal
+        visible={!!roleModalOrg}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRoleModalOrg(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Change role</Text>
+              <TouchableOpacity onPress={() => setRoleModalOrg(null)}>
+                <Icon name="x" size={24} color={colors.text.secondary} />
+              </TouchableOpacity>
+            </View>
+
+            {roleModalOrg && (
+              <Text style={styles.modalSubtitle}>
+                {`${user?.full_name || 'User'} in ${roleModalOrg.name}`}
+              </Text>
+            )}
+
+            {roleModalOrg && (
+              <Text style={styles.currentRoleText}>
+                {`Current role: ${ROLE_LABELS[roleModalOrg.role]}`}
+              </Text>
+            )}
+
+            <View style={styles.roleOptions}>
+              {ROLE_OPTIONS.map((role) => {
+                const isSelected = selectedRole === role;
+                const isCurrent = roleModalOrg?.role === role;
+                return (
+                  <TouchableOpacity
+                    key={role}
+                    style={[
+                      styles.roleOption,
+                      isSelected && styles.roleOptionSelected,
+                    ]}
+                    onPress={() => setSelectedRole(role)}
+                  >
+                    <View style={styles.roleOptionHeader}>
+                      <View style={[styles.roleRadio, isSelected && styles.roleRadioSelected]}>
+                        {isSelected && <View style={styles.roleRadioDot} />}
+                      </View>
+                      <Text style={[styles.roleOptionLabel, isSelected && styles.roleOptionLabelSelected]}>
+                        {ROLE_LABELS[role]}
+                      </Text>
+                      {isCurrent && (
+                        <View style={styles.currentBadge}>
+                          <Text style={styles.currentBadgeText}>Current</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.roleOptionDescription}>
+                      {ROLE_DESCRIPTIONS[role]}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setRoleModalOrg(null)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalSaveBtn,
+                  (savingRole || selectedRole === roleModalOrg?.role) && styles.modalSaveBtnDisabled,
+                ]}
+                onPress={handleSaveRole}
+                disabled={savingRole || selectedRole === roleModalOrg?.role}
+              >
+                {savingRole ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Text style={styles.modalSaveText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -313,7 +450,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.md,
   },
@@ -357,7 +494,7 @@ const styles = StyleSheet.create({
   },
   orgName: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },
@@ -420,19 +557,170 @@ const styles = StyleSheet.create({
   deleteBtnText: {
     color: colors.danger,
   },
-  removeButton: {
+  editActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  changeRoleButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
+    backgroundColor: colors.primary.light,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+  },
+  changeRoleButtonText: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.primary.DEFAULT,
+  },
+  removeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
     backgroundColor: colors.danger + '10',
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.md,
-    marginTop: spacing.sm,
   },
   removeButtonText: {
     fontSize: fontSize.body,
     fontWeight: fontWeight.medium,
     color: colors.danger,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  modalContent: {
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    width: '100%',
+    maxWidth: 440,
+    ...shadows.modal,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  modalTitle: {
+    fontSize: fontSize.sectionTitle,
+    fontWeight: fontWeight.bold,
+    color: colors.text.primary,
+  },
+  modalSubtitle: {
+    fontSize: fontSize.body,
+    color: colors.text.secondary,
+    marginBottom: spacing.xs,
+  },
+  currentRoleText: {
+    fontSize: fontSize.caption,
+    color: colors.text.tertiary,
+    marginBottom: spacing.md,
+  },
+  roleOptions: {
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  roleOption: {
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+  },
+  roleOptionSelected: {
+    borderColor: colors.primary.DEFAULT,
+    backgroundColor: colors.primary.light,
+  },
+  roleOptionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  roleRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: colors.neutral[300],
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.sm,
+  },
+  roleRadioSelected: {
+    borderColor: colors.primary.DEFAULT,
+  },
+  roleRadioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.primary.DEFAULT,
+  },
+  roleOptionLabel: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.bold,
+    color: colors.text.primary,
+    flex: 1,
+  },
+  roleOptionLabelSelected: {
+    color: colors.primary.DEFAULT,
+  },
+  roleOptionDescription: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+    marginLeft: 28,
+  },
+  currentBadge: {
+    backgroundColor: colors.neutral[200],
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  currentBadgeText: {
+    fontSize: fontSize.caption - 1,
+    fontWeight: fontWeight.medium,
+    color: colors.text.secondary,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.text.secondary,
+  },
+  modalSaveBtn: {
+    flex: 1,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary.DEFAULT,
+    alignItems: 'center',
+  },
+  modalSaveBtnDisabled: {
+    opacity: 0.5,
+  },
+  modalSaveText: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.white,
   },
 });

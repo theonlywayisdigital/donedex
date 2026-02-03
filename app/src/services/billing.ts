@@ -13,6 +13,7 @@ import type {
   CheckoutSessionResponse,
   CustomerPortalResponse,
   BillingInterval,
+  StorageAddOn,
 } from '../types/billing';
 
 // ============================================
@@ -336,8 +337,11 @@ export async function createCheckoutSession(
   organisationId: string,
   planId: string,
   billingInterval: BillingInterval,
-  successUrl?: string,
-  cancelUrl?: string
+  options?: {
+    userCount?: number;
+    successUrl?: string;
+    cancelUrl?: string;
+  }
 ): Promise<{
   data: CheckoutSessionResponse | null;
   error: string | null;
@@ -348,8 +352,9 @@ export async function createCheckoutSession(
         organisationId,
         planId,
         billingInterval,
-        successUrl,
-        cancelUrl,
+        userCount: options?.userCount,
+        successUrl: options?.successUrl,
+        cancelUrl: options?.cancelUrl,
       },
     });
 
@@ -389,6 +394,70 @@ export async function createCustomerPortal(
     return { data: data as CustomerPortalResponse, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to create customer portal';
+    return { data: null, error: message };
+  }
+}
+
+// ============================================
+// STORAGE ADD-ONS
+// ============================================
+
+/**
+ * Fetch active storage add-on for an organisation
+ */
+export async function fetchStorageAddOn(orgId: string): Promise<{
+  data: StorageAddOn | null;
+  error: string | null;
+}> {
+  try {
+    const { data, error } = await supabase
+      .from('storage_addons')
+      .select('*')
+      .eq('organisation_id', orgId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: data as StorageAddOn | null, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch storage add-on';
+    return { data: null, error: message };
+  }
+}
+
+/**
+ * Purchase storage add-on blocks via Stripe checkout
+ */
+export async function purchaseStorageAddOn(
+  organisationId: string,
+  quantityBlocks: number,
+  successUrl?: string,
+  cancelUrl?: string
+): Promise<{
+  data: CheckoutSessionResponse | null;
+  error: string | null;
+}> {
+  try {
+    const { data, error } = await supabase.functions.invoke('create-checkout-session', {
+      body: {
+        organisationId,
+        addOnType: 'storage',
+        quantityBlocks,
+        successUrl,
+        cancelUrl,
+      },
+    });
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: data as CheckoutSessionResponse, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to purchase storage add-on';
     return { data: null, error: message };
   }
 }

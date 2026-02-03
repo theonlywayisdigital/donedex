@@ -15,7 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { TemplatesStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
 import { Icon } from '../../components/ui';
-import { fetchTemplates, deleteTemplate, Template } from '../../services/templates';
+import { fetchTemplates, archiveTemplate, Template } from '../../services/templates';
 import { useAuthStore } from '../../store/authStore';
 
 type NavigationProp = NativeStackNavigationProp<TemplatesStackParamList, 'TemplateList'>;
@@ -78,7 +78,6 @@ export function TemplateListScreen() {
   };
 
   const handlePreviewTemplate = (templateId: string) => {
-    console.log('[TemplateListScreen] Navigating to preview:', templateId);
     navigation.navigate('TemplatePreview', { templateId });
   };
 
@@ -87,7 +86,7 @@ export function TemplateListScreen() {
       'Delete Template',
       `Are you sure you want to delete "${template.name}"? This action cannot be undone.`,
       async () => {
-        const { error } = await deleteTemplate(template.id);
+        const { error } = await archiveTemplate(template.id);
         if (error) {
           showNotification('Error', error.message);
         } else {
@@ -333,7 +332,7 @@ const styles = StyleSheet.create({
   },
   templateName: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     flex: 1,
   },
@@ -414,7 +413,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.md,
     marginBottom: spacing.sm,
@@ -434,7 +433,7 @@ const styles = StyleSheet.create({
   emptyButtonText: {
     color: colors.white,
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   clearSearchButton: {
     paddingHorizontal: spacing.lg,

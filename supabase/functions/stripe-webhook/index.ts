@@ -65,6 +65,41 @@ async function handleCheckoutComplete(event: Stripe.Event) {
     return;
   }
 
+  // Check if this is a storage add-on purchase
+  if (session.metadata?.add_on_type === 'storage') {
+    const quantityBlocks = parseInt(session.metadata?.quantity_blocks || '1', 10);
+    const subscriptionId = session.subscription as string;
+
+    // Get the subscription to find the subscription item ID
+    let subscriptionItemId: string | null = null;
+    if (subscriptionId) {
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      subscriptionItemId = subscription.items.data[0]?.id || null;
+    }
+
+    // Upsert storage add-on
+    const { error } = await supabase
+      .from('storage_addons')
+      .upsert({
+        organisation_id: orgId,
+        quantity_blocks: quantityBlocks,
+        block_size_gb: 10,
+        price_per_block_monthly_gbp: 500,
+        stripe_subscription_item_id: subscriptionItemId,
+        stripe_price_id: session.metadata?.stripe_price_id || null,
+        is_active: true,
+      }, { onConflict: 'organisation_id' });
+
+    if (error) {
+      console.error('Error creating storage add-on:', error);
+      throw error;
+    }
+
+    console.log(`Storage add-on purchased for org ${orgId}: ${quantityBlocks} blocks`);
+    return;
+  }
+
+  // Standard plan subscription checkout
   // Update organisation with Stripe customer ID
   const { error } = await supabase
     .from('organisations')
@@ -148,6 +183,13 @@ async function handleSubscriptionDeleted(event: Stripe.Event) {
       organisationName: org.name,
     });
   }
+
+  // Deactivate any storage add-ons
+  await supabase
+    .from('storage_addons')
+    .update({ is_active: false })
+    .eq('organisation_id', org.id)
+    .eq('is_active', true);
 
   console.log(`Subscription canceled for org ${org.id}, downgraded to free`);
 }

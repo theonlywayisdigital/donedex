@@ -42,8 +42,6 @@ export function TemplatePreviewScreen() {
   const { templateId } = route.params;
   const { isMobile } = useResponsive();
 
-  console.log('[TemplatePreviewScreen] Mounted with templateId:', templateId);
-
   const [template, setTemplate] = useState<TemplateWithSections | null>(null);
   const [responses, setResponses] = useState<Map<string, PreviewResponse>>(new Map());
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
@@ -68,7 +66,6 @@ export function TemplatePreviewScreen() {
       }
 
       if (data) {
-        console.log('[TemplatePreviewScreen] Template loaded:', data.name);
         setTemplate(data);
         // Initialize empty responses for all items
         const initialResponses = new Map<string, PreviewResponse>();
@@ -176,7 +173,7 @@ export function TemplatePreviewScreen() {
   };
 
   // Generate sample value for field type
-  const getSampleValue = (itemType: string): string | null => {
+  const getSampleValue = (itemType: string, options?: string[] | null): string | null => {
     switch (itemType) {
       case 'pass_fail':
         return 'pass';
@@ -211,8 +208,9 @@ export function TemplatePreviewScreen() {
       case 'time':
         return new Date().toISOString();
       case 'select':
-        return 'Option 1';
+        return options && options.length > 0 ? options[0] : 'Option 1';
       case 'multi_select':
+        if (options && options.length >= 2) return JSON.stringify(options.slice(0, 2));
         return JSON.stringify(['Option 1', 'Option 2']);
       case 'checklist':
         return JSON.stringify({ item1: true, item2: false });
@@ -255,7 +253,8 @@ export function TemplatePreviewScreen() {
       template.template_sections.forEach((section) => {
         section.template_items.forEach((item) => {
           const previewResponse = responses.get(item.id);
-          const value = previewResponse?.responseValue || getSampleValue(item.item_type);
+          const itemOptions = Array.isArray(item.options) ? item.options as string[] : null;
+          const value = previewResponse?.responseValue || getSampleValue(item.item_type, itemOptions);
 
           mockResponsesMap.set(item.id, {
             id: `preview-${item.id}`,
@@ -515,13 +514,13 @@ const styles = StyleSheet.create({
   },
   previewBannerTitle: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
     letterSpacing: 0.5,
   },
   previewBannerSubtitle: {
     fontSize: fontSize.caption,
-    color: colors.primary.dark,
+    color: colors.primary.mid,
   },
   templateHeader: {
     backgroundColor: colors.white,
@@ -531,7 +530,7 @@ const styles = StyleSheet.create({
   },
   templateName: {
     fontSize: fontSize.pageTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   templateDescription: {
@@ -558,7 +557,7 @@ const styles = StyleSheet.create({
   },
   sectionName: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   sectionCount: {
@@ -616,7 +615,7 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
   sectionPickerTextActive: {
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
   sectionPickerProgress: {
@@ -648,7 +647,7 @@ const styles = StyleSheet.create({
   },
   itemNumber: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
     backgroundColor: colors.primary.DEFAULT,
     width: 24,

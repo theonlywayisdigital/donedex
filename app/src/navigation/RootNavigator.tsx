@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet, Text, Platform } from 'react-native';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { View, ActivityIndicator, StyleSheet, Text, Platform, AppState } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { AuthNavigator } from './AuthNavigator';
 import { AdaptiveNavigator } from './AdaptiveNavigator';
@@ -8,17 +8,17 @@ import { useAuthStore } from '../store/authStore';
 import { useOnboardingStore } from '../store/onboardingStore';
 import { colors, fontSize, spacing } from '../constants/theme';
 import { ImpersonationBanner } from '../components/ImpersonationBanner';
+import { OrgStatusGate } from '../components/OrgStatusGate';
 import { useResponsive } from '../hooks/useResponsive';
 import { linking } from './linking';
 import { initializeNetworkMonitoring } from '../services/networkStatus';
 import { initializeAutoSync } from '../services/syncService';
 import { OfflineIndicator } from '../components/ui/OfflineIndicator';
-
-// DEV MODE: Skip all auth and go straight to main app
-const DEV_SKIP_AUTH = false;
+import { ErrorBoundary } from '../components/ErrorBoundary';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 
 export function RootNavigator() {
-  const { isLoading, isInitialized, session, initialize, isSuperAdmin } = useAuthStore();
+  const { isLoading, isInitialized, session, initialize, isSuperAdmin, refreshOrgData } = useAuthStore();
   const {
     initialize: initializeOnboarding,
     needsOnboarding,
@@ -30,9 +30,7 @@ export function RootNavigator() {
 
   // Initialize auth
   useEffect(() => {
-    if (!DEV_SKIP_AUTH) {
-      initialize();
-    }
+    initialize();
   }, [initialize]);
 
   // Initialize offline sync services (network monitoring and auto-sync)
@@ -43,6 +41,28 @@ export function RootNavigator() {
     // Initialize auto-sync to sync pending data when back online
     initializeAutoSync();
   }, []);
+
+  // Refresh org data when app returns to foreground
+  useEffect(() => {
+    if (!session || isSuperAdmin) return;
+
+    if (Platform.OS === 'web') {
+      const handleVisibility = () => {
+        if (document.visibilityState === 'visible') {
+          refreshOrgData();
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibility);
+      return () => document.removeEventListener('visibilitychange', handleVisibility);
+    }
+
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        refreshOrgData();
+      }
+    });
+    return () => subscription.remove();
+  }, [session, isSuperAdmin, refreshOrgData]);
 
   // Check onboarding status when authenticated (skip for super admins)
   useEffect(() => {
@@ -64,28 +84,18 @@ export function RootNavigator() {
       }
     };
 
-    if (!DEV_SKIP_AUTH) {
-      checkOnboarding();
-    }
+    checkOnboarding();
   }, [session, isInitialized, onboardingChecked, initializeOnboarding, isSuperAdmin]);
 
   // Reset onboarding check when session changes
   useEffect(() => {
-    if (!session && !DEV_SKIP_AUTH) {
+    if (!session) {
       setOnboardingChecked(false);
     }
   }, [session]);
 
-  // DEV MODE: Skip everything and show main app
-  if (DEV_SKIP_AUTH) {
-    return (
-      <View style={styles.container}>
-        <NavigationContainer linking={Platform.OS === 'web' ? linking : undefined}>
-          <AdaptiveNavigator />
-        </NavigationContainer>
-      </View>
-    );
-  }
+  // Register for push notifications when authenticated
+  usePushNotifications();
 
   // Show loading screen while checking auth state
   if (!isInitialized || isLoading) {
@@ -118,17 +128,24 @@ export function RootNavigator() {
     }
 
     // Use AdaptiveNavigator for desktop web sidebar / mobile tabs
-    return <AdaptiveNavigator />;
+    // OrgStatusGate blocks access if org is blocked/archived (skipped for super admins)
+    return (
+      <OrgStatusGate>
+        <AdaptiveNavigator />
+      </OrgStatusGate>
+    );
   };
 
   return (
-    <View style={styles.container}>
-      <NavigationContainer linking={Platform.OS === 'web' ? linking : undefined}>
-        {getNavigator()}
-      </NavigationContainer>
-      {session && !needsOnboarding && <ImpersonationBanner />}
-      {session && <OfflineIndicator />}
-    </View>
+    <ErrorBoundary>
+      <View style={styles.container}>
+        <NavigationContainer linking={Platform.OS === 'web' ? linking : undefined}>
+          {getNavigator()}
+        </NavigationContainer>
+        {session && !needsOnboarding && <ImpersonationBanner />}
+        {session && <OfflineIndicator showSyncStatus />}
+      </View>
+    </ErrorBoundary>
   );
 }
 

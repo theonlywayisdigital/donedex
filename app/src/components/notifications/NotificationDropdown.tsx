@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   headerActions: {
@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.sm,
   },
@@ -386,7 +386,7 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   notificationTitleUnread: {
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   notificationTime: {
     fontSize: 11,

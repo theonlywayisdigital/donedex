@@ -469,7 +469,7 @@ const styles = StyleSheet.create({
   },
   reportTemplate: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   reportSite: {
@@ -512,7 +512,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.md,
   },

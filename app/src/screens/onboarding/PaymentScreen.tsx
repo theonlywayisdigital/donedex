@@ -65,9 +65,10 @@ export function PaymentScreen({ navigation }: Props) {
       const { url, error: checkoutError } = await createCheckoutSession(
         selectedPlanId,
         billingInterval,
-        // Success and cancel URLs would be deep links back to the app
-        'donedex://onboarding/payment-success',
-        'donedex://onboarding/payment-cancel'
+        {
+          successUrl: 'donedex://onboarding/payment-success',
+          cancelUrl: 'donedex://onboarding/payment-cancel',
+        }
       );
 
       if (checkoutError) {
@@ -295,7 +296,7 @@ const styles = StyleSheet.create({
   },
   summaryTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   trialBadge: {
@@ -306,7 +307,7 @@ const styles = StyleSheet.create({
   },
   trialBadgeText: {
     fontSize: 11,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
   summaryDetails: {
@@ -346,7 +347,7 @@ const styles = StyleSheet.create({
   },
   benefitsTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.md,
   },

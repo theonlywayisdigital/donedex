@@ -106,6 +106,7 @@ interface FieldEditorModalProps {
   visible: boolean;
   onClose: () => void;
   onSave: (fieldData: FieldData) => Promise<void>;
+  onSaveGroup?: (fields: FieldData[]) => Promise<void>;
   onDelete?: () => void;
   field?: RecordTypeField | null; // If provided, we're editing
   fieldType?: string; // If provided (for new), pre-select this type
@@ -126,10 +127,19 @@ export interface FieldData {
   default_unit: string | null;
 }
 
+// Map composite sub-field types to actual RecordTypeField field_type values
+const SUB_FIELD_TYPE_MAP: Record<string, string> = {
+  text: 'short_text',
+  email: 'email',
+  phone: 'phone',
+  select: 'single_select',
+};
+
 export function FieldEditorModal({
   visible,
   onClose,
   onSave,
+  onSaveGroup,
   onDelete,
   field,
   fieldType: initialFieldType,
@@ -426,7 +436,35 @@ export function FieldEditorModal({
                           styles.fieldTypeOption,
                           isComposite && styles.fieldTypeOptionComposite,
                         ]}
-                        onPress={() => {
+                        onPress={async () => {
+                          // For composite types with onSaveGroup, expand into individual fields
+                          if (isComposite && onSaveGroup && COMPOSITE_DEFINITIONS[ft.value]) {
+                            const def = COMPOSITE_DEFINITIONS[ft.value];
+                            const expandedFields: FieldData[] = def.subFields.map((sub) => ({
+                              label: sub.label,
+                              field_type: SUB_FIELD_TYPE_MAP[sub.type] || 'short_text',
+                              is_required: sub.required,
+                              help_text: null,
+                              placeholder_text: sub.placeholder || null,
+                              default_value: null,
+                              options: sub.type === 'select' && sub.options ? sub.options : null,
+                              min_value: null,
+                              max_value: null,
+                              unit_type: null,
+                              unit_options: null,
+                              default_unit: null,
+                            }));
+                            setSaving(true);
+                            try {
+                              await onSaveGroup(expandedFields);
+                              onClose();
+                            } catch (err) {
+                              showNotification('Error', err instanceof Error ? err.message : 'Failed to add field group');
+                            } finally {
+                              setSaving(false);
+                            }
+                            return;
+                          }
                           setFieldType(ft.value);
                           setShowFieldTypePicker(false);
                           // Pre-populate label for composite types (only if label is empty)
@@ -1057,7 +1095,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   cancelText: {
@@ -1066,7 +1104,7 @@ const styles = StyleSheet.create({
   },
   saveText: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
   saveTextDisabled: {
@@ -1097,7 +1135,7 @@ const styles = StyleSheet.create({
   },
   fieldTypeBadgeValue: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
   formField: {
@@ -1181,7 +1219,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },
@@ -1282,7 +1320,7 @@ const styles = StyleSheet.create({
   },
   categoryHeader: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.secondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -1338,7 +1376,7 @@ const styles = StyleSheet.create({
   },
   piiWarningTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.warning,
     marginBottom: 2,
   },
@@ -1370,7 +1408,7 @@ const styles = StyleSheet.create({
   },
   piiIndicatorText: {
     fontSize: 10,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.danger,
   },
   // Composite field preview styles
@@ -1384,7 +1422,7 @@ const styles = StyleSheet.create({
   },
   compositePreviewTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
     marginBottom: spacing.sm,
   },
@@ -1451,7 +1489,7 @@ const styles = StyleSheet.create({
   },
   customSubFieldsTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
   addCustomFieldButton: {

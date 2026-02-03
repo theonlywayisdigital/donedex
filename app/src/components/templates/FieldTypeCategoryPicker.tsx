@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     textAlign: 'center',
     marginBottom: spacing.xs,
@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
   },
   categoryLabel: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     textAlign: 'center',
   },

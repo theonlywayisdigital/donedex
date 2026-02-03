@@ -17,6 +17,7 @@ import {
 } from '../../components/ui';
 import { showNotification, showConfirm, showDestructiveConfirm } from '../../utils/alert';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { TemplatesStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
@@ -136,6 +137,9 @@ export function TemplateEditorScreen() {
   const [actionSheetSection, setActionSheetSection] = useState<LocalSection | null>(null);
   const initialLoadComplete = useRef(false);
   const lastSaveTime = useRef<number>(0);
+
+  // Warn user on back navigation with unsaved changes
+  useUnsavedChanges(isDirty);
 
   // Generate temp IDs for new items
   const generateTempId = () => `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -1146,7 +1150,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   addButton: {
@@ -1212,7 +1216,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   dirtyIndicator: {

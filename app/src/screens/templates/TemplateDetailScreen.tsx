@@ -279,7 +279,7 @@ const styles = StyleSheet.create({
   },
   errorTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.md,
     marginBottom: spacing.sm,
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
   retryButtonText: {
     color: colors.white,
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   scrollContent: {
     padding: spacing.md,
@@ -321,7 +321,7 @@ const styles = StyleSheet.create({
   templateName: {
     flex: 1,
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginRight: spacing.sm,
   },
@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
   },
   sectionName: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   sectionCount: {
@@ -460,7 +460,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.md,
     marginBottom: spacing.sm,
@@ -507,6 +507,6 @@ const styles = StyleSheet.create({
   editFabText: {
     color: colors.white,
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
 });

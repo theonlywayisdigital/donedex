@@ -229,7 +229,7 @@ export function Sidebar({
             onPress={() => onCollapsedChange(!collapsed)}
           >
             <Icon
-              name="panel-left-close"
+              name="chevron-left"
               size={16}
               color={sidebarColors.textMuted}
             />
@@ -267,7 +267,7 @@ export function Sidebar({
                   {userProfile?.full_name || 'User'}
                 </Text>
                 <Text style={styles.userEmail} numberOfLines={1}>
-                  {userProfile?.email || ''}
+                  {(userProfile as any)?.email || ''}
                 </Text>
               </View>
             )}
@@ -284,7 +284,7 @@ export function Sidebar({
           style={styles.expandButton}
           onPress={() => onCollapsedChange(false)}
         >
-          <Icon name="panel-left-open" size={16} color={sidebarColors.textMuted} />
+          <Icon name="chevron-right" size={16} color={sidebarColors.textMuted} />
         </Pressable>
       )}
     </View>
@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
   },
   brandName: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: sidebarColors.textActive,
   },
   brandPlan: {
@@ -359,7 +359,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 11,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: sidebarColors.textMuted,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
   },
   itemLabelActive: {
     color: sidebarColors.textActive,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   badge: {
     backgroundColor: colors.danger,
@@ -462,7 +462,7 @@ const styles = StyleSheet.create({
   },
   userAvatarText: {
     fontSize: 13,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: sidebarColors.text,
   },
   userInfo: {

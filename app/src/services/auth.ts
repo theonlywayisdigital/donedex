@@ -219,6 +219,38 @@ export async function fetchUserProfile(userId: string) {
 }
 
 /**
+ * Fetch organisation blocked/archived status (lightweight check)
+ */
+export async function fetchOrgStatus(orgId: string): Promise<{
+  blocked: boolean;
+  archived: boolean;
+  blocked_reason?: string | null;
+} | null> {
+  try {
+    const { data, error } = await supabase
+      .from('organisations')
+      .select('blocked, archived, blocked_reason')
+      .eq('id', orgId)
+      .single() as unknown as {
+        data: { blocked: boolean | null; archived: boolean | null; blocked_reason: string | null } | null;
+        error: { message: string } | null;
+      };
+
+    if (error || !data) {
+      return null;
+    }
+
+    return {
+      blocked: data.blocked ?? false,
+      archived: data.archived ?? false,
+      blocked_reason: data.blocked_reason,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fetch user's organisation membership and role
  */
 export async function fetchUserOrganisation(userId: string): Promise<UserOrganisationData | null> {

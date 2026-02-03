@@ -4,6 +4,7 @@ export { Card } from './Card';
 export { Icon, type IconName } from './Icon';
 export { StatusBadge } from './StatusBadge';
 export { LoadingSpinner } from './LoadingSpinner';
+export { FullScreenLoader } from './FullScreenLoader';
 export { EmptyState } from './EmptyState';
 export { Toast, type ToastType } from './Toast';
 export { default as DateTimePicker, type DateTimePickerProps, type DateTimePickerMode } from './DateTimePicker';

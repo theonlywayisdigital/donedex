@@ -118,51 +118,71 @@ export function InspectionScreen() {
 
   // Handle photo capture for an item - opens camera directly
   const handleAddPhoto = useCallback(async (templateItemId: string) => {
-    // Request camera permissions first
-    const hasPermission = await requestCameraPermissions();
+    try {
+      // Request camera permissions first
+      const hasPermission = await requestCameraPermissions();
 
-    if (!hasPermission) {
-      showConfirm(
-        'Camera Permission Required',
-        'Please enable camera access in your device settings to take photos.',
-        () => {
-          // Try from library instead
-          handlePickFromLibrary(templateItemId);
-        },
-        undefined,
-        'Choose from Library',
-        'Cancel'
-      );
-      return;
-    }
+      if (!hasPermission) {
+        showConfirm(
+          'Camera Permission Required',
+          'Please enable camera access in your device settings to take photos.',
+          () => {
+            // Try from library instead
+            handlePickFromLibrary(templateItemId);
+          },
+          undefined,
+          'Choose from Library',
+          'Cancel'
+        );
+        return;
+      }
 
-    // Open camera directly
-    const result = await launchCamera({
-      quality: 0.8,
-      allowsEditing: false,
-    });
+      // Open camera directly
+      const result = await launchCamera({
+        quality: 0.8,
+        allowsEditing: false,
+      });
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      const photo = result.assets[0];
-      // Persist photo to documents directory so it survives until synced
-      const persistedUri = await persistFile(photo.uri, 'photo');
-      addPhoto(templateItemId, persistedUri);
+      if (result.error) {
+        showNotification('Camera Error', result.error);
+        return;
+      }
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const photo = result.assets[0];
+        // Persist photo to documents directory so it survives until synced
+        const persistedUri = await persistFile(photo.uri, 'photo');
+        addPhoto(templateItemId, persistedUri);
+      }
+    } catch (err) {
+      console.error('[InspectionScreen] Photo capture failed:', err);
+      showNotification('Photo Error', 'Failed to capture photo. Please try again.');
     }
   }, [addPhoto]);
 
   // Handle picking photo from library
   const handlePickFromLibrary = useCallback(async (templateItemId: string) => {
-    const result = await launchImageLibrary({
-      quality: 0.8,
-      allowsMultipleSelection: false,
-    });
+    try {
+      const result = await launchImageLibrary({
+        quality: 0.8,
+        allowsMultipleSelection: false,
+      });
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      const photo = result.assets[0];
-      // Persist photo to documents directory so it survives until synced
-      const persistedUri = await persistFile(photo.uri, 'photo');
-      addPhoto(templateItemId, persistedUri);
-      showNotification('Photo Added', 'Photo added successfully');
+      if (result.error) {
+        showNotification('Photo Error', result.error);
+        return;
+      }
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const photo = result.assets[0];
+        // Persist photo to documents directory so it survives until synced
+        const persistedUri = await persistFile(photo.uri, 'photo');
+        addPhoto(templateItemId, persistedUri);
+        showNotification('Photo Added', 'Photo added successfully');
+      }
+    } catch (err) {
+      console.error('[InspectionScreen] Library pick failed:', err);
+      showNotification('Photo Error', 'Failed to select photo. Please try again.');
     }
   }, [addPhoto]);
 
@@ -175,7 +195,6 @@ export function InspectionScreen() {
     }
 
     try {
-      console.log('[InspectionScreen] Uploading signature...');
       const result = await uploadSignature(report.id, 'signature', base64Data);
 
       if (result.error) {
@@ -189,7 +208,6 @@ export function InspectionScreen() {
         return base64Data; // Fallback to base64
       }
 
-      console.log('[InspectionScreen] Signature uploaded:', result.data);
       return result.data;
     } catch (err) {
       console.error('[InspectionScreen] Signature upload exception:', err);
@@ -415,7 +433,7 @@ const styles = StyleSheet.create({
   },
   sectionName: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   sectionCount: {
@@ -474,7 +492,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionPickerTextActive: {
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
   sectionPickerProgress: {
@@ -499,7 +517,7 @@ const styles = StyleSheet.create({
   },
   itemNumber: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.tertiary,
     width: 24,
   },

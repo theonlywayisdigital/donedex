@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
   },
   templateName: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },
@@ -300,7 +300,7 @@ const styles = StyleSheet.create({
   },
   sectionNavTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     flex: 1,
   },
@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
   },
   itemNumberText: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
   itemHeaderContent: {

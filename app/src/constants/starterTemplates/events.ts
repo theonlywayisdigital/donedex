@@ -22,7 +22,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Venue Name', item_type: 'text', is_required: true },
           { label: 'Venue Address', item_type: 'text', is_required: true },
           { label: 'Event Date', item_type: 'date', is_required: true },
-          { label: 'Event Type', item_type: 'dropdown', is_required: true, options: ['Concert', 'Festival', 'Conference', 'Exhibition', 'Sports Event', 'Wedding', 'Corporate Event', 'Private Party', 'Other'] },
+          { label: 'Event Type', item_type: 'select', is_required: true, options: ['Concert', 'Festival', 'Conference', 'Exhibition', 'Sports Event', 'Wedding', 'Corporate Event', 'Private Party', 'Other'] },
           { label: 'Expected Attendance', item_type: 'number', is_required: true },
           { label: 'Venue Capacity', item_type: 'number' },
           { label: 'Event Organizer', item_type: 'text' },
@@ -46,7 +46,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Disabled Access Available', item_type: 'pass_fail' },
           { label: 'Evacuation Routes Clear', item_type: 'pass_fail', is_required: true, photo_rule: 'on_fail' },
           { label: 'Assembly Points Identified', item_type: 'pass_fail' },
-          { label: 'Access Notes', item_type: 'textarea' },
+          { label: 'Access Notes', item_type: 'text' },
         ],
       },
       {
@@ -62,7 +62,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Stage Barrier Adequate', item_type: 'pass_fail' },
           { label: 'Pit Area Supervised', item_type: 'pass_fail' },
           { label: 'Crowd Density Monitoring', item_type: 'pass_fail' },
-          { label: 'Crowd Management Notes', item_type: 'textarea' },
+          { label: 'Crowd Management Notes', item_type: 'text' },
         ],
       },
       {
@@ -79,7 +79,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Fire Warden Designated', item_type: 'pass_fail' },
           { label: 'Evacuation Plan in Place', item_type: 'pass_fail', is_required: true },
           { label: 'Fire Brigade Notified', item_type: 'yes_no' },
-          { label: 'Fire Safety Notes', item_type: 'textarea' },
+          { label: 'Fire Safety Notes', item_type: 'text' },
         ],
       },
       {
@@ -93,7 +93,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'No Overloaded Circuits', item_type: 'pass_fail', photo_rule: 'on_fail' },
           { label: 'Outdoor Equipment Weatherproof', item_type: 'pass_fail' },
           { label: 'Qualified Electrician On-site', item_type: 'yes_no' },
-          { label: 'Electrical Notes', item_type: 'textarea' },
+          { label: 'Electrical Notes', item_type: 'text' },
         ],
       },
       {
@@ -110,7 +110,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Marquees/Tents Anchored', item_type: 'pass_fail' },
           { label: 'Scaffolding Inspected', item_type: 'pass_fail' },
           { label: 'Wind Speed Limits Set', item_type: 'yes_no' },
-          { label: 'Structures Notes', item_type: 'textarea' },
+          { label: 'Structures Notes', item_type: 'text' },
         ],
       },
       {
@@ -125,7 +125,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Hospital Route Planned', item_type: 'pass_fail' },
           { label: 'AED Available', item_type: 'pass_fail' },
           { label: 'Stretcher Access Routes', item_type: 'pass_fail' },
-          { label: 'Medical Notes', item_type: 'textarea' },
+          { label: 'Medical Notes', item_type: 'text' },
         ],
       },
       {
@@ -139,7 +139,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Food Vendors Registered', item_type: 'pass_fail' },
           { label: 'Shaded/Shelter Areas', item_type: 'pass_fail' },
           { label: 'Lost Property/Information Point', item_type: 'pass_fail' },
-          { label: 'Welfare Notes', item_type: 'textarea' },
+          { label: 'Welfare Notes', item_type: 'text' },
         ],
       },
       {
@@ -150,16 +150,16 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Radio Communications', item_type: 'pass_fail' },
           { label: 'Emergency Announcements Planned', item_type: 'pass_fail' },
           { label: 'Control Room/Point', item_type: 'pass_fail' },
-          { label: 'Communication Notes', item_type: 'textarea' },
+          { label: 'Communication Notes', item_type: 'text' },
         ],
       },
       {
         name: 'Inspection Summary',
         items: [
-          { label: 'Overall Venue Ready', item_type: 'dropdown', is_required: true, options: ['Approved', 'Approved with Conditions', 'Not Approved - Action Required'] },
+          { label: 'Overall Venue Ready', item_type: 'select', is_required: true, options: ['Approved', 'Approved with Conditions', 'Not Approved - Action Required'] },
           { label: 'Critical Issues Found', item_type: 'number' },
-          { label: 'Issues Requiring Attention', item_type: 'textarea' },
-          { label: 'Conditions of Approval', item_type: 'textarea' },
+          { label: 'Issues Requiring Attention', item_type: 'text' },
+          { label: 'Conditions of Approval', item_type: 'text' },
           { label: 'Pre-Event Briefing Required', item_type: 'yes_no' },
           { label: 'Inspector Signature', item_type: 'signature', is_required: true },
           { label: 'Event Organizer Signature', item_type: 'signature' },
@@ -203,7 +203,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Trackway Laid Where Needed', item_type: 'pass_fail' },
           { label: 'Vehicle Routes Defined', item_type: 'pass_fail' },
           { label: 'Pedestrian Routes Clear', item_type: 'pass_fail' },
-          { label: 'Site Layout Notes', item_type: 'textarea' },
+          { label: 'Site Layout Notes', item_type: 'text' },
         ],
       },
       {
@@ -217,7 +217,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Emergency Vehicle Access', item_type: 'pass_fail', is_required: true, photo_rule: 'on_fail' },
           { label: 'Drop-off Points Safe', item_type: 'pass_fail' },
           { label: 'Traffic Marshals', item_type: 'pass_fail' },
-          { label: 'Traffic Notes', item_type: 'textarea' },
+          { label: 'Traffic Notes', item_type: 'text' },
         ],
       },
       {
@@ -233,7 +233,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Shower Facilities', item_type: 'pass_fail' },
           { label: 'Lighting Adequate', item_type: 'pass_fail' },
           { label: 'Security Patrols', item_type: 'pass_fail' },
-          { label: 'Camping Notes', item_type: 'textarea' },
+          { label: 'Camping Notes', item_type: 'text' },
         ],
       },
       {
@@ -248,7 +248,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Toilet Servicing Schedule', item_type: 'pass_fail' },
           { label: 'Hand Wash Stations', item_type: 'pass_fail' },
           { label: 'Grey Water Disposal', item_type: 'pass_fail' },
-          { label: 'Sanitation Notes', item_type: 'textarea' },
+          { label: 'Sanitation Notes', item_type: 'text' },
         ],
       },
       {
@@ -260,7 +260,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Bin Collection Schedule', item_type: 'pass_fail' },
           { label: 'Litter Picking Team', item_type: 'pass_fail' },
           { label: 'Hazardous Waste Disposal', item_type: 'pass_fail' },
-          { label: 'Waste Notes', item_type: 'textarea' },
+          { label: 'Waste Notes', item_type: 'text' },
         ],
       },
       {
@@ -273,7 +273,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Fire Extinguishers at Vendors', item_type: 'pass_fail' },
           { label: 'Electrical Connections Safe', item_type: 'pass_fail' },
           { label: 'Adequate Spacing', item_type: 'pass_fail' },
-          { label: 'Food Vendor Notes', item_type: 'textarea' },
+          { label: 'Food Vendor Notes', item_type: 'text' },
         ],
       },
       {
@@ -285,16 +285,16 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Lightning Procedure', item_type: 'pass_fail' },
           { label: 'Flood Risk Assessed', item_type: 'pass_fail' },
           { label: 'Heat/Cold Weather Plan', item_type: 'pass_fail' },
-          { label: 'Weather Notes', item_type: 'textarea' },
+          { label: 'Weather Notes', item_type: 'text' },
         ],
       },
       {
         name: 'Inspection Summary',
         items: [
-          { label: 'Site Approval Status', item_type: 'dropdown', is_required: true, options: ['Approved', 'Approved with Conditions', 'Conditional - Re-inspection Required', 'Not Approved'] },
+          { label: 'Site Approval Status', item_type: 'select', is_required: true, options: ['Approved', 'Approved with Conditions', 'Conditional - Re-inspection Required', 'Not Approved'] },
           { label: 'Critical Issues', item_type: 'number' },
-          { label: 'Outstanding Actions', item_type: 'textarea' },
-          { label: 'Conditions of Approval', item_type: 'textarea' },
+          { label: 'Outstanding Actions', item_type: 'text' },
+          { label: 'Conditions of Approval', item_type: 'text' },
           { label: 'Re-inspection Date', item_type: 'date' },
           { label: 'Inspector Signature', item_type: 'signature', is_required: true },
           { label: 'Event Manager Signature', item_type: 'signature' },
@@ -339,7 +339,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Control System Working', item_type: 'pass_fail' },
           { label: 'Emergency Stop Working', item_type: 'pass_fail', is_required: true },
           { label: 'Qualified Rigger On-site', item_type: 'pass_fail', is_required: true },
-          { label: 'Rigging Notes', item_type: 'textarea' },
+          { label: 'Rigging Notes', item_type: 'text' },
         ],
       },
       {
@@ -354,7 +354,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Outriggers Extended', item_type: 'pass_fail', photo_rule: 'on_fail' },
           { label: 'Level and Plumb', item_type: 'pass_fail' },
           { label: 'Barriers Around Bases', item_type: 'pass_fail', photo_rule: 'on_fail' },
-          { label: 'Truss Notes', item_type: 'textarea' },
+          { label: 'Truss Notes', item_type: 'text' },
         ],
       },
       {
@@ -368,7 +368,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Follow Spots Safe Position', item_type: 'pass_fail' },
           { label: 'Cables Managed', item_type: 'pass_fail', photo_rule: 'on_fail' },
           { label: 'DMX Chain Working', item_type: 'pass_fail' },
-          { label: 'Lighting Notes', item_type: 'textarea' },
+          { label: 'Lighting Notes', item_type: 'text' },
         ],
       },
       {
@@ -383,7 +383,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'FOH Position Safe', item_type: 'pass_fail' },
           { label: 'Monitor Position Safe', item_type: 'pass_fail' },
           { label: 'Cable Runs Protected', item_type: 'pass_fail' },
-          { label: 'Audio Notes', item_type: 'textarea' },
+          { label: 'Audio Notes', item_type: 'text' },
         ],
       },
       {
@@ -396,7 +396,7 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Wind Loading Considered', item_type: 'pass_fail' },
           { label: 'Projection Equipment Secure', item_type: 'pass_fail' },
           { label: 'Camera Positions Safe', item_type: 'pass_fail' },
-          { label: 'Video Notes', item_type: 'textarea' },
+          { label: 'Video Notes', item_type: 'text' },
         ],
       },
       {
@@ -412,16 +412,16 @@ export const EVENTS_TEMPLATES: TemplateDefinition[] = [
           { label: 'Earth Bonding Correct', item_type: 'pass_fail' },
           { label: 'Backup Power Available', item_type: 'yes_no' },
           { label: 'Qualified Electrician Signed Off', item_type: 'pass_fail', is_required: true },
-          { label: 'Power Notes', item_type: 'textarea' },
+          { label: 'Power Notes', item_type: 'text' },
         ],
       },
       {
         name: 'Inspection Summary',
         items: [
-          { label: 'Production Ready', item_type: 'dropdown', is_required: true, options: ['Approved for Show', 'Approved with Notes', 'Requires Rectification', 'Not Approved'] },
+          { label: 'Production Ready', item_type: 'select', is_required: true, options: ['Approved for Show', 'Approved with Notes', 'Requires Rectification', 'Not Approved'] },
           { label: 'Issues Found', item_type: 'number' },
-          { label: 'Issue Details', item_type: 'textarea' },
-          { label: 'Rectification Required', item_type: 'textarea' },
+          { label: 'Issue Details', item_type: 'text' },
+          { label: 'Rectification Required', item_type: 'text' },
           { label: 'Sign-off for Performance', item_type: 'pass_fail' },
           { label: 'Inspector Signature', item_type: 'signature', is_required: true },
           { label: 'Production Manager Signature', item_type: 'signature' },

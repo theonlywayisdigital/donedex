@@ -237,7 +237,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   closeButton: {
@@ -375,6 +375,6 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: fontSize.body,
     color: colors.white,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
 });

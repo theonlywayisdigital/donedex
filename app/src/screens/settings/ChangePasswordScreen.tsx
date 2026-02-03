@@ -213,7 +213,7 @@ const styles = StyleSheet.create({
   },
   instructionsText: {
     fontSize: fontSize.caption,
-    color: colors.primary.dark,
+    color: colors.primary.mid,
     lineHeight: 20,
   },
   form: {

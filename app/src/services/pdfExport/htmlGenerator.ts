@@ -331,11 +331,8 @@ export function collectImageUrls(options: ExportOptions): string[] {
   const urls: string[] = [];
   const { template, responses, branding } = options;
 
-  console.log('[collectImageUrls] Starting image URL collection');
-
   // Add logo URL if present
   if (branding?.logoUrl) {
-    console.log('[collectImageUrls] Adding logo URL:', branding.logoUrl);
     urls.push(branding.logoUrl);
   }
 
@@ -346,7 +343,6 @@ export function collectImageUrls(options: ExportOptions): string[] {
       if (!response?.response_value) continue;
 
       const value = response.response_value;
-      console.log(`[collectImageUrls] Item ${item.id} (${item.item_type}): response_value = ${typeof value === 'string' ? value.substring(0, 100) : String(value)}...`);
 
       // Handle signature
       if (item.item_type === 'signature') {
@@ -377,17 +373,14 @@ export function collectImageUrls(options: ExportOptions): string[] {
       // Handle photos
       if (['photo', 'photo_before_after', 'annotated_photo'].includes(item.item_type)) {
         const paths = getMediaPaths(value);
-        console.log(`[collectImageUrls] Photo item ${item.id}: found ${paths.length} paths:`, paths);
         for (const path of paths) {
           const photoUrl = getPhotoUrl(path);
-          console.log(`[collectImageUrls] Adding photo URL: ${photoUrl}`);
           urls.push(photoUrl);
         }
       }
     }
   }
 
-  console.log(`[collectImageUrls] Total URLs collected: ${urls.length}`);
   return urls;
 }
 
@@ -524,7 +517,7 @@ export function generateHtml(options: ExportOptionsWithImages): string {
         }
 
         body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           font-size: 11px;
           line-height: 1.4;
           color: #111827;
@@ -712,6 +705,19 @@ export function generateHtml(options: ExportOptionsWithImages): string {
           color: #9CA3AF;
         }
 
+        .draft-watermark {
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%) rotate(-35deg);
+          font-size: 100px;
+          font-weight: 700;
+          color: rgba(220, 38, 38, 0.08);
+          pointer-events: none;
+          z-index: 0;
+          letter-spacing: 12px;
+        }
+
         @media print {
           body {
             -webkit-print-color-adjust: exact;
@@ -755,6 +761,7 @@ export function generateHtml(options: ExportOptionsWithImages): string {
       </style>
     </head>
     <body>
+      ${report.status !== 'submitted' ? '<div class="draft-watermark">DRAFT</div>' : ''}
       <div class="header">
         <div class="header-with-logo">
           ${logoUrl ? `<img src="${getImageSrc(logoUrl, imageDataMap)}" alt="${escapeHtml(brandName)} logo" class="logo" />` : ''}

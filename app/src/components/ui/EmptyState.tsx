@@ -1,7 +1,13 @@
+/**
+ * EmptyState Component
+ * Displays a friendly empty state with icon, title, description, and optional CTA button.
+ */
+
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
-import { Icon, IconName } from './Icon';
+import { View, Text, StyleSheet } from 'react-native';
+import { Icon } from './Icon';
 import { Button } from './Button';
+import type { IconName } from './Icon';
 import { colors, spacing, fontSize, fontWeight } from '../../constants/theme';
 
 interface EmptyStateProps {
@@ -12,36 +18,21 @@ interface EmptyStateProps {
     label: string;
     onPress: () => void;
   };
-  style?: ViewStyle;
 }
 
-export function EmptyState({
-  icon,
-  title,
-  description,
-  action,
-  style,
-}: EmptyStateProps) {
+export type { EmptyStateProps };
+
+export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
   return (
-    <View style={[styles.container, style]}>
-      <View style={styles.iconContainer}>
-        <Icon
-          name={icon}
-          size={48}
-          color={colors.neutral[300]}
-        />
+    <View style={styles.container}>
+      <View style={styles.iconCircle}>
+        <Icon name={icon} size={32} color={colors.primary.DEFAULT} />
       </View>
       <Text style={styles.title}>{title}</Text>
-      {description && (
-        <Text style={styles.description}>{description}</Text>
-      )}
+      {description && <Text style={styles.description}>{description}</Text>}
       {action && (
         <View style={styles.actionContainer}>
-          <Button
-            title={action.label}
-            onPress={action.onPress}
-            variant="primary"
-          />
+          <Button title={action.label} onPress={action.onPress} variant="primary" />
         </View>
       )}
     </View>
@@ -50,17 +41,24 @@ export function EmptyState({
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
-    paddingVertical: spacing['2xl'],
+    paddingVertical: spacing.xl * 2,
   },
-  iconContainer: {
-    marginBottom: spacing.md,
+  iconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.primary.light,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
   },
   title: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     textAlign: 'center',
     marginBottom: spacing.sm,
@@ -69,8 +67,8 @@ const styles = StyleSheet.create({
     fontSize: fontSize.body,
     color: colors.text.secondary,
     textAlign: 'center',
-    maxWidth: 280,
     lineHeight: 22,
+    maxWidth: 320,
   },
   actionContainer: {
     marginTop: spacing.lg,

@@ -144,6 +144,7 @@ const styles = StyleSheet.create({
   },
   text: {
     fontWeight: fontWeight.medium,
+    letterSpacing: 0.5,
   },
   textSm: {
     fontSize: 12,

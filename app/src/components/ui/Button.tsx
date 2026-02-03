@@ -8,7 +8,7 @@ import {
   TextStyle,
   View,
 } from 'react-native';
-import { colors, spacing, fontSize, fontWeight, components } from '../../constants/theme';
+import { colors, spacing, fontSize, fontWeight, fontFamily, components, letterSpacing } from '../../constants/theme';
 import { Icon, IconName } from './Icon';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -82,7 +82,7 @@ export function Button({
       style={buttonStyles}
       onPress={onPress}
       disabled={isDisabled}
-      activeOpacity={0.7}
+      activeOpacity={0.8}
       accessibilityRole="button"
       accessibilityLabel={loading ? `${a11yLabel}, loading` : a11yLabel}
       accessibilityHint={accessibilityHint}
@@ -120,9 +120,11 @@ const styles = StyleSheet.create({
   },
   primary: {
     backgroundColor: colors.primary.DEFAULT,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.primary.dark,
   },
   secondary: {
-    backgroundColor: colors.white,
+    backgroundColor: colors.primary.subtle,
     borderWidth: 1,
     borderColor: colors.primary.DEFAULT,
   },
@@ -131,13 +133,17 @@ const styles = StyleSheet.create({
   },
   danger: {
     backgroundColor: colors.danger,
+    borderBottomWidth: 2,
+    borderBottomColor: '#B91C1C',
   },
   disabled: {
     opacity: 0.5,
   },
   text: {
+    fontFamily: fontFamily.bold,
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
+    letterSpacing: letterSpacing.wide,
   },
   primaryText: {
     color: colors.white,

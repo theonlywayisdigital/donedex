@@ -82,12 +82,19 @@ export function SelectPlanScreen({ navigation }: Props) {
     navigation.goBack();
   };
 
-  const formatPrice = (plan: SubscriptionPlan) => {
+  const formatPlanPrice = (plan: SubscriptionPlan) => {
     if (plan.price_monthly_gbp === 0) return 'Free';
-    const price = interval === 'monthly'
+    const basePrice = interval === 'monthly'
       ? plan.price_monthly_gbp
       : Math.round(plan.price_annual_gbp / 12);
-    return `£${(price / 100).toFixed(0)}/${interval === 'monthly' ? 'mo' : 'mo'}`;
+    const perUserPrice = interval === 'monthly'
+      ? plan.price_per_user_monthly_gbp
+      : Math.round(plan.price_per_user_annual_gbp / 12);
+    const base = `\u00A3${(basePrice / 100).toFixed(0)}/mo`;
+    if (perUserPrice > 0) {
+      return `${base} + \u00A3${(perUserPrice / 100).toFixed(0)}/user`;
+    }
+    return base;
   };
 
   if (isLoadingPlans) {
@@ -157,7 +164,7 @@ export function SelectPlanScreen({ navigation }: Props) {
               Annual
             </Text>
             <View style={styles.saveBadge}>
-              <Text style={styles.saveBadgeText}>Save 17%</Text>
+              <Text style={styles.saveBadgeText}>Save 20%</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -190,7 +197,7 @@ export function SelectPlanScreen({ navigation }: Props) {
 
               <View style={styles.planHeader}>
                 <Text style={styles.planName}>{plan.name}</Text>
-                <Text style={styles.planPrice}>{formatPrice(plan)}</Text>
+                <Text style={styles.planPrice}>{formatPlanPrice(plan)}</Text>
               </View>
 
               <Text style={styles.planDescription}>{plan.description}</Text>
@@ -198,10 +205,18 @@ export function SelectPlanScreen({ navigation }: Props) {
               {/* Features */}
               <View style={styles.featuresContainer}>
                 <FeatureItem text={`${formatLimit(plan.max_users)} users`} />
-                <FeatureItem text={`${formatLimit(plan.max_records)} records`} />
+                <FeatureItem text={`${formatLimit(plan.max_storage_gb)} GB storage`} />
                 <FeatureItem text={`${formatLimit(plan.max_reports_per_month)} reports/month`} />
-                {plan.feature_ai_templates && <FeatureItem text="AI Templates" />}
-                {plan.feature_priority_support && <FeatureItem text="Priority Support" />}
+                {plan.feature_photos && <FeatureItem text="Photos included" />}
+                {plan.feature_all_field_types
+                  ? <FeatureItem text="All 46 field types (9 categories)" />
+                  : <FeatureItem text="Basic + Evidence fields (13 types)" />
+                }
+                {plan.feature_ai_templates && <FeatureItem text="AI Template Builder" />}
+                {plan.feature_starter_templates && <FeatureItem text="Starter templates" />}
+                {plan.feature_custom_branding && <FeatureItem text="Custom branding" />}
+                {plan.feature_api_access && <FeatureItem text="API access" />}
+                {plan.feature_priority_support && <FeatureItem text="Priority support" />}
               </View>
 
               {/* Selection indicator */}
@@ -339,7 +354,7 @@ const styles = StyleSheet.create({
   },
   saveBadgeText: {
     fontSize: 10,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
   errorContainer: {
@@ -383,7 +398,7 @@ const styles = StyleSheet.create({
   },
   popularBadgeText: {
     fontSize: 11,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
   planHeader: {
@@ -394,7 +409,7 @@ const styles = StyleSheet.create({
   },
   planName: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   planPrice: {
@@ -454,7 +469,7 @@ const styles = StyleSheet.create({
   },
   trialNoteText: {
     fontSize: fontSize.caption,
-    color: colors.primary.dark,
+    color: colors.primary.mid,
     textAlign: 'center',
   },
   actions: {

@@ -17,7 +17,7 @@ import {
 import { showNotification } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Icon, Button } from '../../components/ui';
+import { Icon, Button, FullScreenLoader } from '../../components/ui';
 import { useBillingStore } from '../../store/billingStore';
 import { useAuthStore } from '../../store/authStore';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
@@ -36,12 +36,16 @@ export function BillingScreen({ navigation }: Props) {
     usage,
     plans,
     invoices,
+    storageAddOn,
     isLoading,
     error,
     loadAll,
     loadInvoices,
     openCustomerPortal,
     createCheckoutSession,
+    purchaseStorageAddOn,
+    getTotalStorageGb,
+    getAddonStorageGb,
     getPlansForDisplay,
   } = useBillingStore();
 
@@ -95,13 +99,34 @@ export function BillingScreen({ navigation }: Props) {
   };
 
   const handleUpgrade = async () => {
-    // Navigate to upgrade flow or open checkout
     const proPlan = plans.find(p => p.slug === 'pro');
     if (!proPlan) return;
 
     const { url, error } = await createCheckoutSession(
       proPlan.id,
       'monthly',
+      {
+        successUrl: 'donedex://billing/success',
+        cancelUrl: 'donedex://billing/cancel',
+      }
+    );
+
+    if (error) {
+      showNotification('Error', error);
+      return;
+    }
+
+    if (url) {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+      }
+    }
+  };
+
+  const handlePurchaseStorage = async () => {
+    const { url, error } = await purchaseStorageAddOn(
+      1,
       'donedex://billing/success',
       'donedex://billing/cancel'
     );
@@ -122,10 +147,7 @@ export function BillingScreen({ navigation }: Props) {
   if (isLoading && !billing) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
-          <Text style={styles.loadingText}>Loading billing...</Text>
-        </View>
+        <FullScreenLoader message="Loading billing..." />
       </SafeAreaView>
     );
   }
@@ -262,12 +284,76 @@ export function BillingScreen({ navigation }: Props) {
               />
               <UsageItem
                 label="Storage"
-                current={usage.storage.current}
-                limit={usage.storage.limit}
+                current={usage.storage.current_gb}
+                limit={usage.storage.limit_gb}
                 percent={usage.storage.percent}
                 exceeded={usage.storage.exceeded}
-                formatValue={(val) => `${(val / 1024).toFixed(1)} GB`}
+                formatValue={(val) => val === -1 ? 'Unlimited' : `${val} GB`}
               />
+            </View>
+          </View>
+        )}
+
+        {/* Storage Breakdown (Pro/Enterprise only) */}
+        {usage && currentPlan && currentPlan.slug !== 'free' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Storage</Text>
+            <View style={styles.storageCard}>
+              <View style={styles.storageRow}>
+                <Text style={styles.storageLabel}>Plan storage</Text>
+                <Text style={styles.storageValue}>{`${usage.storage.base_limit_gb} GB`}</Text>
+              </View>
+              {usage.storage.addon_gb > 0 && (
+                <View style={styles.storageRow}>
+                  <Text style={styles.storageLabel}>Add-on storage</Text>
+                  <Text style={styles.storageValue}>{`${usage.storage.addon_gb} GB`}</Text>
+                </View>
+              )}
+              <View style={[styles.storageRow, styles.storageTotalRow]}>
+                <Text style={[styles.storageLabel, styles.storageTotalLabel]}>Total available</Text>
+                <Text style={[styles.storageValue, styles.storageTotalValue]}>{`${usage.storage.limit_gb} GB`}</Text>
+              </View>
+              <View style={styles.storageRow}>
+                <Text style={styles.storageLabel}>Used</Text>
+                <Text style={styles.storageValue}>{`${usage.storage.current_gb} GB`}</Text>
+              </View>
+              <Button
+                title="Purchase more storage"
+                onPress={handlePurchaseStorage}
+                variant="secondary"
+                fullWidth
+                style={{ marginTop: spacing.md }}
+              />
+              <Text style={styles.storageNote}>10 GB blocks at £5/mo each</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Per-User Pricing Breakdown */}
+        {currentPlan && currentPlan.price_per_user_monthly_gbp > 0 && usage && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Pricing Breakdown</Text>
+            <View style={styles.pricingCard}>
+              <View style={styles.storageRow}>
+                <Text style={styles.storageLabel}>Base plan</Text>
+                <Text style={styles.storageValue}>{`\u00A3${(currentPlan.price_monthly_gbp / 100).toFixed(0)}/mo`}</Text>
+              </View>
+              {usage.users.current > (currentPlan.base_users_included || 0) && (
+                <View style={styles.storageRow}>
+                  <Text style={styles.storageLabel}>
+                    {`${usage.users.current - (currentPlan.base_users_included || 0)} additional user${usage.users.current - (currentPlan.base_users_included || 0) !== 1 ? 's' : ''} x \u00A3${(currentPlan.price_per_user_monthly_gbp / 100).toFixed(0)}`}
+                  </Text>
+                  <Text style={styles.storageValue}>
+                    {`\u00A3${((usage.users.current - (currentPlan.base_users_included || 0)) * currentPlan.price_per_user_monthly_gbp / 100).toFixed(0)}/mo`}
+                  </Text>
+                </View>
+              )}
+              <View style={[styles.storageRow, styles.storageTotalRow]}>
+                <Text style={[styles.storageLabel, styles.storageTotalLabel]}>Estimated total</Text>
+                <Text style={[styles.storageValue, styles.storageTotalValue]}>
+                  {`\u00A3${((currentPlan.price_monthly_gbp + Math.max(0, usage.users.current - (currentPlan.base_users_included || 0)) * currentPlan.price_per_user_monthly_gbp) / 100).toFixed(0)}/mo`}
+                </Text>
+              </View>
             </View>
           </View>
         )}
@@ -471,7 +557,7 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: spacing.sm,
     fontSize: fontSize.caption,
-    color: colors.primary.dark,
+    color: colors.primary.mid,
     fontWeight: fontWeight.medium,
   },
   section: {
@@ -500,7 +586,7 @@ const styles = StyleSheet.create({
   },
   planName: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   trialBadge: {
@@ -512,7 +598,7 @@ const styles = StyleSheet.create({
   },
   trialBadgeText: {
     fontSize: 11,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
   planDescription: {
@@ -650,5 +736,53 @@ const styles = StyleSheet.create({
   },
   invoiceStatusTextPaid: {
     color: colors.success,
+  },
+  storageCard: {
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    padding: spacing.lg,
+  },
+  storageRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+  },
+  storageTotalRow: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border.light,
+    marginTop: spacing.xs,
+    paddingTop: spacing.sm,
+  },
+  storageLabel: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+  },
+  storageTotalLabel: {
+    fontWeight: fontWeight.medium,
+    color: colors.text.primary,
+  },
+  storageValue: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.medium,
+    color: colors.text.primary,
+  },
+  storageTotalValue: {
+    fontWeight: fontWeight.bold,
+  },
+  storageNote: {
+    fontSize: fontSize.caption,
+    color: colors.text.tertiary,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
+  pricingCard: {
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    padding: spacing.lg,
   },
 });

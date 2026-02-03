@@ -12,6 +12,7 @@ import { showNotification, showDestructiveConfirm } from '../../utils/alert';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { TeamStackParamList } from '../../navigation/MainNavigator';
+import { EmptyState, FullScreenLoader } from '../../components/ui';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
 import { useAuthStore } from '../../store/authStore';
 import {
@@ -308,11 +309,7 @@ export function TeamListScreen() {
   );
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading team...</Text>
-      </View>
-    );
+    return <FullScreenLoader message="Loading team..." />;
   }
 
   return (
@@ -336,6 +333,16 @@ export function TeamListScreen() {
               </TouchableOpacity>
             </View>
           </>
+        }
+        ListEmptyComponent={
+          !loading ? (
+            <EmptyState
+              icon="users"
+              title="No team members yet"
+              description="Invite your team to start collaborating on inspections and reports."
+              action={{ label: 'Invite team member', onPress: handleInvite }}
+            />
+          ) : null
         }
         ListFooterComponent={
           invitations.length > 0 ? (
@@ -382,7 +389,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   inviteButton: {
@@ -419,14 +426,14 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   memberDetails: {
     flex: 1,
   },
   memberName: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },
@@ -522,7 +529,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     textAlign: 'center',
   },

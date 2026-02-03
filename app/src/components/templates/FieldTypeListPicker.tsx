@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     flex: 1,
     textAlign: 'center',
@@ -247,7 +247,7 @@ const styles = StyleSheet.create({
   },
   typeLabel: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   typeLabelSelected: {

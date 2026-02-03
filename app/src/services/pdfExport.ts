@@ -380,7 +380,7 @@ function generateHtml(options: ExportOptions): string {
         }
 
         body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           font-size: 12px;
           line-height: 1.5;
           color: #111827;

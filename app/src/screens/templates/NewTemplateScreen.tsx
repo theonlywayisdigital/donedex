@@ -84,13 +84,6 @@ export function NewTemplateScreen() {
   const aiTemplatesAllowed = canUseAITemplates();
   const starterTemplatesAllowed = canUseStarterTemplates();
 
-  // Debug logging
-  console.log('[NewTemplateScreen] Feature check:', {
-    hasBilling: !!billing,
-    planName: billing?.current_plan?.name,
-    aiTemplatesAllowed,
-    starterTemplatesAllowed,
-  });
 
   useEffect(() => {
     loadData();
@@ -589,7 +582,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.sm,
   },
@@ -624,7 +617,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   importIconContainer: {
-    backgroundColor: colors.primary.dark,
+    backgroundColor: colors.primary.mid,
   },
   blankButtonContent: {
     flex: 1,
@@ -632,7 +625,7 @@ const styles = StyleSheet.create({
   },
   blankButtonTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   blankButtonSubtitle: {
@@ -723,7 +716,7 @@ const styles = StyleSheet.create({
   },
   templateCardName: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     flex: 1,
   },
@@ -750,7 +743,7 @@ const styles = StyleSheet.create({
   },
   demoBadgeText: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
   templateCardDescription: {
@@ -788,12 +781,12 @@ const styles = StyleSheet.create({
   },
   previewTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   previewUse: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
   previewContent: {
@@ -811,7 +804,7 @@ const styles = StyleSheet.create({
   },
   previewTemplateName: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },
@@ -848,7 +841,7 @@ const styles = StyleSheet.create({
   },
   previewSectionTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.sm,
   },
@@ -911,7 +904,7 @@ const styles = StyleSheet.create({
   },
   sectionNavTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     flex: 1,
   },
@@ -953,7 +946,7 @@ const styles = StyleSheet.create({
   },
   previewItemNumberText: {
     fontSize: fontSize.caption,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
   previewItemContent: {

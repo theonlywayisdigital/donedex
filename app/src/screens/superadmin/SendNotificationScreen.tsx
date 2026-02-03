@@ -63,13 +63,15 @@ export function SendNotificationScreen() {
 
   // Load organisations for targeting
   useEffect(() => {
+    let cancelled = false;
     async function loadOrgs() {
       const result = await getOrganisationsForTargeting();
-      if (result.data) {
+      if (!cancelled && result.data) {
         setOrganisations(result.data);
       }
     }
     loadOrgs();
+    return () => { cancelled = true; };
   }, []);
 
   // Search users when query changes
@@ -158,9 +160,13 @@ export function SendNotificationScreen() {
 
       const targetLabel = targetType === 'all'
         ? 'all users'
-        : targetType === 'organisation'
-          ? `users in ${organisations.find(o => o.id === targetOrganisationId)?.name || 'the organisation'}`
-          : targetUserName;
+        : targetType === 'all_admins'
+          ? 'all organisation admins'
+          : targetType === 'organisation'
+            ? `users in ${organisations.find(o => o.id === targetOrganisationId)?.name || 'the organisation'}`
+            : targetType === 'organisation_admins'
+              ? `admins in ${organisations.find(o => o.id === targetOrganisationId)?.name || 'the organisation'}`
+              : targetUserName;
 
       showConfirm(
         'Notification Sent',
@@ -180,6 +186,9 @@ export function SendNotificationScreen() {
           setTargetUserName('');
           setActionUrl('');
           setActionLabel('');
+          setSendEmail(true);
+          setSendInApp(true);
+          setError(null);
         },
         'Done',
         'Send Another'
@@ -772,7 +781,7 @@ const styles = StyleSheet.create({
   },
   searchResultAvatarText: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.primary.DEFAULT,
   },
   searchResultInfo: {

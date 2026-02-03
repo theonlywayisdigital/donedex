@@ -37,9 +37,10 @@ async function imageUrlToBase64(url: string): Promise<string | null> {
 /**
  * Pre-load all images as base64 data URIs
  */
-async function preloadImages(options: ExportOptions): Promise<ImageDataMap> {
+async function preloadImages(options: ExportOptions): Promise<{ imageDataMap: ImageDataMap; failedCount: number }> {
   const imageUrls = collectImageUrls(options);
   const imageDataMap: ImageDataMap = new Map();
+  let failedCount = 0;
 
   // Fetch all images in parallel
   const results = await Promise.all(
@@ -53,10 +54,12 @@ async function preloadImages(options: ExportOptions): Promise<ImageDataMap> {
   for (const { url, base64 } of results) {
     if (base64) {
       imageDataMap.set(url, base64);
+    } else {
+      failedCount++;
     }
   }
 
-  return imageDataMap;
+  return { imageDataMap, failedCount };
 }
 
 /**
@@ -66,7 +69,7 @@ async function preloadImages(options: ExportOptions): Promise<ImageDataMap> {
 export async function exportReportToPdf(options: ExportOptions): Promise<ExportResult> {
   try {
     // Pre-load all images as base64 for reliable PDF embedding
-    const imageDataMap = await preloadImages(options);
+    const { imageDataMap, failedCount } = await preloadImages(options);
 
     const html = generateHtml({ ...options, imageDataMap });
 
@@ -126,7 +129,10 @@ export async function exportReportToPdf(options: ExportOptions): Promise<ExportR
       }
     }, 1000);
 
-    return { success: true };
+    return {
+      success: true,
+      warning: failedCount > 0 ? `${failedCount} image(s) could not be loaded and may be missing from the PDF.` : undefined,
+    };
   } catch (error) {
     console.error('Error exporting PDF:', error);
     return {
@@ -153,7 +159,7 @@ export async function printReport(options: ExportOptions): Promise<ExportResult>
 export async function downloadAsHtml(options: ExportOptions): Promise<ExportResult> {
   try {
     // Pre-load all images as base64 for reliable embedding
-    const imageDataMap = await preloadImages(options);
+    const { imageDataMap, failedCount } = await preloadImages(options);
 
     const html = generateHtml({ ...options, imageDataMap });
     const blob = new Blob([html], { type: 'text/html' });
@@ -170,7 +176,10 @@ export async function downloadAsHtml(options: ExportOptions): Promise<ExportResu
     // Clean up
     setTimeout(() => URL.revokeObjectURL(url), 100);
 
-    return { success: true };
+    return {
+      success: true,
+      warning: failedCount > 0 ? `${failedCount} image(s) could not be loaded and may be missing from the report.` : undefined,
+    };
   } catch (error) {
     console.error('Error downloading HTML:', error);
     return {

@@ -225,6 +225,7 @@ export async function fetchTemplates(): Promise<{ data: Template[]; error: { mes
   const { data, error } = await supabase
     .from('templates')
     .select('*')
+    .eq('archived', false)
     .order('name', { ascending: true });
 
   if (error) {
@@ -245,6 +246,7 @@ export async function fetchTemplatesByRecordType(
     .from('templates')
     .select('*')
     .eq('record_type_id', recordTypeId)
+    .eq('archived', false)
     .order('name', { ascending: true });
 
   if (error) {
@@ -275,6 +277,7 @@ export async function fetchPublishedTemplates(): Promise<{ data: Template[]; err
     .from('templates')
     .select('*')
     .eq('is_published', true)
+    .eq('archived', false)
     .order('name', { ascending: true });
 
   if (error) {
@@ -368,21 +371,24 @@ export async function createItem(
 }
 
 /**
- * Delete a template
+ * Archive a template (soft delete)
  */
-export async function deleteTemplate(templateId: string): Promise<{ error: { message: string } | null }> {
+export async function archiveTemplate(templateId: string): Promise<{ error: { message: string } | null }> {
   const { error } = await supabase
     .from('templates')
-    .delete()
+    .update({ archived: true } as never)
     .eq('id', templateId);
 
   if (error) {
-    console.error('Error deleting template:', error);
+    console.error('Error archiving template:', error);
     return { error: { message: error.message } };
   }
 
   return { error: null };
 }
+
+/** @deprecated Use archiveTemplate instead */
+export const deleteTemplate = archiveTemplate;
 
 /**
  * Update a section

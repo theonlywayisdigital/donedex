@@ -26,8 +26,6 @@ export async function sendChatMessage(
   currentStep: ConversationStep
 ): Promise<ServiceResult<TemplateBuilderChatResponse>> {
   try {
-    console.log('Sending to Edge Function:', JSON.stringify({ messages, currentStep }, null, 2));
-
     const { data, error } = await supabase.functions.invoke<TemplateBuilderChatResponse>(
       'template-builder-chat',
       {
@@ -37,8 +35,6 @@ export async function sendChatMessage(
         } as TemplateBuilderChatRequest,
       }
     );
-
-    console.log('Edge function response:', { data, error });
 
     if (error) {
       console.error('Edge function error:', error);

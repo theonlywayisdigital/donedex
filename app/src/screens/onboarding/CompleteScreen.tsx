@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
   },
   loadingTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
   },
   errorTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.danger,
     textAlign: 'center',
     marginBottom: spacing.sm,
@@ -332,7 +332,7 @@ const styles = StyleSheet.create({
   nextStepsTitle: {
     fontSize: fontSize.caption,
     fontWeight: fontWeight.medium,
-    color: colors.primary.dark,
+    color: colors.primary.mid,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: spacing.md,

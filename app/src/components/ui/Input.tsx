@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   ViewStyle,
 } from 'react-native';
-import { colors, spacing, fontSize, fontWeight, components } from '../../constants/theme';
+import { colors, spacing, fontSize, fontWeight, fontFamily, components, shadows, letterSpacing } from '../../constants/theme';
 
 interface InputProps extends Omit<TextInputProps, 'style'> {
   label?: string;
@@ -58,7 +58,7 @@ export function Input({
             error && styles.inputError,
             inputStyle,
           ]}
-          placeholderTextColor={colors.neutral[500]}
+          placeholderTextColor={colors.text.tertiary}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           secureTextEntry={secureTextEntry && !isPasswordVisible}
@@ -103,27 +103,31 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   label: {
-    fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.medium,
     color: colors.text.primary,
     marginBottom: spacing.sm,
+    letterSpacing: letterSpacing.wide,
   },
   inputWrapper: {
     position: 'relative',
   },
   input: {
+    fontFamily: fontFamily.regular,
     height: components.input.height,
     borderRadius: components.input.borderRadius,
     borderWidth: 1,
     borderColor: colors.border.DEFAULT,
-    backgroundColor: colors.white,
+    backgroundColor: colors.neutral[50],
     paddingHorizontal: spacing.md,
     fontSize: fontSize.body,
     color: colors.text.primary,
   },
   inputFocused: {
     borderColor: colors.primary.DEFAULT,
-    borderWidth: 2,
+    backgroundColor: colors.white,
+    ...shadows.focusRing,
   },
   inputError: {
     borderColor: colors.danger,
@@ -143,6 +147,6 @@ const styles = StyleSheet.create({
   toggleText: {
     fontSize: fontSize.caption,
     color: colors.primary.DEFAULT,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
 });

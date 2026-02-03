@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
   },
   readyText: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   card: {
@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
   },
   templateName: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },

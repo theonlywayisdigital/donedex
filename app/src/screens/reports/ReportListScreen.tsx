@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,8 +16,8 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ReportsStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
-import { Icon } from '../../components/ui';
-import { fetchAllReports, ReportWithDetails } from '../../services/reports';
+import { Icon, FullScreenLoader } from '../../components/ui';
+import { fetchReportsPaginated, ReportWithDetails } from '../../services/reports';
 import { fetchRecords } from '../../services/records';
 import { fetchAllOrganisations } from '../../services/superAdmin';
 import { useAuthStore } from '../../store/authStore';
@@ -26,15 +26,21 @@ import type { OrganisationSummary } from '../../types/superAdmin';
 
 type NavigationProp = NativeStackNavigationProp<ReportsStackParamList, 'ReportList'>;
 
+const PAGE_SIZE = 25;
+
 export function ReportListScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { isSuperAdmin } = useAuthStore();
   const [reports, setReports] = useState<ReportWithDetails[]>([]);
-  const [filteredReports, setFilteredReports] = useState<ReportWithDetails[]>([]);
   const [records, setRecords] = useState<RecordModel[]>([]);
   const [organisations, setOrganisations] = useState<OrganisationSummary[]>([]);
+  const [totalCount, setTotalCount] = useState<number | undefined>();
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const nextCursorRef = useRef<string | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Search and Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,23 +59,50 @@ export function ReportListScreen() {
   const [showDateFilter, setShowDateFilter] = useState(false);
   const [datePreset, setDatePreset] = useState<'all' | '7d' | '30d' | '90d' | 'custom'>('all');
 
-  const loadData = useCallback(async () => {
-    const promises: Promise<any>[] = [
-      fetchAllReports(),
-      fetchRecords(),
-    ];
+  const loadReports = useCallback(async (append = false) => {
+    if (append && !hasMore) return;
 
-    // Super admins can filter by organisation
+    const result = await fetchReportsPaginated({
+      search: searchQuery.trim() || undefined,
+      status: selectedStatus,
+      recordId: selectedRecordId,
+      organisationId: selectedOrgId,
+      dateFrom: dateRangeStart?.toISOString() ?? null,
+      dateTo: dateRangeEnd?.toISOString() ?? null,
+      pagination: {
+        limit: PAGE_SIZE,
+        cursor: append ? nextCursorRef.current : undefined,
+      },
+    });
+
+    if (append) {
+      setReports((prev) => [...prev, ...result.data]);
+    } else {
+      setReports(result.data);
+    }
+
+    nextCursorRef.current = result.pageInfo.endCursor;
+    setHasMore(result.pageInfo.hasNextPage);
+    if (result.pageInfo.totalCount !== undefined) {
+      setTotalCount(result.pageInfo.totalCount);
+    }
+  }, [searchQuery, selectedStatus, selectedRecordId, selectedOrgId, dateRangeStart, dateRangeEnd, hasMore]);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    nextCursorRef.current = null;
+
+    const promises: Promise<unknown>[] = [fetchRecords()];
     if (isSuperAdmin) {
       promises.push(fetchAllOrganisations());
     }
 
     const results = await Promise.all(promises);
-    const [reportsResult, recordsResult, orgsResult] = results;
+    const [recordsResult, orgsResult] = results as [
+      { data: RecordModel[]; error: { message: string } | null },
+      { data: OrganisationSummary[]; error: { message: string } | null } | undefined,
+    ];
 
-    if (!reportsResult.error) {
-      setReports(reportsResult.data);
-    }
     if (!recordsResult.error) {
       setRecords(recordsResult.data);
     }
@@ -77,56 +110,34 @@ export function ReportListScreen() {
       setOrganisations(orgsResult.data);
     }
 
+    // Load first page of reports
+    const result = await fetchReportsPaginated({
+      status: selectedStatus,
+      recordId: selectedRecordId,
+      organisationId: selectedOrgId,
+      dateFrom: dateRangeStart?.toISOString() ?? null,
+      dateTo: dateRangeEnd?.toISOString() ?? null,
+      pagination: { limit: PAGE_SIZE },
+    });
+
+    setReports(result.data);
+    nextCursorRef.current = result.pageInfo.endCursor;
+    setHasMore(result.pageInfo.hasNextPage);
+    if (result.pageInfo.totalCount !== undefined) {
+      setTotalCount(result.pageInfo.totalCount);
+    }
+
     setLoading(false);
     setRefreshing(false);
-  }, [isSuperAdmin]);
+  }, [isSuperAdmin, selectedStatus, selectedRecordId, selectedOrgId, dateRangeStart, dateRangeEnd]);
 
-  // Apply filters whenever reports or filter state changes
-  const applyFilters = useCallback(() => {
-    let filtered = [...reports];
-
-    // Apply text search
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      filtered = filtered.filter(
-        (r) =>
-          r.template?.name?.toLowerCase().includes(query) ||
-          r.record?.name?.toLowerCase().includes(query) ||
-          r.user_profile?.full_name?.toLowerCase().includes(query)
-      );
+  // Reload when filters change (not search - that's debounced)
+  React.useEffect(() => {
+    if (!loading) {
+      nextCursorRef.current = null;
+      loadReports(false);
     }
-
-    if (selectedRecordId) {
-      filtered = filtered.filter((r) => r.record_id === selectedRecordId);
-    }
-
-    if (selectedStatus !== 'all') {
-      filtered = filtered.filter((r) => r.status === selectedStatus);
-    }
-
-    // Super Admin: Filter by organisation
-    if (selectedOrgId) {
-      filtered = filtered.filter((r) => r.organisation_id === selectedOrgId);
-    }
-
-    // Date range filter
-    if (dateRangeStart) {
-      filtered = filtered.filter((r) => {
-        const reportDate = new Date(r.submitted_at || r.started_at);
-        return reportDate >= dateRangeStart;
-      });
-    }
-    if (dateRangeEnd) {
-      const endOfDay = new Date(dateRangeEnd);
-      endOfDay.setHours(23, 59, 59, 999);
-      filtered = filtered.filter((r) => {
-        const reportDate = new Date(r.submitted_at || r.started_at);
-        return reportDate <= endOfDay;
-      });
-    }
-
-    setFilteredReports(filtered);
-  }, [reports, searchQuery, selectedRecordId, selectedStatus, selectedOrgId, dateRangeStart, dateRangeEnd]);
+  }, [selectedStatus, selectedRecordId, selectedOrgId, dateRangeStart, dateRangeEnd]);
 
   useFocusEffect(
     useCallback(() => {
@@ -134,13 +145,25 @@ export function ReportListScreen() {
     }, [loadData])
   );
 
-  // Apply filters when dependencies change
-  React.useEffect(() => {
-    applyFilters();
-  }, [applyFilters]);
+  // Debounced search
+  const handleSearchChange = useCallback((text: string) => {
+    setSearchQuery(text);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => {
+      nextCursorRef.current = null;
+      loadReports(false);
+    }, 400);
+  }, [loadReports]);
+
+  const handleLoadMore = useCallback(() => {
+    if (loadingMore || !hasMore || loading) return;
+    setLoadingMore(true);
+    loadReports(true).finally(() => setLoadingMore(false));
+  }, [loadingMore, hasMore, loading, loadReports]);
 
   const handleRefresh = () => {
     setRefreshing(true);
+    nextCursorRef.current = null;
     loadData();
   };
 
@@ -274,12 +297,12 @@ export function ReportListScreen() {
               placeholder="Search reports..."
               placeholderTextColor={colors.text.tertiary}
               value={searchQuery}
-              onChangeText={setSearchQuery}
+              onChangeText={handleSearchChange}
               autoCapitalize="none"
               autoCorrect={false}
             />
             {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <TouchableOpacity onPress={() => handleSearchChange('')}>
                 <Icon name="x" size={18} color={colors.text.tertiary} />
               </TouchableOpacity>
             )}
@@ -547,12 +570,7 @@ export function ReportListScreen() {
   );
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
-        <Text style={styles.loadingText}>Loading reports...</Text>
-      </View>
-    );
+    return <FullScreenLoader message="Loading reports..." />;
   }
 
   return (
@@ -560,19 +578,30 @@ export function ReportListScreen() {
       {renderFilters()}
 
       <FlatList
-        data={filteredReports}
+        data={reports}
         keyExtractor={(item) => item.id}
         renderItem={renderReport}
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
         ListEmptyComponent={renderEmpty}
         ListHeaderComponent={
-          filteredReports.length > 0 ? (
+          reports.length > 0 ? (
             <Text style={styles.resultCount}>
-              {filteredReports.length} {filteredReports.length === 1 ? 'report' : 'reports'}
+              {totalCount !== undefined
+                ? `${reports.length} of ${totalCount} ${totalCount === 1 ? 'report' : 'reports'}`
+                : `${reports.length} ${reports.length === 1 ? 'report' : 'reports'}`}
             </Text>
+          ) : null
+        }
+        ListFooterComponent={
+          loadingMore ? (
+            <View style={styles.loadingMore}>
+              <ActivityIndicator size="small" color={colors.primary.DEFAULT} />
+            </View>
           ) : null
         }
       />
@@ -764,7 +793,7 @@ const styles = StyleSheet.create({
   },
   templateName: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     flex: 1,
   },
@@ -805,7 +834,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.md,
     marginBottom: spacing.sm,
@@ -843,7 +872,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.md,
     textAlign: 'center',
@@ -863,5 +892,9 @@ const styles = StyleSheet.create({
   modalOptionTextSelected: {
     color: colors.primary.DEFAULT,
     fontWeight: fontWeight.medium,
+  },
+  loadingMore: {
+    paddingVertical: spacing.lg,
+    alignItems: 'center',
   },
 });

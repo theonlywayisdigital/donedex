@@ -763,7 +763,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     flex: 1,
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   headerSpacer: {
@@ -787,7 +787,7 @@ const styles = StyleSheet.create({
   },
   uploadTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.sm,
     textAlign: 'center',
@@ -851,7 +851,7 @@ const styles = StyleSheet.create({
   },
   analyzingTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.md,
     marginBottom: spacing.xs,

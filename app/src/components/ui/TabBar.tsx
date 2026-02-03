@@ -104,6 +104,7 @@ const styles = StyleSheet.create({
   },
   activeTabText: {
     color: colors.primary.DEFAULT,
+    fontWeight: fontWeight.bold,
   },
   badge: {
     backgroundColor: colors.primary.DEFAULT,
@@ -117,7 +118,7 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     fontSize: 11,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
 });

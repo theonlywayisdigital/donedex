@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
   backToLoginText: {
     color: colors.primary.DEFAULT,
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
   // Success state styles
   successContainer: {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,10 +11,11 @@ import {
 } from 'react-native';
 import { showNotification, showDestructiveConfirm } from '../../utils/alert';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SitesStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
-import { Icon, IconName, DragHandle, DraggableList } from '../../components/ui';
+import { Icon, IconName, DragHandle, DraggableList, FullScreenLoader } from '../../components/ui';
 import { FieldEditorModal, FieldData } from '../../components/records/FieldEditorModal';
 import { fetchRecordTypeById, updateRecordType, archiveRecordType } from '../../services/recordTypes';
 import {
@@ -62,6 +63,7 @@ const FIELD_TYPES = [
   { value: 'email', label: 'Email', description: 'Email address' },
   { value: 'currency', label: 'Currency', description: 'Money amount' },
   { value: 'single_select', label: 'Single Select', description: 'Choose one option' },
+  { value: 'multi_select', label: 'Multi Select', description: 'Choose multiple options' },
   { value: 'number_with_unit', label: 'Number with Unit', description: 'Number with units' },
 ];
 
@@ -85,6 +87,23 @@ export function RecordTypeEditorScreen() {
   const [description, setDescription] = useState('');
   const [icon, setIcon] = useState<string>('folder');
   const [color, setColor] = useState<string>(AVAILABLE_COLORS[0]);
+
+  // Track original values for dirty detection
+  const originalValues = useRef({ name: '', nameSingular: '', description: '', icon: 'folder', color: AVAILABLE_COLORS[0] });
+  const [isDirty, setIsDirty] = useState(false);
+
+  useUnsavedChanges(isDirty);
+
+  useEffect(() => {
+    if (loading) return;
+    const dirty =
+      name !== originalValues.current.name ||
+      nameSingular !== originalValues.current.nameSingular ||
+      description !== originalValues.current.description ||
+      icon !== originalValues.current.icon ||
+      color !== originalValues.current.color;
+    setIsDirty(dirty);
+  }, [name, nameSingular, description, icon, color, loading]);
 
   // Modals
   const [showIconPicker, setShowIconPicker] = useState(false);
@@ -111,6 +130,15 @@ export function RecordTypeEditorScreen() {
       setDescription(rt.description || '');
       setIcon(rt.icon);
       setColor(rt.color);
+
+      // Capture original values for dirty detection
+      originalValues.current = {
+        name: rt.name,
+        nameSingular: rt.name_singular,
+        description: rt.description || '',
+        icon: rt.icon,
+        color: rt.color,
+      };
     }
 
     if (!fieldsResult.error) {
@@ -191,6 +219,34 @@ export function RecordTypeEditorScreen() {
       if (error) throw new Error(error.message);
     } else {
       // Create new field
+      const { error } = await createRecordTypeField({
+        record_type_id: recordTypeId,
+        label: fieldData.label,
+        field_type: fieldData.field_type,
+        is_required: fieldData.is_required,
+        help_text: fieldData.help_text,
+        placeholder_text: fieldData.placeholder_text,
+        default_value: fieldData.default_value,
+        options: fieldData.options as unknown as Json,
+        min_value: fieldData.min_value,
+        max_value: fieldData.max_value,
+        unit_type: fieldData.unit_type,
+        unit_options: fieldData.unit_options,
+        default_unit: fieldData.default_unit,
+      });
+
+      if (error) throw new Error(error.message);
+    }
+
+    // Reload fields
+    const { data } = await fetchRecordTypeFields(recordTypeId);
+    setFields(data);
+  };
+
+  const handleSaveFieldGroup = async (fieldsData: FieldData[]) => {
+    if (!recordTypeId) return;
+
+    for (const fieldData of fieldsData) {
       const { error } = await createRecordTypeField({
         record_type_id: recordTypeId,
         label: fieldData.label,
@@ -354,11 +410,7 @@ export function RecordTypeEditorScreen() {
 
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
-      </View>
-    );
+    return <FullScreenLoader message="Loading..." />;
   }
 
   return (
@@ -499,6 +551,7 @@ export function RecordTypeEditorScreen() {
         visible={showFieldEditor}
         onClose={closeFieldEditor}
         onSave={handleSaveField}
+        onSaveGroup={handleSaveFieldGroup}
         onDelete={editingField ? handleDeleteFieldFromEditor : undefined}
         field={editingField}
       />
@@ -541,7 +594,7 @@ const styles = StyleSheet.create({
   },
   previewName: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   section: {
@@ -559,7 +612,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.md,
   },
@@ -714,7 +767,7 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.white,
   },
   // Modals
@@ -734,7 +787,7 @@ const styles = StyleSheet.create({
   },
   pickerTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     textAlign: 'center',
     marginBottom: spacing.md,

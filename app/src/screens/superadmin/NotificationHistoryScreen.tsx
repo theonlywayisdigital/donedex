@@ -11,6 +11,7 @@ import {
   FlatList,
   RefreshControl,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
@@ -24,19 +25,24 @@ import {
   type NotificationPriority,
 } from '../../types/notifications';
 
+const PAGE_SIZE = 20;
+
 export function NotificationHistoryScreen() {
   const navigation = useNavigation();
   const [notifications, setNotifications] = useState<SentNotificationWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
       setError(null);
-      const result = await getSentNotifications(50, 0);
+      const result = await getSentNotifications(PAGE_SIZE, 0);
       if (result.data) {
         setNotifications(result.data);
+        setHasMore(result.data.length >= PAGE_SIZE);
       } else if (result.error) {
         setError(result.error.message);
       }
@@ -48,6 +54,22 @@ export function NotificationHistoryScreen() {
       setRefreshing(false);
     }
   }, []);
+
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const result = await getSentNotifications(PAGE_SIZE, notifications.length);
+      if (result.data) {
+        setNotifications((prev) => [...prev, ...result.data!]);
+        setHasMore(result.data.length >= PAGE_SIZE);
+      }
+    } catch (err) {
+      console.error('Error loading more notifications:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -82,15 +104,20 @@ export function NotificationHistoryScreen() {
 
   const getTargetLabel = (notification: SentNotificationWithStats): string => {
     if (notification.target_type === 'all') return 'All Users';
+    if (notification.target_type === 'all_admins') return 'All Admins';
     if (notification.target_type === 'organisation') {
       return notification.target_organisation_name || 'Organisation';
+    }
+    if (notification.target_type === 'organisation_admins') {
+      return `Admins: ${notification.target_organisation_name || 'Organisation'}`;
     }
     return 'Individual';
   };
 
   const getTargetIcon = (targetType: string): string => {
     if (targetType === 'all') return 'globe';
-    if (targetType === 'organisation') return 'building';
+    if (targetType === 'all_admins') return 'shield';
+    if (targetType === 'organisation' || targetType === 'organisation_admins') return 'building';
     return 'user';
   };
 
@@ -222,9 +249,24 @@ export function NotificationHistoryScreen() {
           notifications.length > 0 ? (
             <View style={styles.header}>
               <Text style={styles.resultCount}>
-                {notifications.length} notification{notifications.length !== 1 ? 's' : ''} sent
+                {`Showing ${notifications.length} notification${notifications.length !== 1 ? 's' : ''}${hasMore ? '+' : ''}`}
               </Text>
             </View>
+          ) : null
+        }
+        ListFooterComponent={
+          hasMore && notifications.length > 0 ? (
+            <TouchableOpacity
+              style={styles.loadMoreButton}
+              onPress={loadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore ? (
+                <ActivityIndicator size="small" color={colors.primary.DEFAULT} />
+              ) : (
+                <Text style={styles.loadMoreText}>Load more</Text>
+              )}
+            </TouchableOpacity>
           ) : null
         }
       />
@@ -266,7 +308,7 @@ const styles = StyleSheet.create({
   },
   errorTitle: {
     fontSize: fontSize.sectionTitle,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.md,
   },
@@ -320,7 +362,7 @@ const styles = StyleSheet.create({
   },
   notificationTitle: {
     fontSize: fontSize.body,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },
@@ -362,7 +404,7 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
   },
   statLabel: {
@@ -382,7 +424,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.bodyLarge,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
     color: colors.text.primary,
     marginTop: spacing.md,
   },
@@ -391,6 +433,21 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginTop: spacing.xs,
     textAlign: 'center',
+  },
+  loadMoreButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    marginBottom: spacing.md,
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+  },
+  loadMoreText: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.primary.DEFAULT,
   },
   fab: {
     position: 'absolute',
