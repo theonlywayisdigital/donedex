@@ -1,42 +1,42 @@
 /**
- * Sentry Error Reporting Service (Disabled)
- * Sentry has been removed. These are stub functions for compatibility.
- * Re-add @sentry/react-native when you're ready to configure error reporting.
+ * Sentry Error Reporting Service
+ * Stub implementation - Sentry is currently disabled.
+ * This file provides type declarations for platform-specific implementations.
  */
 
 /**
- * Initialize Sentry. No-op - Sentry disabled.
+ * Initialize Sentry - no-op (disabled)
  */
 export function initSentry() {
   // Sentry disabled
 }
 
 /**
- * Capture an exception - logs to console only.
+ * Capture an exception - logs to console
  */
 export function captureException(error: Error, context?: Record<string, unknown>) {
   console.error('[Error]', error.message, context);
 }
 
 /**
- * Set user context - no-op.
+ * Set user context - no-op (disabled)
  */
 export function setUser(_userId: string, _email?: string) {
-  // No-op
+  // Sentry disabled
 }
 
 /**
- * Clear user context - no-op.
+ * Clear user context - no-op (disabled)
  */
 export function clearUser() {
-  // No-op
+  // Sentry disabled
 }
 
 /**
- * Add a breadcrumb - no-op.
+ * Add a breadcrumb - no-op (disabled)
  */
 export function addBreadcrumb(_message: string, _category?: string, _data?: Record<string, unknown>) {
-  // No-op
+  // Sentry disabled
 }
 
 // Export empty Sentry object for compatibility

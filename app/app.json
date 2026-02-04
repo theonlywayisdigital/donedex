@@ -14,7 +14,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.donedex.app"
+      "bundleIdentifier": "com.donedex.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -22,7 +25,11 @@
         "backgroundColor": "#0A3D4F"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.donedex.app"
+      "package": "com.donedex.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -52,20 +59,13 @@
           "icon": "./assets/donedex-icon.png",
           "color": "#0F4C5C"
         }
-      ],
-      [
-        "@sentry/react-native",
-        {
-          "organization": "",
-          "project": ""
-        }
       ]
     ],
     "extra": {
       "eas": {
-        "projectId": ""
-      },
-      "sentryDsn": ""
-    }
+        "projectId": "6047da36-61fb-4c60-992f-097a9185156b"
+      }
+    },
+    "owner": "theonlywayisdigital"
   }
 }

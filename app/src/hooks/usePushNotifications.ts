@@ -28,23 +28,28 @@ export function usePushNotifications() {
     let responseSubscription: { remove: () => void } | null = null;
 
     async function setup() {
-      // Register and save token
-      const token = await registerForPushNotifications();
-      if (token) {
-        tokenRef.current = token;
-        await savePushToken(token);
+      try {
+        // Register and save token
+        const token = await registerForPushNotifications();
+        if (token) {
+          tokenRef.current = token;
+          await savePushToken(token);
+        }
+
+        // Listen for notifications received while app is foregrounded
+        receivedSubscription = addNotificationReceivedListener((_notification) => {
+          // Notification received in foreground - the handler will show it as alert
+        });
+
+        // Listen for when user taps on a notification
+        responseSubscription = addNotificationResponseListener((response) => {
+          const data = response.notification.request.content.data;
+          // Handle notification tap - URL routing could be implemented here
+        });
+      } catch (err) {
+        // Push notification setup is non-critical - log and continue
+        console.error('Push notification setup failed:', err);
       }
-
-      // Listen for notifications received while app is foregrounded
-      receivedSubscription = addNotificationReceivedListener((_notification) => {
-        // Notification received in foreground - the handler will show it as alert
-      });
-
-      // Listen for when user taps on a notification
-      responseSubscription = addNotificationResponseListener((response) => {
-        const data = response.notification.request.content.data;
-        // Handle notification tap - URL routing could be implemented here
-      });
     }
 
     setup();

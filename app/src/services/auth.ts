@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import type { User, Session } from '@supabase/supabase-js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../constants/config';
 
 export interface AuthError {
   message: string;
@@ -22,6 +23,17 @@ export interface ResetPasswordResult {
 export interface SignUpResult {
   user: User | null;
   session: Session | null;
+  error: AuthError | null;
+}
+
+export interface PasswordVerifyResult {
+  user: User | null;
+  requiresOTP: boolean;
+  error: AuthError | null;
+}
+
+export interface OTPResult {
+  success: boolean;
   error: AuthError | null;
 }
 
@@ -113,6 +125,188 @@ export async function signIn(email: string, password: string): Promise<SignInRes
 }
 
 /**
+ * Verify password and send OTP (Step 1 of 2FA login)
+ * Returns user info if password correct, triggers OTP email
+ */
+export async function verifyPasswordAndSendOTP(email: string, password: string): Promise<PasswordVerifyResult> {
+  console.log('[Auth] verifyPasswordAndSendOTP called for:', email);
+  try {
+    // First verify the password is correct by attempting sign in
+    console.log('[Auth] Attempting password sign in...');
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      console.error('[Auth] Password sign in failed:', error.message);
+      return {
+        user: null,
+        requiresOTP: false,
+        error: { message: error.message },
+      };
+    }
+
+    if (!data.user) {
+      console.error('[Auth] No user returned from sign in');
+      return {
+        user: null,
+        requiresOTP: false,
+        error: { message: 'Invalid credentials' },
+      };
+    }
+
+    console.log('[Auth] Password verified for user:', data.user.id);
+
+    // Sign out immediately - we don't want to complete login yet
+    await supabase.auth.signOut();
+
+    // Send OTP to the user's email via Edge Function
+    console.log('[Auth] Sending OTP to:', data.user.email);
+    console.log('[Auth] SUPABASE_URL:', SUPABASE_URL);
+
+    try {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/send-login-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          userId: data.user.id,
+          email: data.user.email,
+        }),
+      });
+
+      console.log('[Auth] OTP response status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('[Auth] OTP send failed:', errorData);
+        return {
+          user: data.user,
+          requiresOTP: false,
+          error: { message: errorData.error || 'Failed to send verification code' },
+        };
+      }
+
+      console.log('[Auth] OTP sent successfully');
+      return {
+        user: data.user,
+        requiresOTP: true,
+        error: null,
+      };
+    } catch (fetchError) {
+      console.error('[Auth] OTP fetch error:', fetchError);
+      return {
+        user: data.user,
+        requiresOTP: false,
+        error: { message: 'Failed to send verification code. Please try again.' },
+      };
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Verification failed';
+    return { user: null, requiresOTP: false, error: { message } };
+  }
+}
+
+/**
+ * Verify OTP and complete login (Step 2 of 2FA login)
+ */
+export async function verifyOTPAndSignIn(
+  email: string,
+  password: string,
+  userId: string,
+  otpCode: string
+): Promise<SignInResult> {
+  try {
+    // Verify OTP via database function
+    const { data: isValid, error: otpError } = await supabase.rpc('verify_email_otp' as never, {
+      p_user_id: userId,
+      p_code: otpCode,
+    } as never);
+
+    if (otpError) {
+      console.error('OTP verification error:', otpError);
+      return {
+        user: null,
+        session: null,
+        error: { message: 'Failed to verify code' },
+      };
+    }
+
+    if (!isValid) {
+      return {
+        user: null,
+        session: null,
+        error: { message: 'Invalid or expired code. Please try again.' },
+      };
+    }
+
+    // OTP is valid, complete the sign in
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      return {
+        user: null,
+        session: null,
+        error: { message: error.message },
+      };
+    }
+
+    return {
+      user: data.user,
+      session: data.session,
+      error: null,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Sign in failed';
+    return { user: null, session: null, error: { message } };
+  }
+}
+
+/**
+ * Resend OTP code
+ */
+export async function resendOTP(userId: string, email: string): Promise<OTPResult> {
+  try {
+    console.log('[Auth] Resending OTP to:', email);
+
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/send-login-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        userId,
+        email,
+      }),
+    });
+
+    console.log('[Auth] Resend OTP response status:', response.status);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[Auth] Resend OTP failed:', errorData);
+      return {
+        success: false,
+        error: { message: errorData.error || 'Failed to resend code' },
+      };
+    }
+
+    return { success: true, error: null };
+  } catch (err) {
+    console.error('[Auth] Resend OTP error:', err);
+    const message = err instanceof Error ? err.message : 'Failed to resend code';
+    return { success: false, error: { message } };
+  }
+}
+
+/**
  * Sign out the current user
  */
 export async function signOut(): Promise<SignOutResult> {
@@ -157,7 +351,8 @@ export async function getCurrentSession(): Promise<Session | null> {
   try {
     const { data } = await supabase.auth.getSession();
     return data.session;
-  } catch {
+  } catch (err) {
+    console.error('getCurrentSession error:', err);
     return null;
   }
 }
@@ -169,7 +364,8 @@ export async function getCurrentUser(): Promise<User | null> {
   try {
     const { data } = await supabase.auth.getUser();
     return data.user;
-  } catch {
+  } catch (err) {
+    console.error('getCurrentUser error:', err);
     return null;
   }
 }
@@ -209,11 +405,13 @@ export async function fetchUserProfile(userId: string) {
       .single();
 
     if (error) {
+      console.error('fetchUserProfile error:', error.message);
       return null;
     }
 
     return data;
-  } catch {
+  } catch (err) {
+    console.error('fetchUserProfile exception:', err);
     return null;
   }
 }
@@ -237,6 +435,7 @@ export async function fetchOrgStatus(orgId: string): Promise<{
       };
 
     if (error || !data) {
+      if (error) console.error('fetchOrgStatus error:', error.message);
       return null;
     }
 
@@ -245,7 +444,8 @@ export async function fetchOrgStatus(orgId: string): Promise<{
       archived: data.archived ?? false,
       blocked_reason: data.blocked_reason,
     };
-  } catch {
+  } catch (err) {
+    console.error('fetchOrgStatus exception:', err);
     return null;
   }
 }
@@ -268,11 +468,13 @@ export async function fetchUserOrganisation(userId: string): Promise<UserOrganis
       .single() as unknown as { data: UserOrganisationData | null; error: { message: string } | null };
 
     if (error) {
+      console.error('fetchUserOrganisation error:', error.message);
       return null;
     }
 
     return data;
-  } catch {
+  } catch (err) {
+    console.error('fetchUserOrganisation exception:', err);
     return null;
   }
 }

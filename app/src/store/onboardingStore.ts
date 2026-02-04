@@ -107,14 +107,20 @@ export const useOnboardingStore = create<OnboardingStoreState>((set, get) => ({
 
   // Initialize
   initialize: async () => {
-    const { needsOnboarding } = await onboardingService.checkNeedsOnboarding();
+    set({ isLoading: true, error: null });
+    try {
+      const { needsOnboarding } = await onboardingService.checkNeedsOnboarding();
 
-    if (!needsOnboarding) {
-      set({ isComplete: true, needsOnboarding: false, organisationId: 'existing' });
-      return;
+      if (!needsOnboarding) {
+        set({ isComplete: true, needsOnboarding: false, organisationId: 'existing', isLoading: false });
+        return;
+      }
+
+      await get().loadFromServer();
+    } catch (err) {
+      console.error('Onboarding initialization error:', err);
+      set({ error: 'Failed to initialize onboarding', isLoading: false });
     }
-
-    await get().loadFromServer();
   },
 
   // Load state from server

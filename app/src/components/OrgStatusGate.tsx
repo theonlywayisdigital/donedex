@@ -2,10 +2,12 @@
  * OrgStatusGate
  * Wraps authenticated app content and blocks access if the organisation
  * is blocked or archived. Checks on mount and on app focus.
+ *
+ * IMPORTANT: Super admins bypass all org checks - they don't need an org.
  */
 
-import React, { useState, useEffect, useCallback, type ReactNode } from 'react';
-import { View, Text, StyleSheet, Platform, AppState } from 'react-native';
+import React, { useState, useEffect, type ReactNode } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../constants/theme';
 import { Icon, Button } from './ui';
 import { useAuthStore } from '../store/authStore';
@@ -17,55 +19,119 @@ interface OrgStatusGateProps {
 type BlockReason = 'blocked' | 'archived' | 'removed';
 
 export function OrgStatusGate({ children }: OrgStatusGateProps) {
-  const { isSuperAdmin, validateOrgStatus, signOut } = useAuthStore();
-  const [blockReason, setBlockReason] = useState<BlockReason | null>(null);
-  const [checking, setChecking] = useState(true);
+  const {
+    isSuperAdmin,
+    validateOrgStatus,
+    signOut,
+    checkSuperAdminStatus,
+    user,
+    isInitialized,
+    organisation
+  } = useAuthStore();
 
-  const checkStatus = useCallback(async () => {
-    // Super admins bypass this gate
-    if (isSuperAdmin) {
-      setChecking(false);
+  const [blockReason, setBlockReason] = useState<BlockReason | null>(null);
+  const [isChecking, setIsChecking] = useState(true);
+  const [superAdminChecked, setSuperAdminChecked] = useState(false);
+
+  // Step 1: Check super admin status first
+  useEffect(() => {
+    if (!isInitialized || !user) {
+      console.log('[OrgStatusGate] Not ready - initialized:', isInitialized, 'user:', !!user);
       return;
     }
 
-    const result = await validateOrgStatus();
-    if (!result.valid && result.reason) {
-      setBlockReason(result.reason);
-    } else {
-      setBlockReason(null);
-    }
-    setChecking(false);
-  }, [isSuperAdmin, validateOrgStatus]);
-
-  // Check on mount
-  useEffect(() => {
-    checkStatus();
-  }, [checkStatus]);
-
-  // Check on app focus (native)
-  useEffect(() => {
-    if (isSuperAdmin) return;
-
-    if (Platform.OS === 'web') {
-      const handleVisibility = () => {
-        if (document.visibilityState === 'visible') {
-          checkStatus();
-        }
-      };
-      document.addEventListener('visibilitychange', handleVisibility);
-      return () => document.removeEventListener('visibilitychange', handleVisibility);
+    // If already confirmed as super admin, we're done
+    if (isSuperAdmin) {
+      console.log('[OrgStatusGate] Already confirmed as super admin');
+      setSuperAdminChecked(true);
+      setIsChecking(false);
+      return;
     }
 
-    const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') {
-        checkStatus();
+    // Check super admin status
+    const checkAdmin = async () => {
+      console.log('[OrgStatusGate] Checking super admin status for user:', user.id);
+      try {
+        await checkSuperAdminStatus();
+        console.log('[OrgStatusGate] Super admin check complete');
+      } catch (err) {
+        console.error('[OrgStatusGate] Super admin check failed:', err);
       }
-    });
-    return () => subscription.remove();
-  }, [isSuperAdmin, checkStatus]);
+      setSuperAdminChecked(true);
+    };
 
-  // Still checking on first mount
-  if (checking) {
+    checkAdmin();
+  }, [isInitialized, user?.id]);
+
+  // Step 2: After super admin check, validate org if needed
+  useEffect(() => {
+    if (!superAdminChecked) {
+      console.log('[OrgStatusGate] Waiting for super admin check...');
+      return;
+    }
+
+    // Get fresh state after super admin check
+    const currentState = useAuthStore.getState();
+    console.log('[OrgStatusGate] Post-check state - isSuperAdmin:', currentState.isSuperAdmin);
+
+    // Super admin bypasses everything
+    if (currentState.isSuperAdmin) {
+      console.log('[OrgStatusGate] User is super admin, allowing access');
+      setBlockReason(null);
+      setIsChecking(false);
+      return;
+    }
+
+    // Has an org? Check its status
+    if (currentState.organisation?.id) {
+      console.log('[OrgStatusGate] Checking org status for:', currentState.organisation.id);
+      validateOrgStatus().then(result => {
+        console.log('[OrgStatusGate] Org validation result:', result);
+        if (!result.valid && result.reason) {
+          setBlockReason(result.reason);
+        } else {
+          setBlockReason(null);
+        }
+        setIsChecking(false);
+      }).catch(err => {
+        console.error('[OrgStatusGate] Org validation error:', err);
+        setBlockReason(null);
+        setIsChecking(false);
+      });
+    } else {
+      // No org and not super admin = removed
+      console.log('[OrgStatusGate] No org and not super admin - blocking');
+      setBlockReason('removed');
+      setIsChecking(false);
+    }
+  }, [superAdminChecked]);
+
+  // React to isSuperAdmin changes (e.g., after login completes super admin check)
+  useEffect(() => {
+    if (isSuperAdmin) {
+      console.log('[OrgStatusGate] isSuperAdmin became true, clearing any block');
+      setBlockReason(null);
+      setIsChecking(false);
+    }
+  }, [isSuperAdmin]);
+
+  // No user = let auth redirect handle it
+  if (!user) {
+    return <>{children}</>;
+  }
+
+  // Still checking - show children (prevents flash)
+  if (isChecking) {
+    return <>{children}</>;
+  }
+
+  // Super admins always get through
+  if (isSuperAdmin) {
+    return <>{children}</>;
+  }
+
+  // No block reason = access granted
+  if (!blockReason) {
     return <>{children}</>;
   }
 

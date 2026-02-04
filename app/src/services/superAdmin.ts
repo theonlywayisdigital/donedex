@@ -4,6 +4,7 @@
  */
 
 import { supabase } from './supabase';
+import { SUPABASE_URL } from '../constants/config';
 import type {
   SuperAdmin,
   SuperAdminWithPermissions,
@@ -35,14 +36,33 @@ interface ServiceResult<T> {
  * Check if the current user is a super admin
  */
 export async function checkIsSuperAdmin(): Promise<boolean> {
-  const { data, error } = await supabase.rpc('is_super_admin' as any);
+  console.log('[SuperAdmin] Checking if user is super admin...');
 
-  if (error) {
-    console.error('[SuperAdmin] Error checking super admin status:', error);
+  // Ensure we have a valid session
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData?.session) {
+    console.log('[SuperAdmin] No active session');
     return false;
   }
 
-  const result = data === true;
+  const userId = sessionData.session.user.id;
+  console.log('[SuperAdmin] Session user ID:', userId);
+
+  // Query super_admins table directly
+  const { data, error } = await supabase
+    .from('super_admins' as any)
+    .select('id, is_active')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[SuperAdmin] Query error:', error);
+    return false;
+  }
+
+  const result = !!data;
+  console.log('[SuperAdmin] Is super admin:', result);
   return result;
 }
 
@@ -901,9 +921,7 @@ export async function sendInviteEmail(invitationId: string): Promise<ServiceResu
       return { data: null, error: { message: 'Not authenticated' } };
     }
 
-    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-
-    const response = await fetch(`${supabaseUrl}/functions/v1/send-invite`, {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/send-invite`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,

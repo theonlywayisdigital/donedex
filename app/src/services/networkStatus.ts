@@ -67,18 +67,46 @@ export function useNetworkStatus(): { isOnline: boolean; isLoading: boolean } {
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    // Get initial state
-    isOnline().then((online) => {
-      setIsOnline(online);
-      setIsLoading(false);
-    });
+    let mounted = true;
+
+    // Get initial state with timeout to prevent hanging
+    const timeoutId = setTimeout(() => {
+      if (mounted && isLoading) {
+        console.warn('Network status check timed out, assuming online');
+        setIsOnline(true);
+        setIsLoading(false);
+      }
+    }, 5000);
+
+    isOnline()
+      .then((online) => {
+        if (mounted) {
+          clearTimeout(timeoutId);
+          setIsOnline(online);
+          setIsLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error('Network status check failed:', err);
+        if (mounted) {
+          clearTimeout(timeoutId);
+          setIsOnline(true); // Assume online on error
+          setIsLoading(false);
+        }
+      });
 
     // Subscribe to changes
     const unsubscribe = subscribeToNetworkChanges((online) => {
-      setIsOnline(online);
+      if (mounted) {
+        setIsOnline(online);
+      }
     });
 
-    return unsubscribe;
+    return () => {
+      mounted = false;
+      clearTimeout(timeoutId);
+      unsubscribe();
+    };
   }, []);
 
   return { isOnline: isOnlineState, isLoading };

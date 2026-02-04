@@ -21,11 +21,19 @@ export function OfflineIndicator({ showSyncStatus = false }: OfflineIndicatorPro
   const { isOnline, isLoading } = useNetworkStatus();
   const [isSyncing, setIsSyncing] = useState(false);
   const [pendingItems, setPendingItems] = useState(0);
+  const [showAllSynced, setShowAllSynced] = useState(false);
   const [slideAnim] = useState(new Animated.Value(-50));
 
   // Subscribe to sync status
   useEffect(() => {
+    let prevPending = 0;
     const unsubscribe = subscribeToSyncStatus((syncing, pending) => {
+      // Show "All synced" briefly when items finish syncing
+      if (prevPending > 0 && pending === 0 && !syncing) {
+        setShowAllSynced(true);
+        setTimeout(() => setShowAllSynced(false), 2000);
+      }
+      prevPending = pending;
       setIsSyncing(syncing);
       setPendingItems(pending);
     });
@@ -47,23 +55,23 @@ export function OfflineIndicator({ showSyncStatus = false }: OfflineIndicatorPro
 
   // Animate in/out
   useEffect(() => {
-    const shouldShow = !isOnline || (showSyncStatus && pendingItems > 0);
+    const shouldShow = !isOnline || (showSyncStatus && (pendingItems > 0 || showAllSynced));
 
     Animated.timing(slideAnim, {
       toValue: shouldShow ? 0 : -50,
       duration: 300,
       useNativeDriver: true,
     }).start();
-  }, [isOnline, pendingItems, showSyncStatus, slideAnim]);
+  }, [isOnline, pendingItems, showSyncStatus, showAllSynced, slideAnim]);
 
   const handleSyncPress = async () => {
     if (!isOnline || isSyncing) return;
     await forceSyncNow();
   };
 
-  // Don't show anything if loading or online with no pending items
+  // Don't show anything if loading or online with no pending items and not showing "all synced"
   if (isLoading) return null;
-  if (isOnline && pendingItems === 0 && !showSyncStatus) return null;
+  if (isOnline && pendingItems === 0 && !showAllSynced) return null;
 
   return (
     <Animated.View
@@ -99,12 +107,12 @@ export function OfflineIndicator({ showSyncStatus = false }: OfflineIndicatorPro
             </TouchableOpacity>
           )}
         </>
-      ) : (
+      ) : showAllSynced ? (
         <>
           <Check size={16} color={colors.white} />
           <Text style={styles.text}>All synced</Text>
         </>
-      )}
+      ) : null}
     </Animated.View>
   );
 }

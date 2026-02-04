@@ -24,13 +24,23 @@ export function RootNavigator() {
     needsOnboarding,
     isComplete,
     isLoading: isOnboardingLoading,
+    error: onboardingError,
   } = useOnboardingStore();
 
   const [onboardingChecked, setOnboardingChecked] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
 
-  // Initialize auth
+  // Initialize auth with error handling
   useEffect(() => {
-    initialize();
+    const initAuth = async () => {
+      try {
+        await initialize();
+      } catch (err) {
+        console.error('Auth initialization failed:', err);
+        setInitError(err instanceof Error ? err.message : 'Failed to initialize app');
+      }
+    };
+    initAuth();
   }, [initialize]);
 
   // Initialize offline sync services (network monitoring and auto-sync)
@@ -96,6 +106,37 @@ export function RootNavigator() {
 
   // Register for push notifications when authenticated
   usePushNotifications();
+
+  // Retry initialization
+  const handleRetry = useCallback(() => {
+    setInitError(null);
+    setOnboardingChecked(false);
+    initialize();
+  }, [initialize]);
+
+  // Show error screen if initialization failed
+  const errorMessage = initError || onboardingError;
+  if (errorMessage) {
+    return (
+      <View style={styles.errorContainer}>
+        <View style={styles.errorContent}>
+          <Text style={styles.errorIcon}>!</Text>
+          <Text style={styles.errorTitle}>Unable to Start</Text>
+          <Text style={styles.errorDescription}>
+            {errorMessage}
+          </Text>
+          <Text style={styles.errorHint}>
+            Please check your internet connection and try again.
+          </Text>
+          <View style={styles.retryButton}>
+            <Text style={styles.retryButtonText} onPress={handleRetry}>
+              Try Again
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   // Show loading screen while checking auth state
   if (!isInitialized || isLoading) {
@@ -163,5 +204,59 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     fontSize: fontSize.body,
     color: colors.text.secondary,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    padding: spacing.xl,
+  },
+  errorContent: {
+    alignItems: 'center',
+    maxWidth: 320,
+  },
+  errorIcon: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: colors.danger,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#FEF2F2',
+    textAlign: 'center',
+    lineHeight: 56,
+    marginBottom: spacing.lg,
+    overflow: 'hidden',
+  },
+  errorTitle: {
+    fontSize: fontSize.sectionTitle,
+    fontWeight: '600',
+    color: colors.text.primary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  errorDescription: {
+    fontSize: fontSize.body,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  errorHint: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  retryButton: {
+    backgroundColor: colors.primary.DEFAULT,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: colors.white,
+    fontSize: fontSize.body,
+    fontWeight: '500',
   },
 });

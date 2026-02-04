@@ -27,11 +27,16 @@
       "autoIncrement": true,
       "env": {
         "APP_ENV": "production",
-        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+        "EXPO_PUBLIC_SUPABASE_URL": "https://eynaufdznthvmylsaffs.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5bmF1ZmR6bnRodm15bHNhZmZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5NzUyODgsImV4cCI6MjA4MzU1MTI4OH0.clDuIv4I7NQRAciK7y8fyq3mz5xDdqLk_NZTcF2ZkJs"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascAppId": "6758681317"
+      }
+    }
   }
 }
