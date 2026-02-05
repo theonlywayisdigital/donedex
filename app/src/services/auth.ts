@@ -370,7 +370,7 @@ export async function signOut(): Promise<SignOutResult> {
 export async function resetPassword(email: string): Promise<ResetPasswordResult> {
   try {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'donedex://reset-password',
+      redirectTo: 'https://donedex-app.netlify.app/auth/callback',
     });
 
     if (error) {

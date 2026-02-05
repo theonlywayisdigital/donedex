@@ -19,7 +19,7 @@ const isWeb = Platform.OS === 'web';
  * This avoids conflicts with the adaptive desktop/mobile navigation structure
  */
 export const linking: LinkingOptions<any> = {
-  prefixes: [],
+  prefixes: ['https://donedex-app.netlify.app', 'donedex://'],
   enabled: isWeb,
   config: {
     screens: {
@@ -29,6 +29,8 @@ export const linking: LinkingOptions<any> = {
           Login: 'login',
           SignUp: 'signup',
           ForgotPassword: 'forgot-password',
+          AuthCallback: 'auth/callback',
+          SetPassword: 'auth/set-password',
         },
       },
       Onboarding: {

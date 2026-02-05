@@ -7,7 +7,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-const APP_URL = Deno.env.get('APP_URL') || 'https://app.donedex.com';
+const APP_URL = Deno.env.get('APP_URL') || 'https://donedex-app.netlify.app';
 
 // Service role client — bypasses RLS, used for admin operations
 const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -142,8 +142,12 @@ Deno.serve(async (req: Request) => {
         const { data: inviteData, error: inviteError } = await serviceClient.auth.admin.inviteUserByEmail(
           email,
           {
-            data: { full_name: fullName },
-            redirectTo: `${APP_URL}/login`,
+            data: {
+              full_name: fullName,
+              organisation_name: org.name,
+              organisation_id: organisationId,
+            },
+            redirectTo: `${APP_URL}/auth/callback`,
           }
         );
 

@@ -71,8 +71,8 @@ export function CompleteScreen({ navigation }: Props) {
   };
 
   const handleGoToDashboard = () => {
-    // This will be handled by RootNavigator detecting onboarding completion
-    // The navigation will automatically transition to the main app
+    // Mark onboarding as not needed - RootNavigator will detect this and show main app
+    useOnboardingStore.setState({ needsOnboarding: false, isComplete: true });
   };
 
   const handleRetry = () => {
