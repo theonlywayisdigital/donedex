@@ -2,6 +2,23 @@
 
 Commercial property inspection app. Tablet-first, mobile compatible, **web-first for admin features**.
 
+## Verification Discipline
+
+**CRITICAL: Do not declare a feature "done" or "fixed" until you have verified there are no remaining blockers.**
+
+Before telling the user something works:
+1. **Trace the full user flow end-to-end** — follow every step from trigger to completion
+2. **Check all integration points** — if a feature spans client, server, auth, and email, verify ALL of them
+3. **Identify what could still go wrong** — race conditions, missing redirects, wrong URLs, unconfigured services
+4. **Verify deployments** — code changes mean nothing if they aren't deployed to the right environments
+5. **Check infrastructure config** — Supabase auth settings, redirect URLs, edge function deployment status, DNS/AASA
+6. **Run TypeScript check** — `npx tsc --noEmit` must pass before declaring anything done
+
+When investigating bugs:
+- Launch multiple investigation agents in parallel to cover all possible root causes
+- Don't stop at the first issue found — there are often multiple compounding problems
+- Check the actual deployed state, not just the source code
+
 ## Documentation
 
 - **Branding:** @docs/branding.md (auto-loaded — design system, colours, components)
