@@ -3,7 +3,7 @@
     "apps": [],
     "details": [
       {
-        "appIDs": ["TAZWCSKDQY.com.donedex.app"],
+        "appIDs": ["F3JQRJU4F9.com.donedex.app"],
         "paths": [
           "/auth/callback",
           "/auth/set-password",
