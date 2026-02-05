@@ -1,10 +1,52 @@
 import { create } from 'zustand';
+import { Platform } from 'react-native';
 import type { User, Session } from '@supabase/supabase-js';
 import * as authService from '../services/auth';
 import * as superAdminService from '../services/superAdmin';
 import type { UserRole } from '../services/auth';
 import type { UserProfile, Organisation } from '../types';
 import type { SuperAdminPermission, ImpersonationContext } from '../types/superAdmin';
+
+/**
+ * Check the current URL for Supabase auth callback type parameters.
+ * Supabase's JS client auto-detects tokens in URL hash and creates a session
+ * BEFORE React mounts. We need to capture the `type` parameter (invite/recovery)
+ * before it gets consumed, so we can route the user to SetPassword screen.
+ */
+function detectAuthCallbackType(): 'invite' | 'recovery' | null {
+  if (Platform.OS !== 'web') return null;
+  try {
+    const hash = window.location.hash;
+    const search = window.location.search;
+
+    // Check hash fragment first (Supabase typically sends tokens here)
+    if (hash && hash.length > 1) {
+      const params = new URLSearchParams(hash.substring(1));
+      const type = params.get('type');
+      if (type === 'invite' || type === 'signup') return 'invite';
+      if (type === 'recovery') return 'recovery';
+    }
+
+    // Also check query params
+    if (search) {
+      const params = new URLSearchParams(search);
+      const type = params.get('type');
+      if (type === 'invite' || type === 'signup') return 'invite';
+      if (type === 'recovery') return 'recovery';
+    }
+
+    // Check if we're on the /auth/callback path (even if tokens already consumed)
+    if (window.location.pathname.includes('/auth/callback')) {
+      // If we're on the callback path but no type found, Supabase may have already
+      // consumed the tokens. Check if there's a session — if so, it was likely an invite.
+      return null;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 // Timeout wrapper for async operations
 const withTimeout = <T>(promise: Promise<T>, ms: number, fallback?: T): Promise<T> => {
@@ -29,6 +71,12 @@ interface AuthState {
   role: UserRole | null;
   isLoading: boolean;
   isInitialized: boolean;
+
+  // Password Setup State (for invite/recovery flows)
+  // When Supabase auto-detects tokens in URL and creates a session,
+  // we need to know if the user still needs to set their password.
+  needsPasswordSetup: boolean;
+  passwordSetupType: 'invite' | 'recovery' | null;
 
   // OTP State (for 2FA login)
   pendingOTPUser: User | null;
@@ -57,6 +105,7 @@ interface AuthState {
   signUp: (email: string, password: string, fullName?: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   setSession: (session: Session | null) => void;
+  clearPasswordSetup: () => void;
 
   // Refresh Actions
   refreshOrgData: () => Promise<void>;
@@ -78,6 +127,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   role: null,
   isLoading: true,
   isInitialized: false,
+
+  // Password setup initial state
+  needsPasswordSetup: false,
+  passwordSetupType: null,
 
   // OTP initial state
   pendingOTPUser: null,
@@ -130,10 +183,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       set({ isLoading: true });
 
+      // CRITICAL: Detect auth callback type BEFORE Supabase auto-session consumes URL tokens.
+      // Supabase JS client auto-detects #access_token=...&type=invite in URL hash
+      // and creates a session before React mounts. We capture the type here so we can
+      // route the user to SetPassword screen after the auto-session is established.
+      const authCallbackType = detectAuthCallbackType();
+      if (authCallbackType) {
+        console.log('[AuthStore] Detected auth callback type:', authCallbackType);
+      }
+
       const session = await authService.getCurrentSession();
 
       if (session?.user) {
         console.log('[AuthStore] Session found, user:', session.user.id);
+
+        // If we detected an invite/recovery callback, the user needs to set their password.
+        // The session is valid (Supabase auto-created it), but we must show SetPassword first.
+        const needsPasswordSetup = authCallbackType === 'invite' || authCallbackType === 'recovery';
+        if (needsPasswordSetup) {
+          console.log('[AuthStore] User needs password setup, type:', authCallbackType);
+          // Clean up URL hash so refreshing doesn't re-trigger
+          if (Platform.OS === 'web') {
+            try {
+              window.history.replaceState(null, '', window.location.pathname);
+            } catch { /* ignore */ }
+          }
+        }
 
         // Fetch ALL data in parallel - including super admin status
         const [profile, orgData, superAdminData] = await Promise.all([
@@ -162,9 +237,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           role: orgData?.role as UserRole | null,
           isSuperAdmin: !!superAdminData.data,
           superAdminPermissions: superAdminData.data?.permissions || [],
+          needsPasswordSetup,
+          passwordSetupType: needsPasswordSetup ? authCallbackType : null,
         });
 
-        console.log('[AuthStore] State set, isSuperAdmin:', !!superAdminData.data);
+        console.log('[AuthStore] State set, isSuperAdmin:', !!superAdminData.data, 'needsPasswordSetup:', needsPasswordSetup);
       } else {
         set({
           user: null,
@@ -175,6 +252,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isSuperAdmin: false,
           superAdminPermissions: [],
           impersonationContext: null,
+          needsPasswordSetup: false,
+          passwordSetupType: null,
         });
       }
 
@@ -436,6 +515,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       isSuperAdmin: false,
       superAdminPermissions: [],
       impersonationContext: null,
+      needsPasswordSetup: false,
+      passwordSetupType: null,
       isLoading: false,
     });
   },
@@ -511,6 +592,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   setSession: (session: Session | null) => {
     set({ session, user: session?.user ?? null });
+  },
+
+  clearPasswordSetup: () => {
+    set({ needsPasswordSetup: false, passwordSetupType: null });
   },
 
   // Super Admin Actions

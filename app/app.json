@@ -2,6 +2,7 @@
   "expo": {
     "name": "Donedex",
     "slug": "donedex",
+    "scheme": "donedex",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/donedex-icon.png",
@@ -15,6 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.donedex.app",
+      "associatedDomains": ["applinks:donedex-app.netlify.app"],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }

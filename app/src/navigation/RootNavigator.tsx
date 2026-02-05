@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, ActivityIndicator, StyleSheet, Text, Platform, AppState } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AuthNavigator } from './AuthNavigator';
 import { AdaptiveNavigator } from './AdaptiveNavigator';
 import { OnboardingNavigator } from './OnboardingNavigator';
+import { SetPasswordScreen } from '../screens/auth/SetPasswordScreen';
 import { useAuthStore } from '../store/authStore';
 import { useOnboardingStore } from '../store/onboardingStore';
 import { colors, fontSize, spacing } from '../constants/theme';
@@ -16,8 +18,28 @@ import { OfflineIndicator } from '../components/ui/OfflineIndicator';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 
+// Simple stack navigator for the password setup flow (invite/recovery)
+// This renders outside AuthNavigator because the user already HAS a session
+// (Supabase auto-created it from URL tokens), they just need to set their password.
+type PasswordSetupParamList = {
+  SetPassword: { type: 'invite' | 'recovery' };
+};
+const PasswordSetupStack = createNativeStackNavigator<PasswordSetupParamList>();
+
+function PasswordSetupNavigator({ type }: { type: 'invite' | 'recovery' }) {
+  return (
+    <PasswordSetupStack.Navigator screenOptions={{ headerShown: false }}>
+      <PasswordSetupStack.Screen
+        name="SetPassword"
+        component={SetPasswordScreen}
+        initialParams={{ type }}
+      />
+    </PasswordSetupStack.Navigator>
+  );
+}
+
 export function RootNavigator() {
-  const { isLoading, isInitialized, session, initialize, isSuperAdmin, refreshOrgData, pendingOTPEmail } = useAuthStore();
+  const { isLoading, isInitialized, session, initialize, isSuperAdmin, refreshOrgData, pendingOTPEmail, needsPasswordSetup, passwordSetupType } = useAuthStore();
   const {
     initialize: initializeOnboarding,
     needsOnboarding,
@@ -166,6 +188,12 @@ export function RootNavigator() {
       return <AuthNavigator />;
     }
 
+    // Password setup gate: user has a session (from invite/recovery link)
+    // but hasn't set their password yet. Show SetPassword screen.
+    if (needsPasswordSetup && passwordSetupType) {
+      return <PasswordSetupNavigator type={passwordSetupType} />;
+    }
+
     // Show onboarding if needed (but not for super admins)
     if (needsOnboarding && !isComplete && !isSuperAdmin) {
       return <OnboardingNavigator />;
@@ -187,7 +215,7 @@ export function RootNavigator() {
   return (
     <ErrorBoundary>
       <View style={styles.container}>
-        <NavigationContainer linking={Platform.OS === 'web' ? linking : undefined}>
+        <NavigationContainer linking={linking}>
           {getNavigator()}
         </NavigationContainer>
         {session && !needsOnboarding && <ImpersonationBanner />}

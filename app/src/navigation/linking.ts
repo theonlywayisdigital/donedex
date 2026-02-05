@@ -1,6 +1,6 @@
 /**
- * Web linking configuration for React Navigation
- * Enables deep linking, browser back/forward, and bookmarkable URLs
+ * Linking configuration for React Navigation
+ * Enables deep linking on web (URL routing, back/forward) and native (universal links, URL schemes).
  *
  * NOTE: This is a minimal config that only handles Auth routes.
  * The AdaptiveNavigator has different structures for desktop (flat stack)
@@ -9,18 +9,15 @@
  */
 
 import { LinkingOptions } from '@react-navigation/native';
-import { Platform } from 'react-native';
-
-// Only enable linking on web
-const isWeb = Platform.OS === 'web';
 
 /**
- * Minimal linking configuration - Auth routes only
- * This avoids conflicts with the adaptive desktop/mobile navigation structure
+ * Linking configuration — enabled on ALL platforms
+ * Web: handles URL routing, browser back/forward, bookmarkable URLs
+ * Native: handles donedex:// custom URL scheme and universal links
  */
 export const linking: LinkingOptions<any> = {
   prefixes: ['https://donedex-app.netlify.app', 'donedex://'],
-  enabled: isWeb,
+  enabled: true,
   config: {
     screens: {
       // Auth screens only - these are consistent across all navigation modes

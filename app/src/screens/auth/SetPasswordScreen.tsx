@@ -40,7 +40,7 @@ export function SetPasswordScreen({ navigation, route }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
 
-  const { initialize } = useAuthStore();
+  const { initialize, clearPasswordSetup } = useAuthStore();
 
   const validateForm = (): boolean => {
     if (!password) {
@@ -89,9 +89,9 @@ export function SetPasswordScreen({ navigation, route }: Props) {
   };
 
   const handleContinue = () => {
-    // Auth store will now have the session, RootNavigator will handle routing
-    // Force a re-render by navigating - the RootNavigator will pick up the session
+    // Clear the password setup flag — RootNavigator will re-render
     // and show the main app or onboarding as appropriate
+    clearPasswordSetup();
   };
 
   if (isComplete) {

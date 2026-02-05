@@ -1,0 +1,17 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": ["TAZWCSKDQY.com.donedex.app"],
+        "paths": [
+          "/auth/callback",
+          "/auth/set-password",
+          "/login",
+          "/signup",
+          "/forgot-password"
+        ]
+      }
+    ]
+  }
+}
