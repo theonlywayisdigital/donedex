@@ -31,21 +31,43 @@ interface Props {
 export function ProfileScreen({ navigation }: Props) {
   const { user, profile, initialize } = useAuthStore();
 
-  const [fullName, setFullName] = useState(profile?.full_name || '');
+  // Split existing full_name into first/last for initial values
+  const nameParts = (profile?.full_name || '').split(' ');
+  const initialFirstName = nameParts[0] || '';
+  const initialLastName = nameParts.slice(1).join(' ') || '';
+
+  const [firstName, setFirstName] = useState(initialFirstName);
+  const [lastName, setLastName] = useState(initialLastName);
   const [phone, setPhone] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [initialPhone, setInitialPhone] = useState('');
 
   // Warn user on back navigation with unsaved changes
   useUnsavedChanges(hasChanges);
 
+  // Load phone from database on mount
   useEffect(() => {
-    // Track changes
-    const nameChanged = fullName !== (profile?.full_name || '');
-    const phoneChanged = phone !== '';
+    const loadPhone = async () => {
+      if (!user?.id) return;
+      const { data } = await (supabase
+        .from('user_profiles') as ReturnType<typeof supabase.from>)
+        .select('phone_number')
+        .eq('id', user.id)
+        .single();
+      const phoneVal = (data as Record<string, unknown>)?.phone_number as string || '';
+      setPhone(phoneVal);
+      setInitialPhone(phoneVal);
+    };
+    loadPhone();
+  }, [user?.id]);
+
+  useEffect(() => {
+    const nameChanged = firstName !== initialFirstName || lastName !== initialLastName;
+    const phoneChanged = phone !== initialPhone;
     setHasChanges(nameChanged || phoneChanged);
-  }, [fullName, phone, profile]);
+  }, [firstName, lastName, phone, initialFirstName, initialLastName, initialPhone]);
 
   const handleSave = async () => {
     if (!user) return;
@@ -54,13 +76,16 @@ export function ProfileScreen({ navigation }: Props) {
     setIsLoading(true);
 
     try {
-      // Update user_profiles table
+      const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+
+      // Update user_profiles table (including phone_number)
       const { error: profileError } = await (supabase
-        .from('user_profiles') as any)
+        .from('user_profiles') as ReturnType<typeof supabase.from>)
         .update({
-          full_name: fullName.trim(),
+          full_name: fullName,
+          phone_number: phone.trim() || null,
           updated_at: new Date().toISOString(),
-        })
+        } as Record<string, unknown>)
         .eq('id', user.id);
 
       if (profileError) {
@@ -71,7 +96,7 @@ export function ProfileScreen({ navigation }: Props) {
 
       // Also update auth metadata
       const { error: authError } = await supabase.auth.updateUser({
-        data: { full_name: fullName.trim() },
+        data: { full_name: fullName },
       });
 
       if (authError) {
@@ -81,6 +106,7 @@ export function ProfileScreen({ navigation }: Props) {
       // Refresh session to pick up changes
       await initialize();
 
+      setInitialPhone(phone.trim());
       showNotification('Success', 'Your profile has been updated.');
       setHasChanges(false);
     } catch (err) {
@@ -105,7 +131,7 @@ export function ProfileScreen({ navigation }: Props) {
           <View style={styles.avatarSection}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
-                {fullName ? fullName.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() || 'U'}
+                {firstName ? firstName.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() || 'U'}
               </Text>
             </View>
             <Text style={styles.emailText}>{user?.email}</Text>
@@ -120,16 +146,24 @@ export function ProfileScreen({ navigation }: Props) {
             )}
 
             <Input
-              label="Full Name"
-              placeholder="Enter your full name"
-              value={fullName}
-              onChangeText={setFullName}
+              label="First name"
+              placeholder="Enter your first name"
+              value={firstName}
+              onChangeText={setFirstName}
               autoCapitalize="words"
             />
 
             <Input
-              label="Phone Number"
-              placeholder="Enter your phone number"
+              label="Last name"
+              placeholder="Enter your last name"
+              value={lastName}
+              onChangeText={setLastName}
+              autoCapitalize="words"
+            />
+
+            <Input
+              label="Phone number"
+              placeholder="Enter your phone number (optional)"
               value={phone}
               onChangeText={setPhone}
               keyboardType="phone-pad"

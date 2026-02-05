@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { showNotification, showConfirm, showDestructiveConfirm } from '../../utils/alert';
 import { useNavigation, useRoute, useFocusEffect, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -20,6 +21,7 @@ import { Icon } from '../../components/ui';
 import {
   fetchOrganisationDetails,
   updateOrganisation,
+  updateOrganisationDiscount,
   setOrganisationPlan,
   archiveOrganisation,
   restoreOrganisation,
@@ -29,8 +31,10 @@ import {
   unblockOrganisation,
   fetchOrganisationUsage,
   fetchBillingHistory,
+  provisionOrgUsers,
   type OrganisationUsage,
   type BillingHistoryEntry,
+  type OrgUserToProvision,
 } from '../../services/superAdmin';
 import { fetchBillingStatus } from '../../services/billing';
 import type { UserSummary } from '../../types/superAdmin';
@@ -62,6 +66,11 @@ interface OrganisationData {
   blocked?: boolean;
   blocked_at?: string | null;
   blocked_reason?: string | null;
+  // Discount fields
+  discount_percent?: number;
+  discount_notes?: string | null;
+  discount_applied_by?: string | null;
+  discount_applied_at?: string | null;
 }
 
 interface BillingData {
@@ -98,7 +107,21 @@ export function OrganisationDetailScreen() {
   const [showBillingModal, setShowBillingModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showBlockModal, setShowBlockModal] = useState(false);
+  const [showDiscountModal, setShowDiscountModal] = useState(false);
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [blockReason, setBlockReason] = useState('');
+
+  // Add member form state
+  const [newMemberFirstName, setNewMemberFirstName] = useState('');
+  const [newMemberLastName, setNewMemberLastName] = useState('');
+  const [newMemberEmail, setNewMemberEmail] = useState('');
+  const [newMemberPhone, setNewMemberPhone] = useState('');
+  const [newMemberRole, setNewMemberRole] = useState<OrgUserToProvision['role']>('admin');
+  const [addingMember, setAddingMember] = useState(false);
+
+  // Discount form state
+  const [editDiscountPercent, setEditDiscountPercent] = useState(0);
+  const [editDiscountNotes, setEditDiscountNotes] = useState('');
 
   // Edit form state
   const [editName, setEditName] = useState('');
@@ -200,6 +223,54 @@ export function OrganisationDetailScreen() {
 
   const handleViewUser = (user: UserSummary) => {
     navigation.navigate('UserDetail', { userId: user.id });
+  };
+
+  const handleAddMember = async () => {
+    const email = newMemberEmail.trim().toLowerCase();
+    const firstName = newMemberFirstName.trim();
+    const lastName = newMemberLastName.trim();
+    const phone = newMemberPhone.trim() || undefined;
+
+    if (!email || !firstName || !lastName) {
+      showNotification('Error', 'First name, last name and email are required');
+      return;
+    }
+
+    setAddingMember(true);
+    try {
+      const result = await provisionOrgUsers(orgId, [
+        { email, firstName, lastName, phone, role: newMemberRole },
+      ]);
+
+      if (result.error) {
+        showNotification('Error', result.error.message);
+        return;
+      }
+
+      const provisionResult = result.data?.[0];
+      if (provisionResult?.status === 'error') {
+        showNotification('Error', provisionResult.error || 'Failed to add member');
+        return;
+      }
+
+      const displayName = `${firstName} ${lastName}`;
+      const statusMsg = provisionResult?.status === 'existing_user_added'
+        ? `${displayName} (existing account) has been added to this organisation.`
+        : `${displayName} has been invited and added to this organisation. They will receive an email to set their password.`;
+
+      showNotification('Member added', statusMsg);
+      setShowAddMemberModal(false);
+      setNewMemberFirstName('');
+      setNewMemberLastName('');
+      setNewMemberEmail('');
+      setNewMemberPhone('');
+      setNewMemberRole('admin');
+      await loadData();
+    } catch (err) {
+      showNotification('Error', 'An unexpected error occurred');
+    } finally {
+      setAddingMember(false);
+    }
   };
 
   const handleViewAsOrg = () => {
@@ -380,6 +451,30 @@ export function OrganisationDetailScreen() {
     }
   };
 
+  // Discount handlers
+  const openDiscountModal = () => {
+    setEditDiscountPercent(organisation?.discount_percent || 0);
+    setEditDiscountNotes(organisation?.discount_notes || '');
+    setShowDiscountModal(true);
+  };
+
+  const handleSaveDiscount = async () => {
+    setSaving(true);
+    const result = await updateOrganisationDiscount(orgId, {
+      discountPercent: editDiscountPercent,
+      discountNotes: editDiscountNotes.trim() || undefined,
+    });
+    setSaving(false);
+
+    if (result.error) {
+      showNotification('Error', result.error.message);
+    } else {
+      showNotification('Success', 'Discount updated');
+      setShowDiscountModal(false);
+      loadData();
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-GB', {
       day: 'numeric',
@@ -541,6 +636,53 @@ export function OrganisationDetailScreen() {
           </View>
         </View>
 
+        {/* Discount Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Discount</Text>
+            {canEdit && !isArchived && (
+              <TouchableOpacity style={styles.editDiscountBtn} onPress={openDiscountModal}>
+                <Icon name="edit" size={14} color={colors.primary.DEFAULT} />
+                <Text style={styles.editDiscountBtnText}>Edit</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          {(organisation.discount_percent ?? 0) > 0 ? (
+            <View style={[styles.infoCard, styles.discountCard]}>
+              <View style={styles.discountBadgeContainer}>
+                <View style={[
+                  styles.discountBadge,
+                  organisation.discount_percent === 100 && styles.discountBadgeFree,
+                ]}>
+                  <Text style={[
+                    styles.discountBadgeText,
+                    organisation.discount_percent === 100 && styles.discountBadgeTextFree,
+                  ]}>
+                    {organisation.discount_percent === 100
+                      ? 'Free Access'
+                      : `${organisation.discount_percent}% off`}
+                  </Text>
+                </View>
+              </View>
+              {organisation.discount_notes && (
+                <View style={styles.discountNotesContainer}>
+                  <Text style={styles.discountNotesLabel}>Reason:</Text>
+                  <Text style={styles.discountNotesText}>{organisation.discount_notes}</Text>
+                </View>
+              )}
+              {organisation.discount_applied_at && (
+                <Text style={styles.discountAppliedDate}>
+                  {`Applied ${formatDate(organisation.discount_applied_at)}`}
+                </Text>
+              )}
+            </View>
+          ) : (
+            <View style={styles.infoCard}>
+              <Text style={styles.noDiscountText}>No discount applied</Text>
+            </View>
+          )}
+        </View>
+
         {/* Contact Info */}
         {(organisation.contact_email || organisation.contact_phone) && (
           <View style={styles.section}>
@@ -696,7 +838,18 @@ export function OrganisationDetailScreen() {
         </View>
 
         {/* Users List */}
-        <Text style={styles.sectionTitle}>Team Members ({users.length})</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>{`Team Members (${users.length})`}</Text>
+          {canEdit && (
+            <TouchableOpacity
+              style={styles.addMemberBtn}
+              onPress={() => setShowAddMemberModal(true)}
+            >
+              <Icon name="plus" size={16} color={colors.white} />
+              <Text style={styles.addMemberBtnText}>Add member</Text>
+            </TouchableOpacity>
+          )}
+        </View>
         {users.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyText}>No users in this organisation</Text>
@@ -1009,6 +1162,201 @@ export function OrganisationDetailScreen() {
                   <ActivityIndicator size="small" color={colors.white} />
                 ) : (
                   <Text style={styles.blockButtonText}>Block Organisation</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Discount Modal */}
+      <Modal visible={showDiscountModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Discount</Text>
+              <TouchableOpacity onPress={() => setShowDiscountModal(false)}>
+                <Icon name="x" size={24} color={colors.text.secondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.discountLabel}>
+              {`Discount: ${editDiscountPercent}%${editDiscountPercent === 100 ? ' (Free Access)' : ''}`}
+            </Text>
+            <Slider
+              style={styles.discountSlider}
+              value={editDiscountPercent}
+              onValueChange={(val) => setEditDiscountPercent(Math.round(val))}
+              minimumValue={0}
+              maximumValue={100}
+              step={5}
+              minimumTrackTintColor={colors.primary.DEFAULT}
+              maximumTrackTintColor={colors.border.light}
+              thumbTintColor={colors.primary.DEFAULT}
+            />
+            <View style={styles.discountMarkers}>
+              <Text style={styles.discountMarker}>0%</Text>
+              <Text style={styles.discountMarker}>25%</Text>
+              <Text style={styles.discountMarker}>50%</Text>
+              <Text style={styles.discountMarker}>75%</Text>
+              <Text style={styles.discountMarker}>100%</Text>
+            </View>
+
+            {editDiscountPercent > 0 && (
+              <>
+                <Text style={styles.inputLabel}>Discount reason</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  value={editDiscountNotes}
+                  onChangeText={setEditDiscountNotes}
+                  placeholder="e.g. Partnership deal, demo account, early adopter"
+                  placeholderTextColor={colors.text.tertiary}
+                  multiline
+                  numberOfLines={2}
+                />
+              </>
+            )}
+
+            {editDiscountPercent === 100 && (
+              <View style={styles.freeAccessNote}>
+                <Icon name="info" size={16} color={colors.primary.DEFAULT} />
+                <Text style={styles.freeAccessNoteText}>
+                  100% discount grants free access without billing
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowDiscountModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveButton, saving && styles.disabledButton]}
+                onPress={handleSaveDiscount}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Text style={styles.saveButtonText}>Save Discount</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Add Member Modal */}
+      <Modal visible={showAddMemberModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add member</Text>
+              <TouchableOpacity onPress={() => setShowAddMemberModal(false)}>
+                <Icon name="x" size={24} color={colors.text.secondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.inputLabel}>First name *</Text>
+            <TextInput
+              style={styles.input}
+              value={newMemberFirstName}
+              onChangeText={setNewMemberFirstName}
+              placeholder="John"
+              placeholderTextColor={colors.text.tertiary}
+              autoCapitalize="words"
+            />
+
+            <Text style={styles.inputLabel}>Last name *</Text>
+            <TextInput
+              style={styles.input}
+              value={newMemberLastName}
+              onChangeText={setNewMemberLastName}
+              placeholder="Smith"
+              placeholderTextColor={colors.text.tertiary}
+              autoCapitalize="words"
+            />
+
+            <Text style={styles.inputLabel}>Email *</Text>
+            <TextInput
+              style={styles.input}
+              value={newMemberEmail}
+              onChangeText={setNewMemberEmail}
+              placeholder="john@example.com"
+              placeholderTextColor={colors.text.tertiary}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+
+            <Text style={styles.inputLabel}>Phone number</Text>
+            <TextInput
+              style={styles.input}
+              value={newMemberPhone}
+              onChangeText={setNewMemberPhone}
+              placeholder="Optional"
+              placeholderTextColor={colors.text.tertiary}
+              keyboardType="phone-pad"
+            />
+
+            <Text style={styles.inputLabel}>Role</Text>
+            <View style={styles.roleSelector}>
+              <TouchableOpacity
+                style={[
+                  styles.roleOption,
+                  newMemberRole === 'admin' && styles.roleOptionSelected,
+                ]}
+                onPress={() => setNewMemberRole('admin')}
+              >
+                <Text
+                  style={[
+                    styles.roleOptionText,
+                    newMemberRole === 'admin' && styles.roleOptionTextSelected,
+                  ]}
+                >
+                  Admin
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.roleOption,
+                  newMemberRole === 'user' && styles.roleOptionSelected,
+                ]}
+                onPress={() => setNewMemberRole('user')}
+              >
+                <Text
+                  style={[
+                    styles.roleOptionText,
+                    newMemberRole === 'user' && styles.roleOptionTextSelected,
+                  ]}
+                >
+                  User
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.addMemberHint}>
+              {`If the user doesn't have an account, they'll receive an email to set their password.`}
+            </Text>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowAddMemberModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveButton, addingMember && styles.disabledButton]}
+                onPress={handleAddMember}
+                disabled={addingMember}
+              >
+                {addingMember ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Text style={styles.saveButtonText}>Add member</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1562,5 +1910,153 @@ const styles = StyleSheet.create({
     fontSize: fontSize.body,
     fontWeight: fontWeight.bold,
     color: colors.white,
+  },
+  // Section header with edit button
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  editDiscountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  editDiscountBtnText: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.medium,
+    color: colors.primary.DEFAULT,
+  },
+  // Discount card styles
+  discountCard: {
+    borderColor: colors.success + '50',
+    backgroundColor: colors.success + '05',
+  },
+  discountBadgeContainer: {
+    marginBottom: spacing.sm,
+  },
+  discountBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.success + '20',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+  },
+  discountBadgeFree: {
+    backgroundColor: colors.primary.light,
+  },
+  discountBadgeText: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.bold,
+    color: colors.success,
+  },
+  discountBadgeTextFree: {
+    color: colors.primary.DEFAULT,
+  },
+  discountNotesContainer: {
+    marginBottom: spacing.xs,
+  },
+  discountNotesLabel: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+    marginBottom: spacing.xs,
+  },
+  discountNotesText: {
+    fontSize: fontSize.body,
+    color: colors.text.primary,
+  },
+  discountAppliedDate: {
+    fontSize: fontSize.caption,
+    color: colors.text.tertiary,
+    marginTop: spacing.xs,
+  },
+  noDiscountText: {
+    fontSize: fontSize.body,
+    color: colors.text.secondary,
+    fontStyle: 'italic',
+  },
+  // Discount modal styles
+  discountLabel: {
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    color: colors.text.primary,
+    marginBottom: spacing.sm,
+  },
+  discountSlider: {
+    width: '100%',
+    height: 40,
+  },
+  discountMarkers: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  discountMarker: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+  },
+  freeAccessNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary.light,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  freeAccessNoteText: {
+    fontSize: fontSize.caption,
+    color: colors.primary.DEFAULT,
+    flex: 1,
+  },
+  // Add member button & modal styles
+  addMemberBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.primary.DEFAULT,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+  },
+  addMemberBtnText: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.bold,
+    color: colors.white,
+  },
+  roleSelector: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  roleOption: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+  },
+  roleOptionSelected: {
+    borderColor: colors.primary.DEFAULT,
+    backgroundColor: colors.primary.light,
+  },
+  roleOptionText: {
+    fontSize: fontSize.body,
+    color: colors.text.primary,
+  },
+  roleOptionTextSelected: {
+    color: colors.primary.DEFAULT,
+    fontWeight: fontWeight.bold,
+  },
+  addMemberHint: {
+    fontSize: fontSize.caption,
+    color: colors.text.secondary,
+    marginTop: spacing.md,
+    lineHeight: 18,
   },
 });

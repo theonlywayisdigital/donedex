@@ -35,6 +35,13 @@ export interface Database {
           blocked_reason: string | null;
           archived: boolean;
           archived_at: string | null;
+          // Billing interval
+          billing_interval: string;
+          // Discount
+          discount_percent: number;
+          discount_notes: string | null;
+          discount_applied_by: string | null;
+          discount_applied_at: string | null;
           // Onboarding
           onboarding_completed_at: string | null;
           // Meta
@@ -52,6 +59,11 @@ export interface Database {
           current_plan_id?: string | null;
           trial_ends_at?: string | null;
           subscription_ends_at?: string | null;
+          billing_interval?: string;
+          discount_percent?: number;
+          discount_notes?: string | null;
+          discount_applied_by?: string | null;
+          discount_applied_at?: string | null;
           blocked?: boolean;
           blocked_at?: string | null;
           blocked_reason?: string | null;
@@ -72,6 +84,11 @@ export interface Database {
           current_plan_id?: string | null;
           trial_ends_at?: string | null;
           subscription_ends_at?: string | null;
+          billing_interval?: string;
+          discount_percent?: number;
+          discount_notes?: string | null;
+          discount_applied_by?: string | null;
+          discount_applied_at?: string | null;
           blocked?: boolean;
           blocked_at?: string | null;
           blocked_reason?: string | null;

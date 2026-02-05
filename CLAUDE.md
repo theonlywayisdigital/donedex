@@ -31,6 +31,48 @@ supabase start                    # Start local Supabase
 supabase db reset                 # Reset database with migrations
 supabase functions serve          # Run Edge Functions locally
 supabase gen types typescript     # Generate TypeScript types
+```
+
+## Supabase Remote Database Access
+
+**Project:** InspectorApp
+**Reference ID:** eynaufdznthvmylsaffs
+**Region:** West Europe (London)
+
+### Running SQL on Production
+
+The Supabase CLI is logged in (credentials stored in macOS Keychain under "Supabase CLI").
+
+**Method: Use the Supabase Management API**
+
+```bash
+# Get access token from keychain
+TOKEN=$(security find-generic-password -a "supabase" -s "Supabase CLI" -w | sed 's/go-keyring-base64://' | base64 -d)
+
+# Run a query
+curl -s -X POST 'https://api.supabase.com/v1/projects/eynaufdznthvmylsaffs/database/query' \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "SELECT * FROM subscription_plans LIMIT 3"}'
+```
+
+**Important Notes:**
+- Use single quotes around JSON body in curl
+- Escape single quotes in SQL with `'\''`
+- The API returns `[]` for DDL statements (ALTER, CREATE, etc.)
+- This works even without Docker running
+
+### Migration Workflow
+
+1. Create migration file in `supabase/migrations/` with timestamp prefix
+2. For production: Use the Management API to run SQL directly
+3. The `supabase db push` command requires migration history sync (often broken)
+
+### Verify CLI is Logged In
+
+```bash
+npx supabase projects list         # Should show InspectorApp as linked
+npx supabase orgs list             # Shows all orgs you have access to
 
 # Testing
 npm test                          # Run tests

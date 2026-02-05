@@ -37,3 +37,17 @@ enabled = false
 
 [auth.external.apple]
 enabled = false
+
+# Edge Functions
+# verify_jwt = false because these functions handle their own auth verification
+[functions.provision-org-users]
+verify_jwt = false
+
+[functions.send-login-otp]
+verify_jwt = false
+
+[functions.template-builder-chat]
+verify_jwt = false
+
+[functions.template-from-document]
+verify_jwt = false

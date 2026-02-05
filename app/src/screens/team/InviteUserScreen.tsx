@@ -35,7 +35,10 @@ export function InviteUserScreen() {
   const navigation = useNavigation();
   const { organisation, user } = useAuthStore();
 
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [selectedRole, setSelectedRole] = useState<UserRole>('user');
   const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
   const [records, setRecords] = useState<RecordModel[]>([]);
@@ -66,6 +69,16 @@ export function InviteUserScreen() {
   };
 
   const handleInvite = async () => {
+    if (!firstName.trim()) {
+      showNotification('Error', 'Please enter a first name');
+      return;
+    }
+
+    if (!lastName.trim()) {
+      showNotification('Error', 'Please enter a last name');
+      return;
+    }
+
     if (!email.trim()) {
       showNotification('Error', 'Please enter an email address');
       return;
@@ -114,9 +127,35 @@ export function InviteUserScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
+      {/* First Name */}
+      <View style={styles.section}>
+        <Text style={styles.label}>First name *</Text>
+        <TextInput
+          style={styles.input}
+          value={firstName}
+          onChangeText={setFirstName}
+          placeholder="First name"
+          placeholderTextColor={colors.text.tertiary}
+          autoCapitalize="words"
+        />
+      </View>
+
+      {/* Last Name */}
+      <View style={styles.section}>
+        <Text style={styles.label}>Last name *</Text>
+        <TextInput
+          style={styles.input}
+          value={lastName}
+          onChangeText={setLastName}
+          placeholder="Last name"
+          placeholderTextColor={colors.text.tertiary}
+          autoCapitalize="words"
+        />
+      </View>
+
       {/* Email Input */}
       <View style={styles.section}>
-        <Text style={styles.label}>Email Address *</Text>
+        <Text style={styles.label}>Email address *</Text>
         <TextInput
           style={styles.input}
           value={email}
@@ -126,6 +165,19 @@ export function InviteUserScreen() {
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
+        />
+      </View>
+
+      {/* Phone */}
+      <View style={styles.section}>
+        <Text style={styles.label}>Phone number</Text>
+        <TextInput
+          style={styles.input}
+          value={phone}
+          onChangeText={setPhone}
+          placeholder="Optional"
+          placeholderTextColor={colors.text.tertiary}
+          keyboardType="phone-pad"
         />
       </View>
 

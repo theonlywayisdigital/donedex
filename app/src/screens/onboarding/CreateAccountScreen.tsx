@@ -26,7 +26,8 @@ interface Props {
 }
 
 export function CreateAccountScreen({ navigation }: Props) {
-  const [fullName, setFullName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -36,8 +37,12 @@ export function CreateAccountScreen({ navigation }: Props) {
   const { signUp } = useAuthStore();
 
   const validateForm = (): boolean => {
-    if (!fullName.trim()) {
-      setError('Please enter your full name');
+    if (!firstName.trim()) {
+      setError('Please enter your first name');
+      return false;
+    }
+    if (!lastName.trim()) {
+      setError('Please enter your last name');
       return false;
     }
     if (!email.trim()) {
@@ -73,7 +78,8 @@ export function CreateAccountScreen({ navigation }: Props) {
     setIsSubmitting(true);
 
     try {
-      const result = await signUp(email.trim(), password);
+      const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+      const result = await signUp(email.trim(), password, fullName);
 
       if (result.error) {
         setError(result.error);
@@ -129,12 +135,21 @@ export function CreateAccountScreen({ navigation }: Props) {
             )}
 
             <Input
-              label="Full Name"
-              placeholder="Enter your full name"
-              value={fullName}
-              onChangeText={setFullName}
+              label="First Name"
+              placeholder="Enter your first name"
+              value={firstName}
+              onChangeText={setFirstName}
               autoCapitalize="words"
-              autoComplete="name"
+              autoComplete="given-name"
+            />
+
+            <Input
+              label="Last Name"
+              placeholder="Enter your last name"
+              value={lastName}
+              onChangeText={setLastName}
+              autoCapitalize="words"
+              autoComplete="family-name"
             />
 
             <Input

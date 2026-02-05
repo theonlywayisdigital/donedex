@@ -27,13 +27,15 @@ export function LoginScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [showOTPInput, setShowOTPInput] = useState(false);
-  const [otpCode, setOtpCode] = useState(['', '', '', '', '', '']);
+  const [otpCode, setOtpCode] = useState('');
   const [resendCooldown, setResendCooldown] = useState(0);
 
-  const otpInputRefs = useRef<(RNTextInput | null)[]>([]);
+  const otpInputRef = useRef<RNTextInput | null>(null);
 
   const { signInStep1, signInStep2, resendOTP, cancelOTP, isLoading, pendingOTPEmail } = useAuthStore();
+
+  // Derive showOTPInput from global state - this survives component remounts
+  const showOTPInput = !!pendingOTPEmail;
 
   // Resend cooldown timer
   useEffect(() => {
@@ -43,12 +45,19 @@ export function LoginScreen({ navigation }: Props) {
     }
   }, [resendCooldown]);
 
-  // Focus first OTP input when showing OTP screen
+  // Focus OTP input when showing OTP screen (based on global pendingOTPEmail)
   useEffect(() => {
-    if (showOTPInput && otpInputRefs.current[0]) {
-      setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
+    console.log('[LoginScreen] showOTPInput (derived from pendingOTPEmail):', showOTPInput, pendingOTPEmail);
+    if (showOTPInput && otpInputRef.current) {
+      setTimeout(() => otpInputRef.current?.focus(), 100);
     }
-  }, [showOTPInput]);
+  }, [showOTPInput, pendingOTPEmail]);
+
+  // Log when component mounts/unmounts
+  useEffect(() => {
+    console.log('[LoginScreen] Component mounted');
+    return () => console.log('[LoginScreen] Component unmounted');
+  }, []);
 
   const handleLogin = async () => {
     console.log('[LoginScreen] handleLogin called');
@@ -78,43 +87,26 @@ export function LoginScreen({ navigation }: Props) {
     if (result.error) {
       setError(result.error);
     } else if (result.requiresOTP) {
-      console.log('[LoginScreen] OTP required, showing OTP input');
-      setShowOTPInput(true);
+      // OTP screen will now show automatically because pendingOTPEmail is set in authStore
+      console.log('[LoginScreen] OTP required - pendingOTPEmail set in store, OTP screen will show');
       setResendCooldown(60); // Start 60 second cooldown
     }
   };
 
-  const handleOTPChange = (index: number, value: string) => {
-    // Only allow digits
-    const digit = value.replace(/[^0-9]/g, '').slice(-1);
+  const handleOTPChange = (value: string) => {
+    // Only allow digits, max 6
+    const digits = value.replace(/[^0-9]/g, '').slice(0, 6);
+    setOtpCode(digits);
 
-    const newOtp = [...otpCode];
-    newOtp[index] = digit;
-    setOtpCode(newOtp);
-
-    // Auto-focus next input
-    if (digit && index < 5) {
-      otpInputRefs.current[index + 1]?.focus();
-    }
-
-    // Auto-submit when all digits entered
-    if (digit && index === 5) {
-      const fullCode = newOtp.join('');
-      if (fullCode.length === 6) {
-        handleVerifyOTP(fullCode);
-      }
-    }
-  };
-
-  const handleOTPKeyPress = (index: number, key: string) => {
-    if (key === 'Backspace' && !otpCode[index] && index > 0) {
-      otpInputRefs.current[index - 1]?.focus();
+    // Auto-submit when all 6 digits entered
+    if (digits.length === 6) {
+      handleVerifyOTP(digits);
     }
   };
 
   const handleVerifyOTP = async (code?: string) => {
     setError(null);
-    const fullCode = code || otpCode.join('');
+    const fullCode = code || otpCode;
 
     if (fullCode.length !== 6) {
       setError('Please enter the 6-digit code');
@@ -125,8 +117,8 @@ export function LoginScreen({ navigation }: Props) {
 
     if (result.error) {
       setError(result.error);
-      setOtpCode(['', '', '', '', '', '']);
-      otpInputRefs.current[0]?.focus();
+      setOtpCode('');
+      otpInputRef.current?.focus();
     }
   };
 
@@ -140,14 +132,14 @@ export function LoginScreen({ navigation }: Props) {
       setError(result.error);
     } else {
       setResendCooldown(60);
-      setOtpCode(['', '', '', '', '', '']);
+      setOtpCode('');
     }
   };
 
   const handleBackToLogin = () => {
+    // cancelOTP() clears pendingOTPEmail in the store, which will hide OTP screen automatically
     cancelOTP();
-    setShowOTPInput(false);
-    setOtpCode(['', '', '', '', '', '']);
+    setOtpCode('');
     setError(null);
   };
 
@@ -190,25 +182,18 @@ export function LoginScreen({ navigation }: Props) {
                 </View>
               )}
 
-              <View style={styles.otpContainer}>
-                {otpCode.map((digit, index) => (
-                  <RNTextInput
-                    key={index}
-                    ref={(ref) => { otpInputRefs.current[index] = ref; }}
-                    style={[
-                      styles.otpInput,
-                      digit ? styles.otpInputFilled : null,
-                    ]}
-                    value={digit}
-                    onChangeText={(value) => handleOTPChange(index, value)}
-                    onKeyPress={({ nativeEvent }) => handleOTPKeyPress(index, nativeEvent.key)}
-                    keyboardType="number-pad"
-                    maxLength={1}
-                    selectTextOnFocus
-                    autoComplete="one-time-code"
-                  />
-                ))}
-              </View>
+              <RNTextInput
+                ref={otpInputRef}
+                style={styles.otpInput}
+                value={otpCode}
+                onChangeText={handleOTPChange}
+                keyboardType="number-pad"
+                maxLength={6}
+                placeholder="000000"
+                placeholderTextColor={colors.text.secondary}
+                autoComplete="one-time-code"
+                textContentType="oneTimeCode"
+              />
 
               <Button
                 title="Verify Code"
@@ -398,27 +383,19 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.bold,
   },
   // OTP styles
-  otpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.xl,
-  },
   otpInput: {
-    width: 48,
     height: 56,
     borderWidth: 2,
     borderColor: colors.border.DEFAULT,
     borderRadius: 12,
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: fontWeight.bold,
     textAlign: 'center',
+    letterSpacing: 12,
     color: colors.text.primary,
     backgroundColor: colors.white,
-  },
-  otpInputFilled: {
-    borderColor: colors.primary.DEFAULT,
-    backgroundColor: colors.primary.light,
+    marginBottom: spacing.xl,
+    paddingHorizontal: spacing.lg,
   },
   resendContainer: {
     alignItems: 'center',

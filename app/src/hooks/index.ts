@@ -28,3 +28,5 @@ export {
   useRenderCount,
   useSlowRenderWarning,
 } from './usePerformance';
+
+export { useSessionHeartbeat } from './useSessionHeartbeat';

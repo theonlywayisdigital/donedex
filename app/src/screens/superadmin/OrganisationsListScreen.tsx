@@ -146,6 +146,14 @@ export function OrganisationsListScreen() {
           </Text>
         }
       />
+
+      {/* Floating Action Button */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => navigation.navigate('CreateOrganisation')}
+      >
+        <Text style={styles.fabText}>+</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -175,6 +183,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border.DEFAULT,
     gap: spacing.sm,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: spacing.lg,
+    right: spacing.lg,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary.DEFAULT,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...shadows.elevated,
+  },
+  fabText: {
+    fontSize: 28,
+    color: colors.white,
+    fontWeight: fontWeight.regular,
+    marginTop: -2,
   },
   searchInput: {
     flex: 1,

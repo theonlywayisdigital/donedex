@@ -26,6 +26,7 @@ import {
   Invitation,
   UserRole,
 } from '../../services/team';
+import { adminResetUserSessions } from '../../services/deviceSession';
 
 type NavigationProp = NativeStackNavigationProp<TeamStackParamList, 'TeamList'>;
 
@@ -133,6 +134,30 @@ export function TeamListScreen() {
     );
   };
 
+  const handleResetSessions = (member: TeamMember) => {
+    // Only show for staff users (role === 'user')
+    // Admins/owners don't have single-device restriction
+    if (member.role !== 'user' || member.user_id === user?.id) {
+      return;
+    }
+
+    showDestructiveConfirm(
+      'Reset Sessions',
+      `This will log ${member.user_profile?.full_name || 'this user'} out of all devices. They will need to sign in again.`,
+      async () => {
+        try {
+          await adminResetUserSessions(member.user_id);
+          showNotification('Success', 'Sessions reset successfully');
+        } catch (error) {
+          showNotification('Error', error instanceof Error ? error.message : 'Failed to reset sessions');
+        }
+      },
+      undefined,
+      'Reset',
+      'Cancel'
+    );
+  };
+
   const handleCancelInvitation = (invitation: Invitation) => {
     showDestructiveConfirm(
       'Cancel Invitation',
@@ -208,6 +233,14 @@ export function TeamListScreen() {
             >
               <Text style={styles.actionButtonText}>Edit</Text>
             </TouchableOpacity>
+            {item.role === 'user' && (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.resetButton]}
+                onPress={() => handleResetSessions(item)}
+              >
+                <Text style={styles.resetButtonText}>Reset Login</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={[styles.actionButton, styles.removeButton]}
               onPress={() => handleRemoveMember(item)}
@@ -477,6 +510,14 @@ const styles = StyleSheet.create({
     fontSize: fontSize.caption,
     fontWeight: fontWeight.medium,
     color: colors.danger,
+  },
+  resetButton: {
+    backgroundColor: colors.warning + '10',
+  },
+  resetButtonText: {
+    fontSize: fontSize.caption,
+    fontWeight: fontWeight.medium,
+    color: colors.warning,
   },
   invitationsSection: {
     marginTop: spacing.lg,

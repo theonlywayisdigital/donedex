@@ -34,36 +34,30 @@ interface ServiceResult<T> {
 
 /**
  * Check if the current user is a super admin
+ * Simple direct query - no RPC, no complex logic
  */
 export async function checkIsSuperAdmin(): Promise<boolean> {
-  console.log('[SuperAdmin] Checking if user is super admin...');
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) return false;
 
-  // Ensure we have a valid session
-  const { data: sessionData } = await supabase.auth.getSession();
-  if (!sessionData?.session) {
-    console.log('[SuperAdmin] No active session');
+    const { data, error } = await supabase
+      .from('super_admins' as any)
+      .select('id')
+      .eq('user_id', session.user.id)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[SuperAdmin] Check failed:', error.message);
+      return false;
+    }
+
+    return !!data;
+  } catch (err) {
+    console.error('[SuperAdmin] Exception:', err);
     return false;
   }
-
-  const userId = sessionData.session.user.id;
-  console.log('[SuperAdmin] Session user ID:', userId);
-
-  // Query super_admins table directly
-  const { data, error } = await supabase
-    .from('super_admins' as any)
-    .select('id, is_active')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .maybeSingle();
-
-  if (error) {
-    console.error('[SuperAdmin] Query error:', error);
-    return false;
-  }
-
-  const result = !!data;
-  console.log('[SuperAdmin] Is super admin:', result);
-  return result;
 }
 
 /**
@@ -99,51 +93,80 @@ export async function getCurrentSuperAdminId(): Promise<string | null> {
 
 /**
  * Fetch the current user's super admin profile with permissions
+ * Simplified: single query path, no RPC dependencies
  */
 export async function fetchCurrentSuperAdmin(): Promise<ServiceResult<SuperAdminWithPermissions>> {
-  // First check if user is a super admin using the RPC function
-  const isSuperAdmin = await checkIsSuperAdmin();
+  try {
+    console.log('[SuperAdmin] fetchCurrentSuperAdmin called');
 
-  if (!isSuperAdmin) {
-    return { data: null, error: { message: 'Not a super admin' } };
-  }
+    // Get session
+    const { data: { session } } = await supabase.auth.getSession();
+    console.log('[SuperAdmin] Session check:', {
+      hasSession: !!session,
+      userId: session?.user?.id,
+    });
 
-  // Get the super admin record - RLS will filter to current user
-  const { data: superAdmin, error: adminError } = await supabase
-    .from('super_admins' as any)
-    .select('*')
-    .eq('is_active', true)
-    .single();
+    if (!session?.user?.id) {
+      console.log('[SuperAdmin] No session - returning null');
+      return { data: null, error: { message: 'No session' } };
+    }
 
-  if (adminError) {
-    if (adminError.code === 'PGRST116') {
-      // No rows returned - not a super admin
+    // Single query to get super admin record (RLS filters to own record)
+    console.log('[SuperAdmin] Querying super_admins for user:', session.user.id);
+    const { data: superAdmin, error: adminError } = await supabase
+      .from('super_admins' as any)
+      .select('*')
+      .eq('user_id', session.user.id)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    console.log('[SuperAdmin] Query result:', {
+      hasData: !!superAdmin,
+      error: adminError?.message,
+      errorCode: adminError?.code,
+    });
+
+    if (adminError) {
+      console.error('[SuperAdmin] Query error:', adminError.message);
+      return { data: null, error: { message: adminError.message } };
+    }
+
+    if (!superAdmin) {
+      // Not a super admin - this is normal for regular users
+      console.log('[SuperAdmin] No super admin record found for user');
       return { data: null, error: { message: 'Not a super admin' } };
     }
-    return { data: null, error: { message: adminError.message } };
+
+    const admin = superAdmin as SuperAdmin;
+
+    // Fetch permissions (RLS filters to own permissions)
+    const { data: permissions, error: permError } = await supabase
+      .from('super_admin_permissions' as any)
+      .select('permission')
+      .eq('super_admin_id', admin.id);
+
+    if (permError) {
+      console.error('[SuperAdmin] Permissions error:', permError.message);
+      // Return admin with empty permissions rather than failing
+      return {
+        data: { ...admin, permissions: [] },
+        error: null,
+      };
+    }
+
+    const permList = (permissions as Array<{ permission: string }>) || [];
+
+    return {
+      data: {
+        ...admin,
+        permissions: permList.map((p) => p.permission as SuperAdminPermission),
+      },
+      error: null,
+    };
+  } catch (err) {
+    console.error('[SuperAdmin] Exception:', err);
+    return { data: null, error: { message: 'Failed to fetch super admin' } };
   }
-
-  const admin = superAdmin as SuperAdmin;
-
-  // Fetch permissions
-  const { data: permissions, error: permError } = await supabase
-    .from('super_admin_permissions' as any)
-    .select('permission')
-    .eq('super_admin_id', admin.id);
-
-  if (permError) {
-    return { data: null, error: { message: permError.message } };
-  }
-
-  const permList = (permissions as Array<{ permission: string }>) || [];
-
-  return {
-    data: {
-      ...admin,
-      permissions: permList.map((p) => p.permission as SuperAdminPermission),
-    },
-    error: null,
-  };
 }
 
 // ============================================
@@ -812,15 +835,79 @@ export async function fetchAllSuperAdmins(): Promise<ServiceResult<SuperAdminWit
 // ORGANISATION CREATION (SUPER ADMIN)
 // ============================================
 
+export interface OrgUserToProvision {
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  role: 'admin' | 'user';
+}
+
+interface ProvisionResult {
+  email: string;
+  status: 'created' | 'existing_user_added' | 'error';
+  userId?: string;
+  error?: string;
+}
+
 interface CreateOrganisationParams {
   name: string;
   slug?: string;
   contactEmail: string;
   contactPhone?: string;
-  ownerEmail?: string;
-  ownerName?: string;
+  users?: OrgUserToProvision[];
   planId?: string;
-  sendInvite?: boolean;
+  billingInterval?: 'monthly' | 'annual';
+  discountPercent?: number;
+  discountNotes?: string;
+}
+
+/**
+ * Provision users for an organisation via the edge function.
+ * Creates Supabase Auth accounts, user_profiles, and organisation_users entries.
+ */
+export async function provisionOrgUsers(
+  organisationId: string,
+  users: OrgUserToProvision[]
+): Promise<ServiceResult<ProvisionResult[]>> {
+  try {
+    const { data, error } = await supabase.functions.invoke('provision-org-users', {
+      body: { organisationId, users },
+    });
+
+    if (error) {
+      let errorMessage = 'Provisioning failed';
+      const errAny = error as Record<string, unknown>;
+
+      try {
+        if ('context' in error && errAny.context) {
+          const ctx = errAny.context;
+          if (ctx instanceof Response) {
+            const body = await ctx.json();
+            errorMessage = body?.error || body?.message || error.message || errorMessage;
+          } else if (typeof ctx === 'object' && ctx !== null) {
+            const ctxObj = ctx as Record<string, unknown>;
+            errorMessage = (ctxObj.error as string) || (ctxObj.message as string) || error.message || errorMessage;
+          } else {
+            errorMessage = error.message || errorMessage;
+          }
+        } else {
+          errorMessage = error.message || errorMessage;
+        }
+      } catch {
+        errorMessage = error.message || errorMessage;
+      }
+
+      console.error('[provisionOrgUsers] Error:', errorMessage);
+      return { data: null, error: { message: errorMessage } };
+    }
+
+    return { data: data?.results || [], error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to provision users';
+    console.error('[provisionOrgUsers] Exception:', message);
+    return { data: null, error: { message } };
+  }
 }
 
 /**
@@ -843,6 +930,14 @@ export async function createOrganisation(
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '') || 'org';
 
+  // Get current user ID for discount tracking
+  const { data: { session } } = await supabase.auth.getSession();
+  const currentUserId = session?.user?.id || null;
+
+  // Determine subscription status based on discount
+  // 100% discount = active without billing, otherwise needs Stripe setup
+  const subscriptionStatus = params.discountPercent === 100 ? 'active' : 'trialing';
+
   // Create organisation
   const { data: org, error: orgError } = await (supabase
     .from('organisations') as any)
@@ -852,8 +947,14 @@ export async function createOrganisation(
       contact_email: params.contactEmail,
       contact_phone: params.contactPhone || null,
       current_plan_id: params.planId || null,
-      subscription_status: 'active',
+      billing_interval: params.billingInterval || 'monthly',
+      subscription_status: subscriptionStatus,
       onboarding_completed_at: new Date().toISOString(),
+      // Discount fields
+      discount_percent: params.discountPercent || 0,
+      discount_notes: params.discountNotes || null,
+      discount_applied_by: params.discountPercent ? currentUserId : null,
+      discount_applied_at: params.discountPercent ? new Date().toISOString() : null,
     })
     .select()
     .single();
@@ -864,29 +965,18 @@ export async function createOrganisation(
 
   const orgData = org as { id: string; name: string };
 
-  // If owner email provided, create invite or user
-  if (params.ownerEmail) {
-    // Create an invitation for the owner
-    const { data: invitation, error: inviteError } = await (supabase
-      .from('invitations') as any)
-      .insert({
-        organisation_id: orgData.id,
-        email: params.ownerEmail,
-        role: 'owner',
-        invited_by: null, // Super admin created
-      })
-      .select()
-      .single();
-
-    if (inviteError) {
-      console.error('Error creating owner invitation:', inviteError);
+  // Provision users via edge function (creates auth accounts + org membership)
+  let provisionResults: ProvisionResult[] = [];
+  if (params.users && params.users.length > 0) {
+    const provisionResult = await provisionOrgUsers(orgData.id, params.users);
+    if (provisionResult.error) {
+      console.error('Error provisioning users:', provisionResult.error.message);
       // Don't fail the org creation, just log
-    } else if (params.sendInvite && invitation) {
-      // Send invite email via edge function
-      const inviteResult = await sendInviteEmail((invitation as { id: string }).id);
-      if (inviteResult.error) {
-        console.error('Error sending invite email:', inviteResult.error.message);
-        // Don't fail the org creation, just log
+    } else if (provisionResult.data) {
+      provisionResults = provisionResult.data;
+      const errors = provisionResults.filter(r => r.status === 'error');
+      if (errors.length > 0) {
+        console.error('Some users failed to provision:', errors);
       }
     }
   }
@@ -899,7 +989,19 @@ export async function createOrganisation(
     orgData.id,
     orgData.id,
     undefined,
-    { name: params.name, slug, contactEmail: params.contactEmail }
+    {
+      name: params.name,
+      slug,
+      contactEmail: params.contactEmail,
+      planId: params.planId,
+      billingInterval: params.billingInterval,
+      discountPercent: params.discountPercent || 0,
+      discountNotes: params.discountNotes,
+      usersProvisioned: provisionResults.map(r => ({
+        email: r.email,
+        status: r.status,
+      })),
+    }
   );
 
   return { data: orgData, error: null };
@@ -1259,6 +1361,78 @@ export async function updateOrganisation(
   return { data: org as { id: string; name: string }, error: null };
 }
 
+interface SetOrganisationDiscountParams {
+  discountPercent: number;
+  discountNotes?: string;
+}
+
+/**
+ * Update an organisation's discount (super admin only)
+ */
+export async function updateOrganisationDiscount(
+  orgId: string,
+  params: SetOrganisationDiscountParams
+): Promise<ServiceResult<{ id: string; name: string }>> {
+  const canEdit = await hasPermission('edit_all_organisations');
+  if (!canEdit) {
+    return { data: null, error: { message: 'Permission denied' } };
+  }
+
+  // Get current user ID for tracking
+  const { data: { session } } = await supabase.auth.getSession();
+  const currentUserId = session?.user?.id || null;
+
+  // Get current values for audit log
+  const { data: currentOrg, error: fetchError } = await supabase
+    .from('organisations')
+    .select('discount_percent, discount_notes')
+    .eq('id', orgId)
+    .single();
+
+  if (fetchError) {
+    return { data: null, error: { message: fetchError.message } };
+  }
+
+  type DiscountRow = {
+    discount_percent: number;
+    discount_notes: string | null;
+  };
+  const oldValues = currentOrg as DiscountRow;
+
+  const updates: Record<string, unknown> = {
+    discount_percent: params.discountPercent,
+    discount_notes: params.discountNotes || null,
+    discount_applied_by: currentUserId,
+    discount_applied_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  // Update organisation
+  const { data: org, error } = await (supabase
+    .from('organisations') as any)
+    .update(updates)
+    .eq('id', orgId)
+    .select('id, name')
+    .single();
+
+  if (error) {
+    return { data: null, error: { message: error.message } };
+  }
+
+  // Log the action
+  await logAction(
+    'update_organisation_discount',
+    'organisation',
+    'organisations',
+    orgId,
+    orgId,
+    oldValues,
+    { discountPercent: params.discountPercent, discountNotes: params.discountNotes }
+  );
+
+  return { data: org as { id: string; name: string }, error: null };
+}
+
 interface SetOrganisationPlanParams {
   planId: string | null;
   trialEndsAt?: string | null;
@@ -1433,6 +1607,7 @@ export async function restoreOrganisation(orgId: string): Promise<ServiceResult<
 /**
  * Permanently delete an organisation and all related data
  * WARNING: This is destructive and cannot be undone
+ * Uses a SECURITY DEFINER database function to bypass RLS for cascade deletion
  */
 export async function deleteOrganisationPermanently(orgId: string): Promise<ServiceResult<null>> {
   const canEdit = await hasPermission('edit_all_organisations');
@@ -1465,77 +1640,12 @@ export async function deleteOrganisationPermanently(orgId: string): Promise<Serv
     { deleted: true }
   );
 
-  // Delete in order to respect foreign key constraints:
-  // 1. Delete report_photos (FK to reports)
-  await (supabase.from('report_photos') as any)
-    .delete()
-    .in('report_id', supabase.from('reports').select('id').eq('organisation_id', orgId));
-
-  // 2. Delete report_responses (FK to reports)
-  await (supabase.from('report_responses') as any)
-    .delete()
-    .in('report_id', supabase.from('reports').select('id').eq('organisation_id', orgId));
-
-  // 3. Delete reports
-  await (supabase.from('reports') as any)
-    .delete()
-    .eq('organisation_id', orgId);
-
-  // 4. Delete template_items (FK to template_sections)
-  await (supabase.from('template_items') as any)
-    .delete()
-    .in('section_id', supabase.from('template_sections').select('id').in('template_id', supabase.from('templates').select('id').eq('organisation_id', orgId) as any) as any);
-
-  // 5. Delete template_sections (FK to templates)
-  await (supabase.from('template_sections') as any)
-    .delete()
-    .in('template_id', supabase.from('templates').select('id').eq('organisation_id', orgId));
-
-  // 6. Delete templates
-  await (supabase.from('templates') as any)
-    .delete()
-    .eq('organisation_id', orgId);
-
-  // 7. Delete user_record_assignments
-  await (supabase.from('user_record_assignments') as any)
-    .delete()
-    .in('record_id', supabase.from('records').select('id').eq('organisation_id', orgId));
-
-  // 8. Delete record_documents
-  await (supabase.from('record_documents') as any)
-    .delete()
-    .in('record_id', supabase.from('records').select('id').eq('organisation_id', orgId));
-
-  // 9. Delete records (sites)
-  await (supabase.from('records') as any)
-    .delete()
-    .eq('organisation_id', orgId);
-
-  // 10. Delete record_type_fields
-  await (supabase.from('record_type_fields') as any)
-    .delete()
-    .in('record_type_id', supabase.from('record_types').select('id').eq('organisation_id', orgId));
-
-  // 11. Delete record_types
-  await (supabase.from('record_types') as any)
-    .delete()
-    .eq('organisation_id', orgId);
-
-  // 12. Delete invitations
-  await (supabase.from('invitations') as any)
-    .delete()
-    .eq('organisation_id', orgId);
-
-  // 13. Delete organisation_users
-  await (supabase.from('organisation_users') as any)
-    .delete()
-    .eq('organisation_id', orgId);
-
-  // 14. Finally delete the organisation
-  const { error: deleteError } = await (supabase
-    .from('organisations') as any)
-    .delete()
-    .eq('id', orgId);
+  // Call the SECURITY DEFINER function that handles cascade deletion server-side
+  // This bypasses RLS so all child tables are properly cleaned up
+  const { error: deleteError } = await supabase.rpc(
+    'delete_organisation_permanently' as never,
+    { p_org_id: orgId } as never
+  );
 
   if (deleteError) {
     return { data: null, error: { message: deleteError.message } };
@@ -1809,7 +1919,7 @@ export async function fetchOrganisationUsage(
   // Get current plan
   const { data: orgData, error: orgError } = await supabase
     .from('organisations')
-    .select('subscription_plan_id, subscription_plans(slug)')
+    .select('current_plan_id, subscription_plans(slug)')
     .eq('id', orgId)
     .single();
 

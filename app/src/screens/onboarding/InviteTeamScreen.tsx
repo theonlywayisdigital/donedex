@@ -38,7 +38,10 @@ export function InviteTeamScreen({ navigation }: Props) {
     isSaving,
   } = useOnboardingStore();
 
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [role, setRole] = useState<'admin' | 'user'>('user');
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +51,16 @@ export function InviteTeamScreen({ navigation }: Props) {
 
   const handleAddInvite = () => {
     setError(null);
+
+    if (!firstName.trim()) {
+      setError('Please enter a first name');
+      return;
+    }
+
+    if (!lastName.trim()) {
+      setError('Please enter a last name');
+      return;
+    }
 
     if (!email.trim()) {
       setError('Please enter an email address');
@@ -70,7 +83,10 @@ export function InviteTeamScreen({ navigation }: Props) {
 
     // Add invite
     addInvite(email.trim(), role);
+    setFirstName('');
+    setLastName('');
     setEmail('');
+    setPhone('');
     setRole('user');
   };
 
@@ -124,13 +140,37 @@ export function InviteTeamScreen({ navigation }: Props) {
           {/* Add Invite Form */}
           <View style={styles.addInviteForm}>
             <Input
-              label="Email Address"
+              label="First name"
+              placeholder="First name"
+              value={firstName}
+              onChangeText={setFirstName}
+              autoCapitalize="words"
+            />
+
+            <Input
+              label="Last name"
+              placeholder="Last name"
+              value={lastName}
+              onChangeText={setLastName}
+              autoCapitalize="words"
+            />
+
+            <Input
+              label="Email address"
               placeholder="colleague@company.com"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
+            />
+
+            <Input
+              label="Phone number (optional)"
+              placeholder="Optional"
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
             />
 
             {/* Role Selector */}

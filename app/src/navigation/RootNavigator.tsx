@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, ActivityIndicator, StyleSheet, Text, Platform, AppState } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { AuthNavigator } from './AuthNavigator';
@@ -9,7 +9,6 @@ import { useOnboardingStore } from '../store/onboardingStore';
 import { colors, fontSize, spacing } from '../constants/theme';
 import { ImpersonationBanner } from '../components/ImpersonationBanner';
 import { OrgStatusGate } from '../components/OrgStatusGate';
-import { useResponsive } from '../hooks/useResponsive';
 import { linking } from './linking';
 import { initializeNetworkMonitoring } from '../services/networkStatus';
 import { initializeAutoSync } from '../services/syncService';
@@ -18,12 +17,11 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 
 export function RootNavigator() {
-  const { isLoading, isInitialized, session, initialize, isSuperAdmin, refreshOrgData } = useAuthStore();
+  const { isLoading, isInitialized, session, initialize, isSuperAdmin, refreshOrgData, pendingOTPEmail } = useAuthStore();
   const {
     initialize: initializeOnboarding,
     needsOnboarding,
     isComplete,
-    isLoading: isOnboardingLoading,
     error: onboardingError,
   } = useOnboardingStore();
 
@@ -76,21 +74,24 @@ export function RootNavigator() {
 
   // Check onboarding status when authenticated (skip for super admins)
   useEffect(() => {
-    const checkOnboarding = async () => {
-      if (session && isInitialized && !onboardingChecked) {
-        // Super admins don't need onboarding - they're vendor admins
-        if (isSuperAdmin) {
-          setOnboardingChecked(true);
-          return;
-        }
+    if (!session || !isInitialized) return;
 
-        try {
-          await initializeOnboarding();
-        } catch (err) {
-          console.error('Onboarding init error:', err);
-        } finally {
-          setOnboardingChecked(true);
-        }
+    // Super admins never need onboarding - force-clear regardless of timing
+    if (isSuperAdmin) {
+      useOnboardingStore.setState({ needsOnboarding: false, isComplete: true });
+      if (!onboardingChecked) setOnboardingChecked(true);
+      return;
+    }
+
+    if (onboardingChecked) return;
+
+    const checkOnboarding = async () => {
+      try {
+        await initializeOnboarding();
+      } catch (err) {
+        console.error('Onboarding init error:', err);
+      } finally {
+        setOnboardingChecked(true);
       }
     };
 
@@ -147,8 +148,9 @@ export function RootNavigator() {
     );
   }
 
-  // If authenticated, check onboarding status
-  if (session && !onboardingChecked) {
+  // If authenticated (and not in OTP flow), wait for onboarding check
+  // Super admins skip this gate entirely - they never need onboarding
+  if (session && !onboardingChecked && !pendingOTPEmail && !isSuperAdmin) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color={colors.primary.DEFAULT} />
@@ -159,7 +161,8 @@ export function RootNavigator() {
 
   // Determine which navigator to show
   const getNavigator = () => {
-    if (!session) {
+    // During OTP flow, always show AuthNavigator even if session exists temporarily
+    if (!session || pendingOTPEmail) {
       return <AuthNavigator />;
     }
 
@@ -168,8 +171,12 @@ export function RootNavigator() {
       return <OnboardingNavigator />;
     }
 
-    // Use AdaptiveNavigator for desktop web sidebar / mobile tabs
-    // OrgStatusGate blocks access if org is blocked/archived (skipped for super admins)
+    // Super admins go straight to AdaptiveNavigator - no org check needed
+    if (isSuperAdmin) {
+      return <AdaptiveNavigator />;
+    }
+
+    // Regular users: OrgStatusGate blocks access if org is blocked/archived/removed
     return (
       <OrgStatusGate>
         <AdaptiveNavigator />

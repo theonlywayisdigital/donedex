@@ -319,6 +319,29 @@ export const formatLimit = (limit: number): string => {
   return limit.toLocaleString();
 };
 
+/**
+ * Format user limit for plan display
+ * Shows "X users" for hard limits, or "X included, +£Y/user" for per-user pricing
+ */
+export const formatUserLimit = (plan: SubscriptionPlan, billingInterval: 'monthly' | 'annual' = 'monthly'): string => {
+  // Hard cap (Free plan) - show just the number
+  if (plan.max_users !== -1) {
+    return `${plan.max_users} users`;
+  }
+
+  // Per-user pricing plans (Pro, Enterprise)
+  const perUserPrice = billingInterval === 'monthly'
+    ? plan.price_per_user_monthly_gbp
+    : Math.round(plan.price_per_user_annual_gbp / 12);
+
+  if (perUserPrice > 0) {
+    return `${plan.base_users_included} included, +£${(perUserPrice / 100).toFixed(0)}/user`;
+  }
+
+  // Fallback for unlimited with no per-user cost
+  return 'Unlimited users';
+};
+
 export const daysUntilTrialEnds = (trialEndsAt: string): number => {
   const trialEnd = new Date(trialEndsAt);
   const now = new Date();

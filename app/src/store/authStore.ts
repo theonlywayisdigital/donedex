@@ -54,7 +54,7 @@ interface AuthState {
   signInStep2: (otpCode: string) => Promise<{ error: string | null }>;
   resendOTP: () => Promise<{ error: string | null }>;
   cancelOTP: () => void;
-  signUp: (email: string, password: string) => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string, fullName?: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   setSession: (session: Session | null) => void;
 
@@ -133,27 +133,38 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const session = await authService.getCurrentSession();
 
       if (session?.user) {
-        // Fetch user profile and organisation
-        const [profile, orgData] = await Promise.all([
+        console.log('[AuthStore] Session found, user:', session.user.id);
+
+        // Fetch ALL data in parallel - including super admin status
+        const [profile, orgData, superAdminData] = await Promise.all([
           authService.fetchUserProfile(session.user.id),
           authService.fetchUserOrganisation(session.user.id),
+          superAdminService.fetchCurrentSuperAdmin(),
         ]);
 
+        console.log('[AuthStore] Parallel fetch results:', {
+          hasProfile: !!profile,
+          hasOrgData: !!orgData,
+          orgId: orgData?.organisation?.id,
+          superAdminData: {
+            hasData: !!superAdminData.data,
+            error: superAdminData.error?.message,
+            permissions: superAdminData.data?.permissions?.length || 0,
+          },
+        });
+
+        // Set ALL state at once - super admin status is known BEFORE isInitialized
         set({
           user: session.user,
           session,
           profile,
           organisation: orgData?.organisation as Organisation | null,
           role: orgData?.role as UserRole | null,
+          isSuperAdmin: !!superAdminData.data,
+          superAdminPermissions: superAdminData.data?.permissions || [],
         });
 
-        // Check super admin status with timeout (non-blocking if slow)
-        try {
-          await withTimeout(get().checkSuperAdminStatus(), 5000);
-        } catch (err) {
-          console.warn('Super admin check timed out or failed:', err);
-          // Continue anyway - user just won't have super admin features
-        }
+        console.log('[AuthStore] State set, isSuperAdmin:', !!superAdminData.data);
       } else {
         set({
           user: null,
@@ -167,9 +178,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
       }
 
-      // Set up auth state listener BEFORE marking as initialized
+      // Set up auth state listener
       authService.onAuthStateChange(async (event, newSession) => {
+        // Skip ALL auth state changes during 2FA flow (password verified, waiting for OTP)
+        // This includes SIGNED_IN (from password check) and SIGNED_OUT (from immediate signOut)
+        const pendingOTP = get().pendingOTPEmail;
+        if (pendingOTP) {
+          console.log('[AuthStore] Ignoring auth state change during OTP flow:', event);
+          return;
+        }
+
         if (event === 'SIGNED_OUT') {
+          // Only clear state if we're not in OTP flow (already checked above)
+          console.log('[AuthStore] SIGNED_OUT event, clearing state');
           set({
             user: null,
             session: null,
@@ -181,9 +202,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             impersonationContext: null,
           });
         } else if (event === 'SIGNED_IN' && newSession?.user) {
-          const [profile, orgData] = await Promise.all([
+          // If signInStep2 already set up the session for this user, skip
+          // This prevents a race condition where the listener re-fetches and
+          // briefly clobbers isSuperAdmin before the async calls complete
+          const currentState = get();
+          if (currentState.session?.user?.id === newSession.user.id && currentState.user) {
+            console.log('[AuthStore] SIGNED_IN event - session already set by signInStep2, skipping');
+            return;
+          }
+
+          console.log('[AuthStore] SIGNED_IN event, fetching user data...');
+          // Fetch ALL data in parallel
+          const [profile, orgData, superAdminData] = await Promise.all([
             authService.fetchUserProfile(newSession.user.id),
             authService.fetchUserOrganisation(newSession.user.id),
+            superAdminService.fetchCurrentSuperAdmin(),
           ]);
 
           set({
@@ -192,18 +225,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             profile,
             organisation: orgData?.organisation as Organisation | null,
             role: orgData?.role as UserRole | null,
+            isSuperAdmin: !!superAdminData.data,
+            superAdminPermissions: superAdminData.data?.permissions || [],
           });
-
-          // Check super admin status after sign in (with timeout)
-          try {
-            await withTimeout(get().checkSuperAdminStatus(), 5000);
-          } catch (err) {
-            console.warn('Super admin check failed after sign in:', err);
-          }
         }
       });
 
-      // Now mark as initialized
+      // Now mark as initialized - super admin status is already set
       set({
         isLoading: false,
         isInitialized: true,
@@ -253,7 +281,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   // Step 1: Verify password and send OTP
   signInStep1: async (email: string, password: string) => {
     console.log('[AuthStore] signInStep1 called for:', email);
-    set({ isLoading: true });
+    // Set pendingOTPEmail BEFORE calling verifyPasswordAndSendOTP
+    // This prevents auth state listener from reacting to the temporary sign-in
+    set({ isLoading: true, pendingOTPEmail: email });
 
     const result = await authService.verifyPasswordAndSendOTP(email, password);
     console.log('[AuthStore] verifyPasswordAndSendOTP result:', {
@@ -264,12 +294,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
 
     if (result.error) {
-      set({ isLoading: false });
+      // Clear pending state on error
+      set({ isLoading: false, pendingOTPEmail: null });
       return { error: result.error.message, requiresOTP: false };
     }
 
     if (result.requiresOTP && result.user) {
-      // Store pending OTP state
+      // Store full pending OTP state
       console.log('[AuthStore] OTP required, storing pending state');
       set({
         pendingOTPUser: result.user,
@@ -280,7 +311,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return { error: null, requiresOTP: true };
     }
 
-    set({ isLoading: false });
+    // Clear pending state on unexpected result
+    set({ isLoading: false, pendingOTPEmail: null });
     console.log('[AuthStore] Unexpected state - no error but no OTP requirement');
     return { error: 'Unexpected error', requiresOTP: false };
   },
@@ -308,27 +340,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     if (result.user) {
-      const [profile, orgData] = await Promise.all([
+      // Fetch ALL data in parallel - including super admin status
+      const [profile, orgData, superAdminData] = await Promise.all([
         authService.fetchUserProfile(result.user.id),
         authService.fetchUserOrganisation(result.user.id),
+        superAdminService.fetchCurrentSuperAdmin(),
       ]);
 
+      // Set ALL state at once - super admin status is known immediately
       set({
         user: result.user,
         session: result.session,
         profile,
         organisation: orgData?.organisation as Organisation | null,
         role: orgData?.role as UserRole | null,
+        isSuperAdmin: !!superAdminData.data,
+        superAdminPermissions: superAdminData.data?.permissions || [],
         // Clear OTP state
         pendingOTPUser: null,
         pendingOTPEmail: null,
         pendingOTPPassword: null,
+        isLoading: false,
       });
-
-      // Check super admin status
-      await get().checkSuperAdminStatus();
-
-      set({ isLoading: false });
     }
 
     return { error: null };
@@ -360,10 +393,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   },
 
-  signUp: async (email: string, password: string) => {
+  signUp: async (email: string, password: string, fullName?: string) => {
     set({ isLoading: true });
 
-    const result = await authService.signUp(email, password);
+    const result = await authService.signUp(email, password, fullName);
 
     if (result.error) {
       set({ isLoading: false });
@@ -482,10 +515,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   // Super Admin Actions
   checkSuperAdminStatus: async () => {
+    console.log('[AuthStore] checkSuperAdminStatus called');
     try {
       const result = await superAdminService.fetchCurrentSuperAdmin();
+      console.log('[AuthStore] fetchCurrentSuperAdmin result:', {
+        hasData: !!result.data,
+        hasError: !!result.error,
+        errorMsg: result.error?.message,
+      });
 
       if (result.data) {
+        console.log('[AuthStore] Setting isSuperAdmin = true');
         set({
           isSuperAdmin: true,
           superAdminPermissions: result.data.permissions,
@@ -512,6 +552,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           set({ impersonationContext: null });
         }
       } else {
+        console.log('[AuthStore] No super admin data, setting isSuperAdmin = false');
         set({
           isSuperAdmin: false,
           superAdminPermissions: [],
@@ -519,7 +560,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
       }
     } catch (error) {
-      console.error('Error checking super admin status:', error);
+      console.error('[AuthStore] Error checking super admin status:', error);
       set({
         isSuperAdmin: false,
         superAdminPermissions: [],

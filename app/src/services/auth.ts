@@ -1,6 +1,13 @@
 import { supabase } from './supabase';
 import type { User, Session } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../constants/config';
+import {
+  checkActiveSession,
+  createSession,
+  deactivateSession,
+  getUserRole,
+  isRoleRestricted,
+} from './deviceSession';
 
 export interface AuthError {
   message: string;
@@ -42,11 +49,12 @@ export interface OTPResult {
  * Note: If email confirmation is disabled, this will create a session immediately.
  * If email confirmation is enabled but we want auto-login, we sign in after sign-up.
  */
-export async function signUp(email: string, password: string): Promise<SignUpResult> {
+export async function signUp(email: string, password: string, fullName?: string): Promise<SignUpResult> {
   try {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: fullName ? { data: { full_name: fullName } } : undefined,
     });
 
     if (error) {
@@ -212,6 +220,7 @@ export async function verifyPasswordAndSendOTP(email: string, password: string):
 
 /**
  * Verify OTP and complete login (Step 2 of 2FA login)
+ * Includes single-device login check for staff users
  */
 export async function verifyOTPAndSignIn(
   email: string,
@@ -243,7 +252,29 @@ export async function verifyOTPAndSignIn(
       };
     }
 
-    // OTP is valid, complete the sign in
+    // Check if user is staff (requires single-device login)
+    const userRole = await getUserRole(userId);
+    console.log('[Auth] User role:', userRole);
+
+    if (isRoleRestricted(userRole)) {
+      // Check for existing active session
+      const sessionInfo = await checkActiveSession(userId);
+      console.log('[Auth] Session check result:', sessionInfo);
+
+      if (sessionInfo.hasActiveSession) {
+        // BLOCK login - don't kick the existing user
+        console.log('[Auth] Blocking login - active session exists on:', sessionInfo.deviceName);
+        return {
+          user: null,
+          session: null,
+          error: {
+            message: 'This account is already logged in on another device. Contact your admin if you need to reset your session.',
+          },
+        };
+      }
+    }
+
+    // OTP is valid and no session conflict, complete the sign in
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -255,6 +286,11 @@ export async function verifyOTPAndSignIn(
         session: null,
         error: { message: error.message },
       };
+    }
+
+    // Create session record for staff users
+    if (data.user && isRoleRestricted(userRole)) {
+      await createSession(data.user.id);
     }
 
     return {
@@ -308,9 +344,13 @@ export async function resendOTP(userId: string, email: string): Promise<OTPResul
 
 /**
  * Sign out the current user
+ * Also deactivates the device session for single-device enforcement
  */
 export async function signOut(): Promise<SignOutResult> {
   try {
+    // Deactivate session record first (before signing out, while still authenticated)
+    await deactivateSession();
+
     const { error } = await supabase.auth.signOut();
 
     if (error) {
