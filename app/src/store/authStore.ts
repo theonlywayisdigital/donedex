@@ -181,13 +181,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   // Actions
   initialize: async () => {
     try {
+      // Preserve current password setup state - if it was explicitly cleared, don't re-detect
+      const currentState = get();
+      const wasPasswordSetupCleared = currentState.isInitialized && !currentState.needsPasswordSetup;
+
       set({ isLoading: true });
 
       // CRITICAL: Detect auth callback type BEFORE Supabase auto-session consumes URL tokens.
       // Supabase JS client auto-detects #access_token=...&type=invite in URL hash
       // and creates a session before React mounts. We capture the type here so we can
       // route the user to SetPassword screen after the auto-session is established.
-      const authCallbackType = detectAuthCallbackType();
+      // BUT: Skip detection if password setup was already completed (cleared).
+      const authCallbackType = wasPasswordSetupCleared ? null : detectAuthCallbackType();
       if (authCallbackType) {
         console.log('[AuthStore] Detected auth callback type:', authCallbackType);
       }
@@ -199,7 +204,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
         // If we detected an invite/recovery callback, the user needs to set their password.
         // The session is valid (Supabase auto-created it), but we must show SetPassword first.
-        const needsPasswordSetup = authCallbackType === 'invite' || authCallbackType === 'recovery';
+        // Skip if password setup was already cleared (user already set their password).
+        const needsPasswordSetup = !wasPasswordSetupCleared && (authCallbackType === 'invite' || authCallbackType === 'recovery');
         if (needsPasswordSetup) {
           console.log('[AuthStore] User needs password setup, type:', authCallbackType);
           // Clean up URL hash so refreshing doesn't re-trigger
@@ -259,11 +265,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       // Set up auth state listener
       authService.onAuthStateChange(async (event, newSession) => {
+        console.log('[AuthStore] Auth state change event:', event);
+
         // Skip ALL auth state changes during 2FA flow (password verified, waiting for OTP)
         // This includes SIGNED_IN (from password check) and SIGNED_OUT (from immediate signOut)
         const pendingOTP = get().pendingOTPEmail;
         if (pendingOTP) {
           console.log('[AuthStore] Ignoring auth state change during OTP flow:', event);
+          return;
+        }
+
+        // Skip USER_UPDATED events - these fire after password changes and shouldn't
+        // trigger any navigation or state resets
+        if (event === 'USER_UPDATED') {
+          console.log('[AuthStore] Ignoring USER_UPDATED event');
           return;
         }
 

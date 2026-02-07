@@ -59,18 +59,33 @@ export function SetPasswordScreen({ navigation, route }: Props) {
   };
 
   const handleSetPassword = async () => {
+    console.log('[SetPassword] handleSetPassword called');
     setError(null);
 
     if (!validateForm()) {
+      console.log('[SetPassword] Form validation failed');
       return;
     }
 
     setIsSubmitting(true);
+    console.log('[SetPassword] Submitting...');
 
     try {
+      // First check if we have a session
+      const { data: sessionData } = await supabase.auth.getSession();
+      console.log('[SetPassword] Current session:', sessionData.session ? 'exists' : 'null');
+
+      if (!sessionData.session) {
+        setError('Session expired. Please use the invite link again.');
+        setIsSubmitting(false);
+        return;
+      }
+
       const { error: updateError } = await supabase.auth.updateUser({
         password,
       });
+
+      console.log('[SetPassword] updateUser result:', updateError ? updateError.message : 'success');
 
       if (updateError) {
         setError(updateError.message);
@@ -78,11 +93,25 @@ export function SetPasswordScreen({ navigation, route }: Props) {
         return;
       }
 
-      // Password set successfully - reinitialize auth to load user data
-      await initialize();
-      setIsComplete(true);
+      // Password set successfully
+      console.log('[SetPassword] Password updated successfully');
+
+      // Clear the password setup flag - this will cause RootNavigator to re-render
+      // and show either onboarding or the main app
+      console.log('[SetPassword] Clearing password setup flag...');
+      clearPasswordSetup();
+
+      // On web, we need to explicitly navigate to the root URL
+      // because React Navigation won't automatically change the URL
+      // when the navigator structure changes
+      if (Platform.OS === 'web') {
+        console.log('[SetPassword] Redirecting to dashboard...');
+        window.location.href = '/';
+      }
+
       setIsSubmitting(false);
     } catch (err) {
+      console.error('[SetPassword] Error:', err);
       setError(err instanceof Error ? err.message : 'Failed to set password');
       setIsSubmitting(false);
     }
@@ -173,6 +202,8 @@ export function SetPasswordScreen({ navigation, route }: Props) {
               secureTextEntry
               autoCapitalize="none"
               autoComplete="new-password"
+              returnKeyType="done"
+              onSubmitEditing={handleSetPassword}
             />
           </View>
 

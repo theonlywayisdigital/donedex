@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  TouchableOpacity,
+  Pressable,
   Text,
   StyleSheet,
   ActivityIndicator,
@@ -49,13 +49,13 @@ export function Button({
 }: ButtonProps) {
   const isDisabled = disabled || loading;
 
-  const buttonStyles = [
+  const buttonStyles: ViewStyle[] = [
     styles.base,
     styles[variant],
-    fullWidth && styles.fullWidth,
-    isDisabled && styles.disabled,
-    style,
-  ];
+    fullWidth ? styles.fullWidth : {},
+    isDisabled ? styles.disabled : {},
+    style || {},
+  ].filter(Boolean) as ViewStyle[];
 
   const textStyles = [
     styles.text,
@@ -78,11 +78,13 @@ export function Button({
   };
 
   return (
-    <TouchableOpacity
-      style={buttonStyles}
+    <Pressable
+      style={({ pressed }) => [
+        ...buttonStyles,
+        pressed && !isDisabled && { opacity: 0.8 },
+      ]}
       onPress={onPress}
       disabled={isDisabled}
-      activeOpacity={0.8}
       accessibilityRole="button"
       accessibilityLabel={loading ? `${a11yLabel}, loading` : a11yLabel}
       accessibilityHint={accessibilityHint}
@@ -102,7 +104,7 @@ export function Button({
           {rightIcon && <Icon name={rightIcon} size={20} color={iconColor} />}
         </View>
       )}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
@@ -114,6 +116,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
+    // @ts-ignore - web only
+    cursor: 'pointer',
+    userSelect: 'none',
   },
   fullWidth: {
     width: '100%',
