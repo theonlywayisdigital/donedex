@@ -19,7 +19,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Button, Input, Icon, FullScreenLoader } from '../../components/ui';
 import { useAuthStore } from '../../store/authStore';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
-import { supabase } from '../../services/supabase';
+import { db } from '../../services/firebase';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
 import type { SettingsStackParamList } from '../../navigation/MainNavigator';
 
@@ -80,20 +81,31 @@ export function OrganisationSettingsScreen({ navigation }: Props) {
     }
 
     try {
-      const { data, error: fetchError } = await supabase
-        .from('organisations')
-        .select('id, name, slug, contact_email, contact_phone, billing_email, address_line1, address_line2, city, postcode, country')
-        .eq('id', organisationId)
-        .single();
+      const orgDoc = await getDoc(doc(db, 'organisations', organisationId));
 
-      if (fetchError) {
-        setError(fetchError.message);
+      if (!orgDoc.exists()) {
+        setError('Organisation not found');
         setIsLoading(false);
         return;
       }
 
-      setFormData(data as OrganisationData);
-      setOriginalData(data as OrganisationData);
+      const data = orgDoc.data();
+      const orgData: OrganisationData = {
+        id: orgDoc.id,
+        name: data.name || '',
+        slug: data.slug || '',
+        contact_email: data.contact_email || null,
+        contact_phone: data.contact_phone || null,
+        billing_email: data.billing_email || null,
+        address_line1: data.address_line1 || null,
+        address_line2: data.address_line2 || null,
+        city: data.city || null,
+        postcode: data.postcode || null,
+        country: data.country || null,
+      };
+
+      setFormData(orgData);
+      setOriginalData(orgData);
     } catch (err) {
       console.error('Error loading organisation:', err);
       setError('Failed to load organisation details');
@@ -115,27 +127,18 @@ export function OrganisationSettingsScreen({ navigation }: Props) {
     setIsSaving(true);
 
     try {
-      const { error: updateError } = await (supabase
-        .from('organisations') as any)
-        .update({
-          name: formData.name,
-          contact_email: formData.contact_email,
-          contact_phone: formData.contact_phone,
-          billing_email: formData.billing_email,
-          address_line1: formData.address_line1,
-          address_line2: formData.address_line2,
-          city: formData.city,
-          postcode: formData.postcode,
-          country: formData.country,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', organisationId);
-
-      if (updateError) {
-        setError(updateError.message);
-        setIsSaving(false);
-        return;
-      }
+      await updateDoc(doc(db, 'organisations', organisationId), {
+        name: formData.name,
+        contact_email: formData.contact_email,
+        contact_phone: formData.contact_phone,
+        billing_email: formData.billing_email,
+        address_line1: formData.address_line1,
+        address_line2: formData.address_line2,
+        city: formData.city,
+        postcode: formData.postcode,
+        country: formData.country,
+        updated_at: new Date().toISOString(),
+      });
 
       setOriginalData(formData);
       showNotification('Success', 'Organisation details have been updated.');

@@ -55,3 +55,7 @@ android/
 
 # Local Netlify folder
 .netlify
+
+# Google Cloud SDK (local install)
+functions/google-cloud-sdk/
+functions/google-cloud-cli-*.tar.gz

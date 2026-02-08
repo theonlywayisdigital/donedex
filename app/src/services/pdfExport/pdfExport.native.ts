@@ -40,13 +40,13 @@ async function imageUrlToBase64(url: string): Promise<string | null> {
  * Pre-load all images as base64 data URIs
  */
 async function preloadImages(options: ExportOptions): Promise<{ imageDataMap: ImageDataMap; failedCount: number }> {
-  const imageUrls = collectImageUrls(options);
+  const imageUrls = await collectImageUrls(options);
   const imageDataMap: ImageDataMap = new Map();
   let failedCount = 0;
 
   // Fetch all images in parallel
   const results = await Promise.all(
-    imageUrls.map(async (url) => {
+    imageUrls.map(async (url: string) => {
       const base64 = await imageUrlToBase64(url);
       return { url, base64 };
     })
@@ -72,7 +72,7 @@ export async function exportReportToPdf(options: ExportOptions): Promise<ExportR
     // Pre-load all images as base64 for reliable PDF embedding
     const { imageDataMap, failedCount } = await preloadImages(options);
 
-    const html = generateHtml({ ...options, imageDataMap });
+    const html = await generateHtml({ ...options, imageDataMap });
 
     // Generate PDF
     const { uri } = await Print.printToFileAsync({
@@ -114,7 +114,7 @@ export async function printReport(options: ExportOptions): Promise<ExportResult>
     // Pre-load all images as base64 for reliable printing
     const { imageDataMap, failedCount } = await preloadImages(options);
 
-    const html = generateHtml({ ...options, imageDataMap });
+    const html = await generateHtml({ ...options, imageDataMap });
 
     await Print.printAsync({
       html,

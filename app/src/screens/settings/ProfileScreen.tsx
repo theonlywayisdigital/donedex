@@ -18,7 +18,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Button, Input } from '../../components/ui';
 import { useAuthStore } from '../../store/authStore';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
-import { supabase } from '../../services/supabase';
+import { fetchUserProfile, updateUserProfile } from '../../services/auth';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
 import type { SettingsStackParamList } from '../../navigation/MainNavigator';
 
@@ -51,12 +51,8 @@ export function ProfileScreen({ navigation }: Props) {
   useEffect(() => {
     const loadPhone = async () => {
       if (!user?.id) return;
-      const { data } = await (supabase
-        .from('user_profiles') as ReturnType<typeof supabase.from>)
-        .select('phone_number')
-        .eq('id', user.id)
-        .single();
-      const phoneVal = (data as Record<string, unknown>)?.phone_number as string || '';
+      const userProfile = await fetchUserProfile(user.id);
+      const phoneVal = userProfile?.phone_number || '';
       setPhone(phoneVal);
       setInitialPhone(phoneVal);
     };
@@ -78,29 +74,16 @@ export function ProfileScreen({ navigation }: Props) {
     try {
       const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
 
-      // Update user_profiles table (including phone_number)
-      const { error: profileError } = await (supabase
-        .from('user_profiles') as ReturnType<typeof supabase.from>)
-        .update({
-          full_name: fullName,
-          phone_number: phone.trim() || null,
-          updated_at: new Date().toISOString(),
-        } as Record<string, unknown>)
-        .eq('id', user.id);
-
-      if (profileError) {
-        setError(profileError.message);
-        setIsLoading(false);
-        return;
-      }
-
-      // Also update auth metadata
-      const { error: authError } = await supabase.auth.updateUser({
-        data: { full_name: fullName },
+      // Update user profile in Firestore
+      const { error: profileError } = await updateUserProfile(user.id, {
+        full_name: fullName,
+        phone_number: phone.trim() || null,
       });
 
-      if (authError) {
-        console.error('Error updating auth metadata:', authError);
+      if (profileError) {
+        setError(profileError);
+        setIsLoading(false);
+        return;
       }
 
       // Refresh session to pick up changes

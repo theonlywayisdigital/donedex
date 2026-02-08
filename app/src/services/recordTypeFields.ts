@@ -1,4 +1,26 @@
-import { supabase } from './supabase';
+/**
+ * Record Type Fields Service
+ * Handles CRUD operations for record type fields
+ *
+ * Migrated to Firebase/Firestore
+ */
+
+import { db } from './firebase';
+import {
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  query,
+  where,
+  orderBy,
+  limit as firestoreLimit,
+  writeBatch,
+} from 'firebase/firestore';
+import { generateId } from './firestore';
 import type { RecordTypeField, PiiCategory } from '../types';
 import { fieldTypeContainsPII, getFieldTypePiiCategory } from '../constants/fieldTypes';
 
@@ -18,18 +40,25 @@ export interface RecordTypeFieldResult {
 export async function fetchRecordTypeFields(
   recordTypeId: string
 ): Promise<RecordTypeFieldsResult> {
-  const { data, error } = await supabase
-    .from('record_type_fields')
-    .select('*')
-    .eq('record_type_id', recordTypeId)
-    .order('sort_order', { ascending: true });
+  try {
+    const fieldsQuery = query(
+      collection(db, 'record_type_fields'),
+      where('record_type_id', '==', recordTypeId),
+      orderBy('sort_order', 'asc')
+    );
+    const snapshot = await getDocs(fieldsQuery);
 
-  if (error) {
-    console.error('Error fetching record type fields:', error);
-    return { data: [], error: { message: error.message } };
+    const fields: RecordTypeField[] = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    } as RecordTypeField));
+
+    return { data: fields, error: null };
+  } catch (err) {
+    console.error('Error fetching record type fields:', err);
+    const message = err instanceof Error ? err.message : 'Failed to fetch record type fields';
+    return { data: [], error: { message } };
   }
-
-  return { data: (data as RecordTypeField[]) || [], error: null };
 }
 
 /**
@@ -38,18 +67,20 @@ export async function fetchRecordTypeFields(
 export async function fetchRecordTypeFieldById(
   fieldId: string
 ): Promise<RecordTypeFieldResult> {
-  const { data, error } = await supabase
-    .from('record_type_fields')
-    .select('*')
-    .eq('id', fieldId)
-    .single();
+  try {
+    const fieldRef = doc(db, 'record_type_fields', fieldId);
+    const fieldSnap = await getDoc(fieldRef);
 
-  if (error) {
-    console.error('Error fetching record type field:', error);
-    return { data: null, error: { message: error.message } };
+    if (!fieldSnap.exists()) {
+      return { data: null, error: { message: 'Field not found' } };
+    }
+
+    return { data: { id: fieldSnap.id, ...fieldSnap.data() } as RecordTypeField, error: null };
+  } catch (err) {
+    console.error('Error fetching record type field:', err);
+    const message = err instanceof Error ? err.message : 'Failed to fetch record type field';
+    return { data: null, error: { message } };
   }
-
-  return { data: data as RecordTypeField, error: null };
 }
 
 export interface CreateRecordTypeFieldInput {
@@ -83,39 +114,48 @@ export interface CreateRecordTypeFieldInput {
 export async function createRecordTypeField(
   field: CreateRecordTypeFieldInput
 ): Promise<RecordTypeFieldResult> {
-  // If no sort_order provided, get the max and add 1
-  if (field.sort_order === undefined) {
-    const { data: existingFields } = await supabase
-      .from('record_type_fields')
-      .select('sort_order')
-      .eq('record_type_id', field.record_type_id)
-      .order('sort_order', { ascending: false })
-      .limit(1);
+  try {
+    // If no sort_order provided, get the max and add 1
+    let sortOrder = field.sort_order;
+    if (sortOrder === undefined) {
+      const existingQuery = query(
+        collection(db, 'record_type_fields'),
+        where('record_type_id', '==', field.record_type_id),
+        orderBy('sort_order', 'desc'),
+        firestoreLimit(1)
+      );
+      const existingSnap = await getDocs(existingQuery);
 
-    field.sort_order = existingFields && existingFields.length > 0
-      ? ((existingFields[0] as { sort_order: number }).sort_order + 1)
-      : 0;
+      if (!existingSnap.empty) {
+        const lastField = existingSnap.docs[0].data();
+        sortOrder = (lastField.sort_order || 0) + 1;
+      } else {
+        sortOrder = 0;
+      }
+    }
+
+    const fieldId = generateId();
+    const now = new Date().toISOString();
+
+    // Auto-set PII flags based on field type if not explicitly provided
+    const fieldData = {
+      ...field,
+      sort_order: sortOrder,
+      contains_pii: field.contains_pii ?? fieldTypeContainsPII(field.field_type),
+      pii_category: field.pii_category ?? getFieldTypePiiCategory(field.field_type),
+      created_at: now,
+      updated_at: now,
+    };
+
+    const fieldRef = doc(db, 'record_type_fields', fieldId);
+    await setDoc(fieldRef, fieldData);
+
+    return { data: { id: fieldId, ...fieldData } as RecordTypeField, error: null };
+  } catch (err) {
+    console.error('Error creating record type field:', err);
+    const message = err instanceof Error ? err.message : 'Failed to create record type field';
+    return { data: null, error: { message } };
   }
-
-  // Auto-set PII flags based on field type if not explicitly provided
-  const fieldWithPii = {
-    ...field,
-    contains_pii: field.contains_pii ?? fieldTypeContainsPII(field.field_type),
-    pii_category: field.pii_category ?? getFieldTypePiiCategory(field.field_type),
-  };
-
-  const { data, error } = await supabase
-    .from('record_type_fields')
-    .insert(fieldWithPii as never)
-    .select()
-    .single();
-
-  if (error) {
-    console.error('Error creating record type field:', error);
-    return { data: null, error: { message: error.message } };
-  }
-
-  return { data: data as RecordTypeField, error: null };
 }
 
 /**
@@ -125,19 +165,20 @@ export async function updateRecordTypeField(
   fieldId: string,
   updates: Partial<Omit<RecordTypeField, 'id' | 'record_type_id' | 'created_at' | 'updated_at'>>
 ): Promise<RecordTypeFieldResult> {
-  const { data, error } = await supabase
-    .from('record_type_fields')
-    .update(updates as never)
-    .eq('id', fieldId)
-    .select()
-    .single();
+  try {
+    const fieldRef = doc(db, 'record_type_fields', fieldId);
+    await updateDoc(fieldRef, {
+      ...updates,
+      updated_at: new Date().toISOString(),
+    });
 
-  if (error) {
-    console.error('Error updating record type field:', error);
-    return { data: null, error: { message: error.message } };
+    const fieldSnap = await getDoc(fieldRef);
+    return { data: { id: fieldSnap.id, ...fieldSnap.data() } as RecordTypeField, error: null };
+  } catch (err) {
+    console.error('Error updating record type field:', err);
+    const message = err instanceof Error ? err.message : 'Failed to update record type field';
+    return { data: null, error: { message } };
   }
-
-  return { data: data as RecordTypeField, error: null };
 }
 
 /**
@@ -146,17 +187,16 @@ export async function updateRecordTypeField(
 export async function deleteRecordTypeField(
   fieldId: string
 ): Promise<{ error: { message: string } | null }> {
-  const { error } = await supabase
-    .from('record_type_fields')
-    .delete()
-    .eq('id', fieldId);
+  try {
+    const fieldRef = doc(db, 'record_type_fields', fieldId);
+    await deleteDoc(fieldRef);
 
-  if (error) {
-    console.error('Error deleting record type field:', error);
-    return { error: { message: error.message } };
+    return { error: null };
+  } catch (err) {
+    console.error('Error deleting record type field:', err);
+    const message = err instanceof Error ? err.message : 'Failed to delete record type field';
+    return { error: { message } };
   }
-
-  return { error: null };
 }
 
 /**
@@ -166,27 +206,26 @@ export async function reorderRecordTypeFields(
   recordTypeId: string,
   fieldIds: string[]
 ): Promise<{ error: { message: string } | null }> {
-  // Update each field's sort_order based on its position in the array
-  const updates = fieldIds.map((fieldId, index) => ({
-    id: fieldId,
-    sort_order: index,
-  }));
+  try {
+    const batch = writeBatch(db);
+    const now = new Date().toISOString();
 
-  // Update each field individually (Supabase doesn't support batch updates)
-  for (const update of updates) {
-    const { error } = await supabase
-      .from('record_type_fields')
-      .update({ sort_order: update.sort_order } as never)
-      .eq('id', update.id)
-      .eq('record_type_id', recordTypeId);
+    fieldIds.forEach((fieldId, index) => {
+      const fieldRef = doc(db, 'record_type_fields', fieldId);
+      batch.update(fieldRef, {
+        sort_order: index,
+        updated_at: now,
+      });
+    });
 
-    if (error) {
-      console.error('Error reordering record type fields:', error);
-      return { error: { message: error.message } };
-    }
+    await batch.commit();
+
+    return { error: null };
+  } catch (err) {
+    console.error('Error reordering record type fields:', err);
+    const message = err instanceof Error ? err.message : 'Failed to reorder record type fields';
+    return { error: { message } };
   }
-
-  return { error: null };
 }
 
 /**
@@ -198,24 +237,36 @@ export async function bulkCreateRecordTypeFields(
   recordTypeId: string,
   fields: Omit<CreateRecordTypeFieldInput, 'record_type_id'>[]
 ): Promise<RecordTypeFieldsResult> {
-  const fieldsWithRecordType = fields.map((field, index) => ({
-    ...field,
-    record_type_id: recordTypeId,
-    sort_order: field.sort_order ?? index,
-    // Auto-set PII flags based on field type
-    contains_pii: field.contains_pii ?? fieldTypeContainsPII(field.field_type),
-    pii_category: field.pii_category ?? getFieldTypePiiCategory(field.field_type),
-  }));
+  try {
+    const batch = writeBatch(db);
+    const now = new Date().toISOString();
+    const createdFields: RecordTypeField[] = [];
 
-  const { data, error } = await supabase
-    .from('record_type_fields')
-    .insert(fieldsWithRecordType as never[])
-    .select();
+    fields.forEach((field, index) => {
+      const fieldId = generateId();
+      const fieldData = {
+        ...field,
+        record_type_id: recordTypeId,
+        sort_order: field.sort_order ?? index,
+        // Auto-set PII flags based on field type
+        contains_pii: field.contains_pii ?? fieldTypeContainsPII(field.field_type),
+        pii_category: field.pii_category ?? getFieldTypePiiCategory(field.field_type),
+        created_at: now,
+        updated_at: now,
+      };
 
-  if (error) {
-    console.error('Error bulk creating record type fields:', error);
-    return { data: [], error: { message: error.message } };
+      const fieldRef = doc(db, 'record_type_fields', fieldId);
+      batch.set(fieldRef, fieldData);
+
+      createdFields.push({ id: fieldId, ...fieldData } as RecordTypeField);
+    });
+
+    await batch.commit();
+
+    return { data: createdFields, error: null };
+  } catch (err) {
+    console.error('Error bulk creating record type fields:', err);
+    const message = err instanceof Error ? err.message : 'Failed to bulk create record type fields';
+    return { data: [], error: { message } };
   }
-
-  return { data: (data as RecordTypeField[]) || [], error: null };
 }

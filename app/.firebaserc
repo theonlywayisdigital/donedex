@@ -1,0 +1,12 @@
+{
+  "projects": {
+    "default": "donedex-72116"
+  },
+  "targets": {
+    "donedex-72116": {
+      "hosting": {
+        "app": ["donedex-app-prod"]
+      }
+    }
+  }
+}

@@ -16,7 +16,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
-import { supabase } from '../../services/supabase';
+import { auth } from '../../services/firebase';
+import { changePassword, getCurrentSession } from '../../services/auth';
 import { useAuthStore } from '../../store/authStore';
 import { Button, Input } from '../../components/ui';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
@@ -72,23 +73,21 @@ export function SetPasswordScreen({ navigation, route }: Props) {
 
     try {
       // First check if we have a session
-      const { data: sessionData } = await supabase.auth.getSession();
-      console.log('[SetPassword] Current session:', sessionData.session ? 'exists' : 'null');
+      const session = await getCurrentSession();
+      console.log('[SetPassword] Current session:', session ? 'exists' : 'null');
 
-      if (!sessionData.session) {
+      if (!session) {
         setError('Session expired. Please use the invite link again.');
         setIsSubmitting(false);
         return;
       }
 
-      const { error: updateError } = await supabase.auth.updateUser({
-        password,
-      });
+      const { error: updateError } = await changePassword(password);
 
-      console.log('[SetPassword] updateUser result:', updateError ? updateError.message : 'success');
+      console.log('[SetPassword] updateUser result:', updateError ? updateError : 'success');
 
       if (updateError) {
-        setError(updateError.message);
+        setError(updateError);
         setIsSubmitting(false);
         return;
       }
@@ -97,19 +96,23 @@ export function SetPasswordScreen({ navigation, route }: Props) {
       console.log('[SetPassword] Password updated successfully');
 
       // Clear the password setup flag - this will cause RootNavigator to re-render
-      // and show either onboarding or the main app
       console.log('[SetPassword] Clearing password setup flag...');
       clearPasswordSetup();
 
-      // On web, we need to explicitly navigate to the root URL
-      // because React Navigation won't automatically change the URL
-      // when the navigator structure changes
+      // Clean up URL hash now that password is set (so refresh doesn't re-trigger)
+      if (Platform.OS === 'web') {
+        try {
+          window.history.replaceState(null, '', '/');
+        } catch { /* ignore */ }
+      }
+
+      setIsSubmitting(false);
+
+      // Redirect to dashboard
       if (Platform.OS === 'web') {
         console.log('[SetPassword] Redirecting to dashboard...');
         window.location.href = '/';
       }
-
-      setIsSubmitting(false);
     } catch (err) {
       console.error('[SetPassword] Error:', err);
       setError(err instanceof Error ? err.message : 'Failed to set password');

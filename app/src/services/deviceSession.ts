@@ -1,24 +1,27 @@
 /**
  * Device Session Service
  * Handles single-device login enforcement for staff members
+ *
+ * Migrated to Firebase/Firestore
  */
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from './supabase';
+import { auth, db } from './firebase';
+import {
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  collection,
+  query,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
+import { collections, generateId } from './firestore';
 import * as Device from 'expo-device';
 
 const DEVICE_ID_KEY = '@donedex_device_id';
-
-// Type definitions for RPC responses
-interface CheckActiveSessionRow {
-  has_active_session: boolean;
-  device_name: string | null;
-  last_active_at: string | null;
-}
-
-interface ProfileRole {
-  role: string;
-}
 
 /**
  * Generate or retrieve a unique device ID
@@ -89,28 +92,32 @@ export interface ActiveSessionInfo {
  */
 export async function checkActiveSession(userId: string): Promise<ActiveSessionInfo> {
   try {
-    const { data, error } = await supabase.rpc('check_active_session' as never, {
-      p_user_id: userId,
-    } as never) as unknown as { data: CheckActiveSessionRow[] | null; error: { message: string } | null };
+    const deviceId = await getDeviceId();
 
-    if (error) {
-      console.error('[DeviceSession] Error checking active session:', error);
-      // On error, allow login (fail open for better UX)
-      return { hasActiveSession: false, deviceName: null, lastActiveAt: null };
-    }
+    // Query for active sessions that are NOT on the current device
+    const sessionsQuery = query(
+      collection(db, 'user_sessions'),
+      where('user_id', '==', userId),
+      where('is_active', '==', true)
+    );
+    const sessionsSnap = await getDocs(sessionsQuery);
 
-    if (data && Array.isArray(data) && data.length > 0) {
-      const session = data[0];
-      return {
-        hasActiveSession: session.has_active_session === true,
-        deviceName: session.device_name,
-        lastActiveAt: session.last_active_at,
-      };
+    // Check if there's an active session on a different device
+    for (const sessionDoc of sessionsSnap.docs) {
+      const session = sessionDoc.data();
+      if (session.device_id !== deviceId) {
+        return {
+          hasActiveSession: true,
+          deviceName: session.device_name || null,
+          lastActiveAt: session.last_active_at || null,
+        };
+      }
     }
 
     return { hasActiveSession: false, deviceName: null, lastActiveAt: null };
   } catch (error) {
-    console.error('[DeviceSession] Exception checking active session:', error);
+    console.error('[DeviceSession] Error checking active session:', error);
+    // On error, allow login (fail open for better UX)
     return { hasActiveSession: false, deviceName: null, lastActiveAt: null };
   }
 }
@@ -123,20 +130,42 @@ export async function createSession(userId: string): Promise<string | null> {
   try {
     const deviceId = await getDeviceId();
     const deviceName = getDeviceName();
+    const now = new Date().toISOString();
 
-    const { data, error } = await supabase.rpc('create_user_session' as never, {
-      p_user_id: userId,
-      p_device_id: deviceId,
-      p_device_name: deviceName,
-    } as never) as unknown as { data: string | null; error: { message: string } | null };
+    // First, deactivate any existing sessions for this user
+    const existingQuery = query(
+      collection(db, 'user_sessions'),
+      where('user_id', '==', userId),
+      where('is_active', '==', true)
+    );
+    const existingSnap = await getDocs(existingQuery);
 
-    if (error) {
-      console.error('[DeviceSession] Error creating session:', error);
-      return null;
-    }
+    const batch = writeBatch(db);
 
-    console.log('[DeviceSession] Session created:', data);
-    return data;
+    // Deactivate old sessions
+    existingSnap.docs.forEach((sessionDoc) => {
+      batch.update(sessionDoc.ref, {
+        is_active: false,
+        deactivated_at: now,
+      });
+    });
+
+    // Create new session
+    const sessionId = generateId();
+    const sessionRef = doc(db, 'user_sessions', sessionId);
+    batch.set(sessionRef, {
+      user_id: userId,
+      device_id: deviceId,
+      device_name: deviceName,
+      is_active: true,
+      last_active_at: now,
+      created_at: now,
+    });
+
+    await batch.commit();
+
+    console.log('[DeviceSession] Session created:', sessionId);
+    return sessionId;
   } catch (error) {
     console.error('[DeviceSession] Exception creating session:', error);
     return null;
@@ -149,18 +178,30 @@ export async function createSession(userId: string): Promise<string | null> {
  */
 export async function updateHeartbeat(): Promise<boolean> {
   try {
+    const user = auth.currentUser;
+    if (!user) return false;
+
     const deviceId = await getDeviceId();
+    const now = new Date().toISOString();
 
-    const { data, error } = await supabase.rpc('update_session_heartbeat' as never, {
-      p_device_id: deviceId,
-    } as never) as unknown as { data: boolean | null; error: { message: string } | null };
+    // Find the active session for this user and device
+    const sessionQuery = query(
+      collection(db, 'user_sessions'),
+      where('user_id', '==', user.uid),
+      where('device_id', '==', deviceId),
+      where('is_active', '==', true)
+    );
+    const sessionSnap = await getDocs(sessionQuery);
 
-    if (error) {
-      console.error('[DeviceSession] Error updating heartbeat:', error);
-      return false;
+    if (!sessionSnap.empty) {
+      const sessionDoc = sessionSnap.docs[0];
+      await updateDoc(sessionDoc.ref, {
+        last_active_at: now,
+      });
+      return true;
     }
 
-    return data === true;
+    return false;
   } catch (error) {
     console.error('[DeviceSession] Exception updating heartbeat:', error);
     return false;
@@ -172,19 +213,32 @@ export async function updateHeartbeat(): Promise<boolean> {
  */
 export async function deactivateSession(): Promise<boolean> {
   try {
+    const user = auth.currentUser;
+    if (!user) return false;
+
     const deviceId = await getDeviceId();
+    const now = new Date().toISOString();
 
-    const { data, error } = await supabase.rpc('deactivate_user_session' as never, {
-      p_device_id: deviceId,
-    } as never) as unknown as { data: boolean | null; error: { message: string } | null };
+    // Find and deactivate the session
+    const sessionQuery = query(
+      collection(db, 'user_sessions'),
+      where('user_id', '==', user.uid),
+      where('device_id', '==', deviceId),
+      where('is_active', '==', true)
+    );
+    const sessionSnap = await getDocs(sessionQuery);
 
-    if (error) {
-      console.error('[DeviceSession] Error deactivating session:', error);
-      return false;
+    if (!sessionSnap.empty) {
+      const sessionDoc = sessionSnap.docs[0];
+      await updateDoc(sessionDoc.ref, {
+        is_active: false,
+        deactivated_at: now,
+      });
+      console.log('[DeviceSession] Session deactivated');
+      return true;
     }
 
-    console.log('[DeviceSession] Session deactivated');
-    return data === true;
+    return false;
   } catch (error) {
     console.error('[DeviceSession] Exception deactivating session:', error);
     return false;
@@ -197,17 +251,28 @@ export async function deactivateSession(): Promise<boolean> {
  */
 export async function adminResetUserSessions(targetUserId: string): Promise<boolean> {
   try {
-    const { data, error } = await supabase.rpc('admin_reset_user_sessions' as never, {
-      p_target_user_id: targetUserId,
-    } as never) as unknown as { data: boolean | null; error: { message: string } | null };
+    const now = new Date().toISOString();
 
-    if (error) {
-      console.error('[DeviceSession] Error resetting sessions:', error);
-      throw new Error(error.message);
-    }
+    const sessionsQuery = query(
+      collection(db, 'user_sessions'),
+      where('user_id', '==', targetUserId),
+      where('is_active', '==', true)
+    );
+    const sessionsSnap = await getDocs(sessionsQuery);
+
+    const batch = writeBatch(db);
+    sessionsSnap.docs.forEach((sessionDoc) => {
+      batch.update(sessionDoc.ref, {
+        is_active: false,
+        deactivated_at: now,
+        deactivated_by: 'admin_reset',
+      });
+    });
+
+    await batch.commit();
 
     console.log('[DeviceSession] Sessions reset for user:', targetUserId);
-    return data === true;
+    return true;
   } catch (error) {
     console.error('[DeviceSession] Exception resetting sessions:', error);
     throw error;
@@ -215,23 +280,20 @@ export async function adminResetUserSessions(targetUserId: string): Promise<bool
 }
 
 /**
- * Get user's role from profiles table
- * Returns null if profile not found
+ * Get user's role from users collection
+ * Returns null if user not found
  */
 export async function getUserRole(userId: string): Promise<string | null> {
   try {
-    const { data, error } = await supabase
-      .from('organisation_users')
-      .select('role')
-      .eq('user_id', userId)
-      .single() as unknown as { data: ProfileRole | null; error: { message: string } | null };
+    const userRef = doc(db, collections.users, userId);
+    const userSnap = await getDoc(userRef);
 
-    if (error || !data) {
-      console.error('[DeviceSession] Error getting user role:', error);
+    if (!userSnap.exists()) {
+      console.error('[DeviceSession] User not found:', userId);
       return null;
     }
 
-    return data.role;
+    return userSnap.data().role || null;
   } catch (error) {
     console.error('[DeviceSession] Exception getting user role:', error);
     return null;

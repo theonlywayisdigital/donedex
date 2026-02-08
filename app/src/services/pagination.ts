@@ -1,5 +1,5 @@
 /**
- * Pagination utilities for cursor-based pagination with Supabase
+ * Pagination utilities for cursor-based pagination with Firestore
  * Uses created_at + id compound cursor for consistent performance at scale
  */
 

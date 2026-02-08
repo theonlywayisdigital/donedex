@@ -40,10 +40,10 @@ function getMediaPaths(value: string | null | undefined): string[] {
 /**
  * Get display text and color for a response value
  */
-export function getResponseDisplay(
+export async function getResponseDisplay(
   value: string | null | undefined,
   itemType: string
-): ResponseDisplay {
+): Promise<ResponseDisplay> {
   if (!value) {
     return { text: 'Not answered', color: '#6B7280' };
   }
@@ -210,7 +210,7 @@ export function getResponseDisplay(
     case 'signature':
       try {
         const parsed = JSON.parse(value);
-        const signatureUrl = getSignatureUrl(parsed.path);
+        const signatureUrl = await getSignatureUrl(parsed.path);
         const signerText = parsed.signerName ? ` (${parsed.signerName})` : '';
         return {
           text: `Signature captured${signerText}`,
@@ -226,7 +226,7 @@ export function getResponseDisplay(
           text: 'Signature captured',
           color: '#059669',
           isSignature: true,
-          signatureUrl: isBase64 ? value : getSignatureUrl(value),
+          signatureUrl: isBase64 ? value : await getSignatureUrl(value),
         };
       }
 
@@ -242,7 +242,7 @@ export function getResponseDisplay(
           text,
           color: hasSignature ? '#059669' : '#6B7280',
           isSignature: hasSignature,
-          signatureUrl: hasSignature ? getSignatureUrl(parsed.signaturePath) : undefined,
+          signatureUrl: hasSignature ? await getSignatureUrl(parsed.signaturePath) : undefined,
         };
       } catch {
         return { text: value, color: '#111827' };
@@ -290,7 +290,7 @@ export function getResponseDisplay(
     case 'annotated_photo': {
       const photoPaths = getMediaPaths(value);
       if (photoPaths.length > 0) {
-        const photoUrls = photoPaths.map((p) => getPhotoUrl(p));
+        const photoUrls = await Promise.all(photoPaths.map((p) => getPhotoUrl(p)));
         return {
           text: `${photoPaths.length} photo(s)`,
           color: '#059669',
@@ -327,7 +327,7 @@ export function escapeHtml(text: string): string {
  * Collect all image URLs from the export options
  * Used to pre-load images as base64 before generating PDF
  */
-export function collectImageUrls(options: ExportOptions): string[] {
+export async function collectImageUrls(options: ExportOptions): Promise<string[]> {
   const urls: string[] = [];
   const { template, responses, branding } = options;
 
@@ -349,11 +349,11 @@ export function collectImageUrls(options: ExportOptions): string[] {
         try {
           const parsed = JSON.parse(value);
           if (parsed.path) {
-            urls.push(getSignatureUrl(parsed.path));
+            urls.push(await getSignatureUrl(parsed.path));
           }
         } catch {
           if (!value.startsWith('data:') && !value.startsWith('blob:')) {
-            urls.push(getSignatureUrl(value));
+            urls.push(await getSignatureUrl(value));
           }
         }
       }
@@ -363,7 +363,7 @@ export function collectImageUrls(options: ExportOptions): string[] {
         try {
           const parsed = JSON.parse(value);
           if (parsed.signaturePath) {
-            urls.push(getSignatureUrl(parsed.signaturePath));
+            urls.push(await getSignatureUrl(parsed.signaturePath));
           }
         } catch {
           // Not JSON, skip
@@ -374,7 +374,7 @@ export function collectImageUrls(options: ExportOptions): string[] {
       if (['photo', 'photo_before_after', 'annotated_photo'].includes(item.item_type)) {
         const paths = getMediaPaths(value);
         for (const path of paths) {
-          const photoUrl = getPhotoUrl(path);
+          const photoUrl = await getPhotoUrl(path);
           urls.push(photoUrl);
         }
       }
@@ -397,7 +397,7 @@ function getImageSrc(url: string, imageDataMap?: ImageDataMap): string {
 /**
  * Generate HTML content for the PDF
  */
-export function generateHtml(options: ExportOptionsWithImages): string {
+export async function generateHtml(options: ExportOptionsWithImages): Promise<string> {
   const { report, template, responses, branding, imageDataMap } = options;
 
   // Use custom branding or fall back to defaults
@@ -410,92 +410,92 @@ export function generateHtml(options: ExportOptionsWithImages): string {
   const statusColor = report.status === 'submitted' ? '#059669' : '#D97706';
   const statusText = report.status === 'submitted' ? 'Completed' : 'Draft';
 
-  // Generate sections HTML
-  const sectionsHtml = template.template_sections
-    .map((section) => {
-      const itemsHtml = section.template_items
-        .map((item) => {
-          const response = responses.get(item.id);
-          const display = getResponseDisplay(response?.response_value, item.item_type);
+  // Generate sections HTML with async handling
+  const sectionPromises = template.template_sections.map(async (section) => {
+    const itemPromises = section.template_items.map(async (item) => {
+      const response = responses.get(item.id);
+      const display = await getResponseDisplay(response?.response_value, item.item_type);
 
-          let notesHtml = '';
-          if (response?.notes) {
-            notesHtml = `
-              <div class="notes">
-                <strong>Notes:</strong> ${escapeHtml(response.notes)}
-              </div>
-            `;
-          }
+      let notesHtml = '';
+      if (response?.notes) {
+        notesHtml = `
+          <div class="notes">
+            <strong>Notes:</strong> ${escapeHtml(response.notes)}
+          </div>
+        `;
+      }
 
-          let severityHtml = '';
-          if (response?.severity) {
-            const severityColor =
-              response.severity === 'low'
-                ? '#059669'
-                : response.severity === 'medium'
-                ? '#D97706'
-                : '#DC2626';
-            severityHtml = `
-              <div class="severity">
-                <strong>Severity:</strong>
-                <span style="color: ${severityColor}; font-weight: 600;">
-                  ${response.severity.charAt(0).toUpperCase() + response.severity.slice(1)}
-                </span>
-              </div>
-            `;
-          }
+      let severityHtml = '';
+      if (response?.severity) {
+        const severityColor =
+          response.severity === 'low'
+            ? '#059669'
+            : response.severity === 'medium'
+            ? '#D97706'
+            : '#DC2626';
+        severityHtml = `
+          <div class="severity">
+            <strong>Severity:</strong>
+            <span style="color: ${severityColor}; font-weight: 600;">
+              ${response.severity.charAt(0).toUpperCase() + response.severity.slice(1)}
+            </span>
+          </div>
+        `;
+      }
 
-          // Handle signature images
-          let signatureHtml = '';
-          if (display.isSignature && display.signatureUrl) {
-            const signatureSrc = getImageSrc(display.signatureUrl, imageDataMap);
-            signatureHtml = `
-              <div class="signature-container">
-                <img src="${signatureSrc}" alt="Signature" class="signature-image" />
-              </div>
-            `;
-          }
+      // Handle signature images
+      let signatureHtml = '';
+      if (display.isSignature && display.signatureUrl) {
+        const signatureSrc = getImageSrc(display.signatureUrl, imageDataMap);
+        signatureHtml = `
+          <div class="signature-container">
+            <img src="${signatureSrc}" alt="Signature" class="signature-image" />
+          </div>
+        `;
+      }
 
-          // Handle photo galleries
-          let photoGalleryHtml = '';
-          if (display.photoUrls && display.photoUrls.length > 0) {
-            photoGalleryHtml = `
-              <div class="photo-gallery">
-                ${display.photoUrls.map((url) => `
-                  <img src="${getImageSrc(url, imageDataMap)}" alt="Photo" class="photo-image" />
-                `).join('')}
-              </div>
-            `;
-          }
-
-          return `
-            <div class="item">
-              <div class="item-row">
-                <span class="item-label">
-                  ${escapeHtml(item.label)}
-                  ${item.is_required ? '<span class="required">*</span>' : ''}
-                </span>
-                <span class="item-value" style="color: ${display.color};">
-                  ${escapeHtml(display.text)}
-                </span>
-              </div>
-              ${signatureHtml}
-              ${photoGalleryHtml}
-              ${notesHtml}
-              ${severityHtml}
-            </div>
-          `;
-        })
-        .join('');
+      // Handle photo galleries
+      let photoGalleryHtml = '';
+      if (display.photoUrls && display.photoUrls.length > 0) {
+        photoGalleryHtml = `
+          <div class="photo-gallery">
+            ${display.photoUrls.map((url: string) => `
+              <img src="${getImageSrc(url, imageDataMap)}" alt="Photo" class="photo-image" />
+            `).join('')}
+          </div>
+        `;
+      }
 
       return `
-        <div class="section">
-          <h3 class="section-title">${escapeHtml(section.name)}</h3>
-          ${itemsHtml}
+        <div class="item">
+          <div class="item-row">
+            <span class="item-label">
+              ${escapeHtml(item.label)}
+              ${item.is_required ? '<span class="required">*</span>' : ''}
+            </span>
+            <span class="item-value" style="color: ${display.color};">
+              ${escapeHtml(display.text)}
+            </span>
+          </div>
+          ${signatureHtml}
+          ${photoGalleryHtml}
+          ${notesHtml}
+          ${severityHtml}
         </div>
       `;
-    })
-    .join('');
+    });
+
+    const itemsHtml = (await Promise.all(itemPromises)).join('');
+
+    return `
+      <div class="section">
+        <h3 class="section-title">${escapeHtml(section.name)}</h3>
+        ${itemsHtml}
+      </div>
+    `;
+  });
+
+  const sectionsHtml = (await Promise.all(sectionPromises)).join('');
 
   return `
     <!DOCTYPE html>

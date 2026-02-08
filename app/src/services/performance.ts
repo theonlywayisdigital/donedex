@@ -330,7 +330,7 @@ export function flushMetrics(): void {
   const metrics = [...metricsBuffer];
   metricsBuffer = [];
 
-  // TODO: Send to analytics service (e.g., Supabase edge function, Sentry, etc.)
+  // TODO: Send to analytics service (e.g., Firebase Cloud Function, Sentry, etc.)
 }
 
 // ============================================

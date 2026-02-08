@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   RefreshControl,
   TextInput,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
 import { Icon } from '../../components/ui';
@@ -17,16 +17,26 @@ import type { OrganisationSummary } from '../../types/superAdmin';
 import type { SuperAdminStackParamList } from '../../navigation/SuperAdminNavigator';
 
 type NavigationProp = NativeStackNavigationProp<SuperAdminStackParamList, 'OrganisationsList'>;
+type RouteType = RouteProp<SuperAdminStackParamList, 'OrganisationsList'>;
 
 export function OrganisationsListScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const route = useRoute<RouteType>();
 
   const [organisations, setOrganisations] = useState<OrganisationSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const loadData = useCallback(async () => {
+  // Track if we need to force refresh (e.g., after creating a new org)
+  const lastRefreshRef = useRef<number>(0);
+
+  const loadData = useCallback(async (forceRefresh = false) => {
+    // Add a small delay for Firestore eventual consistency when force refreshing
+    if (forceRefresh) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
     try {
       const result = await fetchAllOrganisations();
       if (result.data) {
@@ -42,8 +52,14 @@ export function OrganisationsListScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
-    }, [loadData])
+      // Check if we should force refresh (route param or time-based)
+      const refresh = (route.params as { refresh?: boolean } | undefined)?.refresh;
+      const now = Date.now();
+      const shouldForceRefresh = refresh || (now - lastRefreshRef.current > 2000);
+
+      lastRefreshRef.current = now;
+      loadData(shouldForceRefresh);
+    }, [loadData, route.params])
   );
 
   const handleRefresh = () => {

@@ -47,6 +47,7 @@ export function BrandingSettingsScreen() {
   const [primaryColor, setPrimaryColor] = useState(DEFAULT_BRANDING.primaryColor);
   const [secondaryColor, setSecondaryColor] = useState(DEFAULT_BRANDING.secondaryColor);
   const [logoPath, setLogoPath] = useState<string | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   // Original values for detecting changes
   const [originalBranding, setOriginalBranding] = useState<OrganisationBranding | null>(null);
@@ -76,6 +77,19 @@ export function BrandingSettingsScreen() {
   useEffect(() => {
     loadBranding();
   }, [loadBranding]);
+
+  // Load logo URL when logoPath changes
+  useEffect(() => {
+    const loadLogoUrl = async () => {
+      if (logoPath) {
+        const url = await getLogoUrl(logoPath);
+        setLogoUrl(url || null);
+      } else {
+        setLogoUrl(null);
+      }
+    };
+    loadLogoUrl();
+  }, [logoPath]);
 
   // Check if there are unsaved changes
   const hasChanges = useCallback(() => {
@@ -233,8 +247,6 @@ export function BrandingSettingsScreen() {
       </SafeAreaView>
     );
   }
-
-  const logoUrl = logoPath ? getLogoUrl(logoPath) : null;
 
   return (
     <KeyboardAvoidingView

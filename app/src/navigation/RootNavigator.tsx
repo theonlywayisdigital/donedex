@@ -20,7 +20,7 @@ import { usePushNotifications } from '../hooks/usePushNotifications';
 
 // Simple stack navigator for the password setup flow (invite/recovery)
 // This renders outside AuthNavigator because the user already HAS a session
-// (Supabase auto-created it from URL tokens), they just need to set their password.
+// (Firebase auto-created it from URL tokens), they just need to set their password.
 type PasswordSetupParamList = {
   SetPassword: { type: 'invite' | 'recovery' };
 };

@@ -1,9 +1,14 @@
 /**
  * Sync Service
  * Handles syncing local data with the server when network is available
+ *
+ * Migrated to Firebase/Firestore
  */
 
-import { supabase } from './supabase';
+import { db, storage } from './firebase';
+import { doc, updateDoc, setDoc } from 'firebase/firestore';
+import { ref, uploadBytes } from 'firebase/storage';
+import { collections, generateId } from './firestore';
 import { isOnline, subscribeToNetworkChanges } from './networkStatus';
 import {
   getSyncQueue,
@@ -67,26 +72,25 @@ async function processSyncItem(item: SyncQueueItem): Promise<boolean> {
 async function syncResponse(data: Record<string, unknown>): Promise<boolean> {
   const { reportId, templateItemId, responseValue, notes, severity } = data;
 
-  const { error } = await supabase
-    .from('report_responses')
-    .upsert(
-      {
-        report_id: reportId as string,
-        template_item_id: templateItemId as string,
-        response_value: responseValue as string | null,
-        notes: notes as string | null,
-        severity: severity as string | null,
-        updated_at: new Date().toISOString(),
-      } as never,
-      { onConflict: 'report_id,template_item_id' }
-    );
+  try {
+    // Create a unique ID for the response
+    const responseId = `${reportId}_${templateItemId}`;
+    const responseRef = doc(db, 'report_responses', responseId);
 
-  if (error) {
+    await setDoc(responseRef, {
+      report_id: reportId as string,
+      template_item_id: templateItemId as string,
+      response_value: responseValue as string | null,
+      notes: notes as string | null,
+      severity: severity as string | null,
+      updated_at: new Date().toISOString(),
+    }, { merge: true });
+
+    return true;
+  } catch (error) {
     console.error('Error syncing response:', error);
     return false;
   }
-
-  return true;
 }
 
 /**
@@ -104,36 +108,26 @@ async function syncPhoto(data: Record<string, unknown>): Promise<boolean> {
     });
 
     // Generate unique filename
-    const filename = `${reportId}/${responseId}/${Date.now()}.jpg`;
+    const filename = `report-photos/${reportId}/${responseId}/${Date.now()}.jpg`;
 
     // Fetch the compressed image as a blob
     const response = await fetch(compressed.uri);
     const blob = await response.blob();
 
-    // Upload to Supabase Storage
-    const { error: uploadError } = await supabase.storage
-      .from('report-photos')
-      .upload(filename, blob, {
-        contentType: 'image/jpeg',
-      });
-
-    if (uploadError) {
-      console.error('Error uploading photo during sync:', uploadError);
-      return false;
-    }
+    // Upload to Firebase Storage
+    const storageRef = ref(storage, filename);
+    await uploadBytes(storageRef, blob, {
+      contentType: 'image/jpeg',
+    });
 
     // Create photo record in database
-    const { error: dbError } = await supabase
-      .from('report_photos')
-      .insert({
-        report_response_id: responseId,
-        storage_path: filename,
-      } as never);
-
-    if (dbError) {
-      console.error('Error creating photo record during sync:', dbError);
-      return false;
-    }
+    const photoId = generateId();
+    const photoRef = doc(db, 'report_photos', photoId);
+    await setDoc(photoRef, {
+      report_response_id: responseId,
+      storage_path: filename,
+      created_at: new Date().toISOString(),
+    });
 
     // Clean up the locally persisted file after successful upload
     await deletePersistedFile(photoUri as string);
@@ -151,20 +145,18 @@ async function syncPhoto(data: Record<string, unknown>): Promise<boolean> {
 async function syncReportSubmit(data: Record<string, unknown>): Promise<boolean> {
   const { reportId } = data;
 
-  const { error } = await supabase
-    .from('reports')
-    .update({
+  try {
+    const reportRef = doc(db, collections.reports, reportId as string);
+    await updateDoc(reportRef, {
       status: 'submitted',
       submitted_at: new Date().toISOString(),
-    } as never)
-    .eq('id', reportId as string);
+    });
 
-  if (error) {
+    return true;
+  } catch (error) {
     console.error('Error syncing report submit:', error);
     return false;
   }
-
-  return true;
 }
 
 /**

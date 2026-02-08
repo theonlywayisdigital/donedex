@@ -1,4 +1,23 @@
-import { supabase } from './supabase';
+/**
+ * Record Types Service
+ * Handles record type management
+ *
+ * Migrated to Firebase/Firestore
+ */
+
+import { db } from './firebase';
+import {
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  collection,
+  query,
+  where,
+  orderBy,
+} from 'firebase/firestore';
+import { collections, generateId } from './firestore';
 import type { RecordType, Template } from '../types';
 
 export interface RecordTypesResult {
@@ -20,18 +39,25 @@ export interface RecordTypeWithTemplates extends RecordType {
  */
 export async function fetchRecordTypes(): Promise<RecordTypesResult> {
   try {
-    const { data, error } = await supabase
-      .from('record_types')
-      .select('*')
-      .eq('archived', false)
-      .order('is_default', { ascending: false })
-      .order('name', { ascending: true });
+    const recordTypesQuery = query(
+      collection(db, 'record_types'),
+      where('archived', '==', false)
+    );
+    const snapshot = await getDocs(recordTypesQuery);
 
-    if (error) {
-      return { data: [], error: { message: error.message } };
-    }
+    const recordTypes: RecordType[] = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    } as RecordType));
 
-    return { data: (data as RecordType[]) || [], error: null };
+    // Sort: default first, then alphabetically
+    recordTypes.sort((a, b) => {
+      if (a.is_default && !b.is_default) return -1;
+      if (!a.is_default && b.is_default) return 1;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+    return { data: recordTypes, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch record types';
     return { data: [], error: { message } };
@@ -43,17 +69,14 @@ export async function fetchRecordTypes(): Promise<RecordTypesResult> {
  */
 export async function fetchRecordTypeById(recordTypeId: string): Promise<RecordTypeResult> {
   try {
-    const { data, error } = await supabase
-      .from('record_types')
-      .select('*')
-      .eq('id', recordTypeId)
-      .single();
+    const recordTypeRef = doc(db, 'record_types', recordTypeId);
+    const recordTypeSnap = await getDoc(recordTypeRef);
 
-    if (error) {
-      return { data: null, error: { message: error.message } };
+    if (!recordTypeSnap.exists()) {
+      return { data: null, error: { message: 'Record type not found' } };
     }
 
-    return { data: data as RecordType, error: null };
+    return { data: { id: recordTypeSnap.id, ...recordTypeSnap.data() } as RecordType, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch record type';
     return { data: null, error: { message } };
@@ -67,17 +90,20 @@ export async function createRecordType(
   recordType: Omit<RecordType, 'id' | 'created_at' | 'updated_at' | 'archived'>
 ): Promise<RecordTypeResult> {
   try {
-    const { data, error } = await supabase
-      .from('record_types')
-      .insert(recordType as never)
-      .select()
-      .single();
+    const recordTypeId = generateId();
+    const recordTypeRef = doc(db, 'record_types', recordTypeId);
+    const now = new Date().toISOString();
 
-    if (error) {
-      return { data: null, error: { message: error.message } };
-    }
+    const recordTypeData = {
+      ...recordType,
+      archived: false,
+      created_at: now,
+      updated_at: now,
+    };
 
-    return { data: data as RecordType, error: null };
+    await setDoc(recordTypeRef, recordTypeData);
+
+    return { data: { id: recordTypeId, ...recordTypeData } as RecordType, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to create record type';
     return { data: null, error: { message } };
@@ -92,18 +118,14 @@ export async function updateRecordType(
   updates: Partial<Omit<RecordType, 'id' | 'created_at' | 'updated_at' | 'organisation_id'>>
 ): Promise<RecordTypeResult> {
   try {
-    const { data, error } = await supabase
-      .from('record_types')
-      .update(updates as never)
-      .eq('id', recordTypeId)
-      .select()
-      .single();
+    const recordTypeRef = doc(db, 'record_types', recordTypeId);
+    await updateDoc(recordTypeRef, {
+      ...updates,
+      updated_at: new Date().toISOString(),
+    });
 
-    if (error) {
-      return { data: null, error: { message: error.message } };
-    }
-
-    return { data: data as RecordType, error: null };
+    const recordTypeSnap = await getDoc(recordTypeRef);
+    return { data: { id: recordTypeSnap.id, ...recordTypeSnap.data() } as RecordType, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to update record type';
     return { data: null, error: { message } };
@@ -115,14 +137,11 @@ export async function updateRecordType(
  */
 export async function archiveRecordType(recordTypeId: string): Promise<{ error: { message: string } | null }> {
   try {
-    const { error } = await supabase
-      .from('record_types')
-      .update({ archived: true } as never)
-      .eq('id', recordTypeId);
-
-    if (error) {
-      return { error: { message: error.message } };
-    }
+    const recordTypeRef = doc(db, 'record_types', recordTypeId);
+    await updateDoc(recordTypeRef, {
+      archived: true,
+      updated_at: new Date().toISOString(),
+    });
 
     return { error: null };
   } catch (err) {
@@ -136,17 +155,18 @@ export async function archiveRecordType(recordTypeId: string): Promise<{ error: 
  */
 export async function fetchDefaultRecordType(): Promise<RecordTypeResult> {
   try {
-    const { data, error } = await supabase
-      .from('record_types')
-      .select('*')
-      .eq('is_default', true)
-      .single();
+    const recordTypesQuery = query(
+      collection(db, 'record_types'),
+      where('is_default', '==', true)
+    );
+    const snapshot = await getDocs(recordTypesQuery);
 
-    if (error) {
-      return { data: null, error: { message: error.message } };
+    if (snapshot.empty) {
+      return { data: null, error: { message: 'No default record type found' } };
     }
 
-    return { data: data as RecordType, error: null };
+    const recordTypeDoc = snapshot.docs[0];
+    return { data: { id: recordTypeDoc.id, ...recordTypeDoc.data() } as RecordType, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch default record type';
     return { data: null, error: { message } };
@@ -160,18 +180,21 @@ export async function fetchTemplatesByRecordType(
   recordTypeId: string
 ): Promise<{ data: Template[]; error: { message: string } | null }> {
   try {
-    const { data, error } = await supabase
-      .from('templates')
-      .select('*')
-      .eq('record_type_id', recordTypeId)
-      .eq('is_published', true)
-      .order('name', { ascending: true });
+    const templatesQuery = query(
+      collection(db, collections.templates),
+      where('record_type_id', '==', recordTypeId),
+      where('is_published', '==', true),
+      where('archived', '==', false),
+      orderBy('name', 'asc')
+    );
+    const snapshot = await getDocs(templatesQuery);
 
-    if (error) {
-      return { data: [], error: { message: error.message } };
-    }
+    const templates: Template[] = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    } as Template));
 
-    return { data: (data as Template[]) || [], error: null };
+    return { data: templates, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch templates by record type';
     return { data: [], error: { message } };

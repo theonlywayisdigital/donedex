@@ -1,4 +1,25 @@
-import { supabase } from './supabase';
+/**
+ * Templates Service
+ * Handles template management including sections and items
+ *
+ * Migrated to Firebase/Firestore
+ */
+
+import { db } from './firebase';
+import {
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  query,
+  where,
+  orderBy,
+  writeBatch,
+} from 'firebase/firestore';
+import { collections, generateId } from './firestore';
 
 // Types matching database schema
 export type ItemType =
@@ -78,6 +99,7 @@ export interface Template {
   name: string;
   description: string | null;
   is_published: boolean;
+  archived?: boolean;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -187,53 +209,89 @@ export interface TemplateWithSections extends Template {
 export async function fetchTemplateWithSections(
   templateId: string
 ): Promise<{ data: TemplateWithSections | null; error: { message: string } | null }> {
-  const { data, error } = await supabase
-    .from('templates')
-    .select(`
-      *,
-      template_sections (
-        *,
-        template_items (*)
-      )
-    `)
-    .eq('id', templateId)
-    .single();
+  try {
+    // Fetch template
+    const templateRef = doc(db, collections.templates, templateId);
+    const templateSnap = await getDoc(templateRef);
 
-  if (error) {
+    if (!templateSnap.exists()) {
+      return { data: null, error: { message: 'Template not found' } };
+    }
+
+    const template: Template = {
+      id: templateSnap.id,
+      ...templateSnap.data(),
+    } as Template;
+
+    // Fetch sections
+    const sectionsQuery = query(
+      collection(db, collections.templateSections),
+      where('template_id', '==', templateId),
+      orderBy('sort_order', 'asc')
+    );
+    const sectionsSnap = await getDocs(sectionsQuery);
+
+    const sectionsWithItems: TemplateSectionWithItems[] = [];
+
+    for (const sectionDoc of sectionsSnap.docs) {
+      const section: TemplateSection = {
+        id: sectionDoc.id,
+        ...sectionDoc.data(),
+      } as TemplateSection;
+
+      // Fetch items for this section
+      const itemsQuery = query(
+        collection(db, collections.templateItems),
+        where('section_id', '==', section.id),
+        orderBy('sort_order', 'asc')
+      );
+      const itemsSnap = await getDocs(itemsQuery);
+
+      const items: TemplateItem[] = itemsSnap.docs.map(itemDoc => ({
+        id: itemDoc.id,
+        ...itemDoc.data(),
+      } as TemplateItem));
+
+      sectionsWithItems.push({
+        ...section,
+        template_items: items,
+      });
+    }
+
+    const templateWithSections: TemplateWithSections = {
+      ...template,
+      template_sections: sectionsWithItems,
+    };
+
+    return { data: templateWithSections, error: null };
+  } catch (error: any) {
     console.error('Error fetching template:', error);
     return { data: null, error: { message: error.message } };
   }
-
-  // Sort sections and items by sort_order
-  const template = data as unknown as TemplateWithSections;
-  if (template.template_sections) {
-    template.template_sections.sort((a, b) => a.sort_order - b.sort_order);
-    template.template_sections.forEach((section) => {
-      if (section.template_items) {
-        section.template_items.sort((a, b) => a.sort_order - b.sort_order);
-      }
-    });
-  }
-
-  return { data: template, error: null };
 }
 
 /**
  * Fetch all templates for the user's organisation
  */
 export async function fetchTemplates(): Promise<{ data: Template[]; error: { message: string } | null }> {
-  const { data, error } = await supabase
-    .from('templates')
-    .select('*')
-    .eq('archived', false)
-    .order('name', { ascending: true });
+  try {
+    const templatesQuery = query(
+      collection(db, collections.templates),
+      where('archived', '==', false),
+      orderBy('name', 'asc')
+    );
+    const snapshot = await getDocs(templatesQuery);
 
-  if (error) {
+    const templates: Template[] = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    } as Template));
+
+    return { data: templates, error: null };
+  } catch (error: any) {
     console.error('Error fetching templates:', error);
     return { data: [], error: { message: error.message } };
   }
-
-  return { data: (data as Template[]) || [], error: null };
 }
 
 /**
@@ -242,19 +300,25 @@ export async function fetchTemplates(): Promise<{ data: Template[]; error: { mes
 export async function fetchTemplatesByRecordType(
   recordTypeId: string
 ): Promise<{ data: Template[]; error: { message: string } | null }> {
-  const { data, error } = await supabase
-    .from('templates')
-    .select('*')
-    .eq('record_type_id', recordTypeId)
-    .eq('archived', false)
-    .order('name', { ascending: true });
+  try {
+    const templatesQuery = query(
+      collection(db, collections.templates),
+      where('record_type_id', '==', recordTypeId),
+      where('archived', '==', false),
+      orderBy('name', 'asc')
+    );
+    const snapshot = await getDocs(templatesQuery);
 
-  if (error) {
+    const templates: Template[] = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    } as Template));
+
+    return { data: templates, error: null };
+  } catch (error: any) {
     console.error('Error fetching templates by record type:', error);
     return { data: [], error: { message: error.message } };
   }
-
-  return { data: (data as Template[]) || [], error: null };
 }
 
 /**
@@ -273,19 +337,25 @@ export async function fetchPublishedTemplatesByRecordType(
  * Templates are company-wide - available for all record types
  */
 export async function fetchPublishedTemplates(): Promise<{ data: Template[]; error: { message: string } | null }> {
-  const { data, error } = await supabase
-    .from('templates')
-    .select('*')
-    .eq('is_published', true)
-    .eq('archived', false)
-    .order('name', { ascending: true });
+  try {
+    const templatesQuery = query(
+      collection(db, collections.templates),
+      where('is_published', '==', true),
+      where('archived', '==', false),
+      orderBy('name', 'asc')
+    );
+    const snapshot = await getDocs(templatesQuery);
 
-  if (error) {
+    const templates: Template[] = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    } as Template));
+
+    return { data: templates, error: null };
+  } catch (error: any) {
     console.error('Error fetching published templates:', error);
     return { data: [], error: { message: error.message } };
   }
-
-  return { data: (data as Template[]) || [], error: null };
 }
 
 /**
@@ -294,18 +364,25 @@ export async function fetchPublishedTemplates(): Promise<{ data: Template[]; err
 export async function createTemplate(
   template: Omit<Template, 'id' | 'created_at' | 'updated_at'>
 ): Promise<{ data: Template | null; error: { message: string } | null }> {
-  const { data, error } = await supabase
-    .from('templates')
-    .insert(template as never)
-    .select()
-    .single();
+  try {
+    const templateId = generateId();
+    const templateRef = doc(db, collections.templates, templateId);
+    const now = new Date().toISOString();
 
-  if (error) {
+    const templateData = {
+      ...template,
+      archived: false,
+      created_at: now,
+      updated_at: now,
+    };
+
+    await setDoc(templateRef, templateData);
+
+    return { data: { id: templateId, ...templateData } as Template, error: null };
+  } catch (error: any) {
     console.error('Error creating template:', error);
     return { data: null, error: { message: error.message } };
   }
-
-  return { data: data as Template, error: null };
 }
 
 /**
@@ -315,19 +392,19 @@ export async function updateTemplate(
   templateId: string,
   updates: Partial<Omit<Template, 'id' | 'created_at' | 'updated_at' | 'organisation_id'>>
 ): Promise<{ data: Template | null; error: { message: string } | null }> {
-  const { data, error } = await supabase
-    .from('templates')
-    .update(updates as never)
-    .eq('id', templateId)
-    .select()
-    .single();
+  try {
+    const templateRef = doc(db, collections.templates, templateId);
+    await updateDoc(templateRef, {
+      ...updates,
+      updated_at: new Date().toISOString(),
+    });
 
-  if (error) {
+    const templateSnap = await getDoc(templateRef);
+    return { data: { id: templateSnap.id, ...templateSnap.data() } as Template, error: null };
+  } catch (error: any) {
     console.error('Error updating template:', error);
     return { data: null, error: { message: error.message } };
   }
-
-  return { data: data as Template, error: null };
 }
 
 /**
@@ -336,18 +413,23 @@ export async function updateTemplate(
 export async function createSection(
   section: Omit<TemplateSection, 'id' | 'created_at'>
 ): Promise<{ data: TemplateSection | null; error: { message: string } | null }> {
-  const { data, error } = await supabase
-    .from('template_sections')
-    .insert(section as never)
-    .select()
-    .single();
+  try {
+    const sectionId = generateId();
+    const sectionRef = doc(db, collections.templateSections, sectionId);
+    const now = new Date().toISOString();
 
-  if (error) {
+    const sectionData = {
+      ...section,
+      created_at: now,
+    };
+
+    await setDoc(sectionRef, sectionData);
+
+    return { data: { id: sectionId, ...sectionData } as TemplateSection, error: null };
+  } catch (error: any) {
     console.error('Error creating section:', error);
     return { data: null, error: { message: error.message } };
   }
-
-  return { data: data as TemplateSection, error: null };
 }
 
 /**
@@ -356,35 +438,41 @@ export async function createSection(
 export async function createItem(
   item: Omit<TemplateItem, 'id' | 'created_at'>
 ): Promise<{ data: TemplateItem | null; error: { message: string } | null }> {
-  const { data, error } = await supabase
-    .from('template_items')
-    .insert(item as never)
-    .select()
-    .single();
+  try {
+    const itemId = generateId();
+    const itemRef = doc(db, collections.templateItems, itemId);
+    const now = new Date().toISOString();
 
-  if (error) {
+    const itemData = {
+      ...item,
+      created_at: now,
+    };
+
+    await setDoc(itemRef, itemData);
+
+    return { data: { id: itemId, ...itemData } as TemplateItem, error: null };
+  } catch (error: any) {
     console.error('Error creating item:', error);
     return { data: null, error: { message: error.message } };
   }
-
-  return { data: data as TemplateItem, error: null };
 }
 
 /**
  * Archive a template (soft delete)
  */
 export async function archiveTemplate(templateId: string): Promise<{ error: { message: string } | null }> {
-  const { error } = await supabase
-    .from('templates')
-    .update({ archived: true } as never)
-    .eq('id', templateId);
+  try {
+    const templateRef = doc(db, collections.templates, templateId);
+    await updateDoc(templateRef, {
+      archived: true,
+      updated_at: new Date().toISOString(),
+    });
 
-  if (error) {
+    return { error: null };
+  } catch (error: any) {
     console.error('Error archiving template:', error);
     return { error: { message: error.message } };
   }
-
-  return { error: null };
 }
 
 /** @deprecated Use archiveTemplate instead */
@@ -397,36 +485,47 @@ export async function updateSection(
   sectionId: string,
   updates: Partial<Omit<TemplateSection, 'id' | 'created_at' | 'template_id'>>
 ): Promise<{ data: TemplateSection | null; error: { message: string } | null }> {
-  const { data, error } = await supabase
-    .from('template_sections')
-    .update(updates as never)
-    .eq('id', sectionId)
-    .select()
-    .single();
+  try {
+    const sectionRef = doc(db, collections.templateSections, sectionId);
+    await updateDoc(sectionRef, updates);
 
-  if (error) {
+    const sectionSnap = await getDoc(sectionRef);
+    return { data: { id: sectionSnap.id, ...sectionSnap.data() } as TemplateSection, error: null };
+  } catch (error: any) {
     console.error('Error updating section:', error);
     return { data: null, error: { message: error.message } };
   }
-
-  return { data: data as TemplateSection, error: null };
 }
 
 /**
  * Delete a section (cascades to items)
  */
 export async function deleteSection(sectionId: string): Promise<{ error: { message: string } | null }> {
-  const { error } = await supabase
-    .from('template_sections')
-    .delete()
-    .eq('id', sectionId);
+  try {
+    const batch = writeBatch(db);
 
-  if (error) {
+    // Delete all items in this section
+    const itemsQuery = query(
+      collection(db, collections.templateItems),
+      where('section_id', '==', sectionId)
+    );
+    const itemsSnap = await getDocs(itemsQuery);
+
+    itemsSnap.docs.forEach(itemDoc => {
+      batch.delete(itemDoc.ref);
+    });
+
+    // Delete the section
+    const sectionRef = doc(db, collections.templateSections, sectionId);
+    batch.delete(sectionRef);
+
+    await batch.commit();
+
+    return { error: null };
+  } catch (error: any) {
     console.error('Error deleting section:', error);
     return { error: { message: error.message } };
   }
-
-  return { error: null };
 }
 
 /**
@@ -436,36 +535,31 @@ export async function updateItem(
   itemId: string,
   updates: Partial<Omit<TemplateItem, 'id' | 'created_at' | 'section_id'>>
 ): Promise<{ data: TemplateItem | null; error: { message: string } | null }> {
-  const { data, error } = await supabase
-    .from('template_items')
-    .update(updates as never)
-    .eq('id', itemId)
-    .select()
-    .single();
+  try {
+    const itemRef = doc(db, collections.templateItems, itemId);
+    await updateDoc(itemRef, updates);
 
-  if (error) {
+    const itemSnap = await getDoc(itemRef);
+    return { data: { id: itemSnap.id, ...itemSnap.data() } as TemplateItem, error: null };
+  } catch (error: any) {
     console.error('Error updating item:', error);
     return { data: null, error: { message: error.message } };
   }
-
-  return { data: data as TemplateItem, error: null };
 }
 
 /**
  * Delete an item
  */
 export async function deleteItem(itemId: string): Promise<{ error: { message: string } | null }> {
-  const { error } = await supabase
-    .from('template_items')
-    .delete()
-    .eq('id', itemId);
+  try {
+    const itemRef = doc(db, collections.templateItems, itemId);
+    await deleteDoc(itemRef);
 
-  if (error) {
+    return { error: null };
+  } catch (error: any) {
     console.error('Error deleting item:', error);
     return { error: { message: error.message } };
   }
-
-  return { error: null };
 }
 
 /**
@@ -474,20 +568,21 @@ export async function deleteItem(itemId: string): Promise<{ error: { message: st
 export async function updateSectionOrders(
   sections: { id: string; sort_order: number }[]
 ): Promise<{ error: { message: string } | null }> {
-  // Update each section's sort_order
-  for (const section of sections) {
-    const { error } = await supabase
-      .from('template_sections')
-      .update({ sort_order: section.sort_order } as never)
-      .eq('id', section.id);
+  try {
+    const batch = writeBatch(db);
 
-    if (error) {
-      console.error('Error updating section order:', error);
-      return { error: { message: error.message } };
+    for (const section of sections) {
+      const sectionRef = doc(db, collections.templateSections, section.id);
+      batch.update(sectionRef, { sort_order: section.sort_order });
     }
-  }
 
-  return { error: null };
+    await batch.commit();
+
+    return { error: null };
+  } catch (error: any) {
+    console.error('Error updating section orders:', error);
+    return { error: { message: error.message } };
+  }
 }
 
 /**
@@ -496,18 +591,19 @@ export async function updateSectionOrders(
 export async function updateItemOrders(
   items: { id: string; sort_order: number }[]
 ): Promise<{ error: { message: string } | null }> {
-  // Update each item's sort_order
-  for (const item of items) {
-    const { error } = await supabase
-      .from('template_items')
-      .update({ sort_order: item.sort_order } as never)
-      .eq('id', item.id);
+  try {
+    const batch = writeBatch(db);
 
-    if (error) {
-      console.error('Error updating item order:', error);
-      return { error: { message: error.message } };
+    for (const item of items) {
+      const itemRef = doc(db, collections.templateItems, item.id);
+      batch.update(itemRef, { sort_order: item.sort_order });
     }
-  }
 
-  return { error: null };
+    await batch.commit();
+
+    return { error: null };
+  } catch (error: any) {
+    console.error('Error updating item orders:', error);
+    return { error: { message: error.message } };
+  }
 }

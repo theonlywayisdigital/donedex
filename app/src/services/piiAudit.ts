@@ -4,6 +4,8 @@
  * Logs PII detection events for compliance and audit purposes.
  * These logs help demonstrate due diligence in handling personal data.
  *
+ * Migrated to Firebase/Firestore
+ *
  * Features:
  * - Logs when PII is detected in user input
  * - Records user actions (saved anyway, edited, cancelled)
@@ -11,8 +13,20 @@
  * - Async/non-blocking to avoid impacting user experience
  */
 
-import { supabase } from './supabase';
-import type { PIIDetectionResult, PIIMatch } from './piiDetection';
+import { db } from './firebase';
+import {
+  doc,
+  getDocs,
+  setDoc,
+  collection,
+  query,
+  where,
+  orderBy,
+  limit as firestoreLimit,
+  writeBatch,
+} from 'firebase/firestore';
+import { generateId } from './firestore';
+import type { PIIDetectionResult } from './piiDetection';
 import { maskForStorage } from './piiDetection';
 import type { PiiSeverity, PiiUserAction } from '../types';
 import { Platform } from 'react-native';
@@ -75,47 +89,44 @@ export async function logPiiDetection(input: PIIAuditEventInput): Promise<void> 
     return;
   }
 
-  // Create one event per detection type (deduped by category)
-  const loggedCategories = new Set<string>();
-  const events = detectionResult.matches
-    .filter((match) => {
+  try {
+    const batch = writeBatch(db);
+    const now = new Date().toISOString();
+
+    // Create one event per detection type (deduped by category)
+    const loggedCategories = new Set<string>();
+
+    for (const match of detectionResult.matches) {
       // Only log each category once per field
       if (loggedCategories.has(match.category)) {
-        return false;
+        continue;
       }
       loggedCategories.add(match.category);
-      return true;
-    })
-    .map((match) => ({
-      organisation_id: organisationId,
-      user_id: userId || null,
-      record_id: recordId || null,
-      record_type_id: recordTypeId || null,
-      field_id: fieldId || null,
-      field_label: fieldLabel,
-      detection_type: match.category,
-      severity: match.severity as PiiSeverity,
-      detected_pattern: maskForStorage(match.matchedText, match.category),
-      user_action: userAction,
-      was_warned: wasWarned,
-      client_platform: Platform.OS,
-    }));
 
-  if (events.length === 0) {
-    return;
-  }
+      const eventId = generateId();
+      const eventRef = doc(db, 'pii_detection_events', eventId);
 
-  try {
-    const { error } = await supabase
-      .from('pii_detection_events')
-      .insert(events as never[]);
-
-    if (error) {
-      // Log to console but don't throw - audit logging should never break the app
-      console.error('[PII Audit] Failed to log detection:', error.message);
+      batch.set(eventRef, {
+        organisation_id: organisationId,
+        user_id: userId || null,
+        record_id: recordId || null,
+        record_type_id: recordTypeId || null,
+        field_id: fieldId || null,
+        field_label: fieldLabel,
+        detection_type: match.category,
+        severity: match.severity as PiiSeverity,
+        detected_pattern: maskForStorage(match.matchedText, match.category),
+        user_action: userAction,
+        was_warned: wasWarned,
+        client_platform: Platform.OS,
+        created_at: now,
+      });
     }
+
+    await batch.commit();
   } catch (err) {
-    console.error('[PII Audit] Exception during logging:', err);
+    // Log to console but don't throw - audit logging should never break the app
+    console.error('[PII Audit] Failed to log detection:', err);
   }
 }
 
@@ -136,81 +147,59 @@ export async function logPiiDetectionBatch(input: PIIAuditBatchInput): Promise<v
     fieldDetections,
   } = input;
 
-  const events: Array<{
-    organisation_id: string;
-    user_id: string | null;
-    record_id: string | null;
-    record_type_id: string | null;
-    field_id: string | null;
-    field_label: string;
-    detection_type: string;
-    severity: PiiSeverity;
-    detected_pattern: string | null;
-    user_action: PiiUserAction;
-    was_warned: boolean;
-    client_platform: string;
-  }> = [];
+  try {
+    const batch = writeBatch(db);
+    const now = new Date().toISOString();
+    let hasEvents = false;
 
-  // Collect all events from all fields
-  fieldDetections.forEach((detection, fieldId) => {
-    if (!detection.result.hasDetections) {
-      return;
-    }
-
-    const loggedCategories = new Set<string>();
-    detection.result.matches.forEach((match) => {
-      if (loggedCategories.has(match.category)) {
+    // Collect all events from all fields
+    fieldDetections.forEach((detection, fieldId) => {
+      if (!detection.result.hasDetections) {
         return;
       }
-      loggedCategories.add(match.category);
 
-      events.push({
-        organisation_id: organisationId,
-        user_id: userId || null,
-        record_id: recordId || null,
-        record_type_id: recordTypeId || null,
-        field_id: fieldId || null,
-        field_label: detection.label,
-        detection_type: match.category,
-        severity: match.severity as PiiSeverity,
-        detected_pattern: maskForStorage(match.matchedText, match.category),
-        user_action: userAction,
-        was_warned: wasWarned,
-        client_platform: Platform.OS,
+      const loggedCategories = new Set<string>();
+
+      detection.result.matches.forEach((match) => {
+        if (loggedCategories.has(match.category)) {
+          return;
+        }
+        loggedCategories.add(match.category);
+
+        const eventId = generateId();
+        const eventRef = doc(db, 'pii_detection_events', eventId);
+
+        batch.set(eventRef, {
+          organisation_id: organisationId,
+          user_id: userId || null,
+          record_id: recordId || null,
+          record_type_id: recordTypeId || null,
+          field_id: fieldId || null,
+          field_label: detection.label,
+          detection_type: match.category,
+          severity: match.severity as PiiSeverity,
+          detected_pattern: maskForStorage(match.matchedText, match.category),
+          user_action: userAction,
+          was_warned: wasWarned,
+          client_platform: Platform.OS,
+          created_at: now,
+        });
+
+        hasEvents = true;
       });
     });
-  });
 
-  if (events.length === 0) {
-    return;
-  }
-
-  try {
-    const { error } = await supabase
-      .from('pii_detection_events')
-      .insert(events as never[]);
-
-    if (error) {
-      console.error('[PII Audit] Failed to log batch detection:', error.message);
+    if (hasEvents) {
+      await batch.commit();
     }
   } catch (err) {
-    console.error('[PII Audit] Exception during batch logging:', err);
+    console.error('[PII Audit] Failed to log batch detection:', err);
   }
 }
 
 // ============================================
 // Query Functions (for admin/compliance)
 // ============================================
-
-// Internal type for query results (Supabase returns generic types)
-interface PIIEventRow {
-  id: string;
-  severity: string;
-  detection_type: string;
-  user_action: string;
-  field_label: string;
-  created_at: string;
-}
 
 export interface PIIAuditSummary {
   totalDetections: number;
@@ -232,29 +221,17 @@ export async function getPiiAuditSummary(
   endDate?: Date
 ): Promise<PIIAuditSummary | null> {
   try {
-    let query = supabase
-      .from('pii_detection_events')
-      .select('severity, detection_type, user_action')
-      .eq('organisation_id', organisationId);
+    let eventsQuery = query(
+      collection(db, 'pii_detection_events'),
+      where('organisation_id', '==', organisationId)
+    );
 
-    if (startDate) {
-      query = query.gte('created_at', startDate.toISOString());
-    }
-    if (endDate) {
-      query = query.lte('created_at', endDate.toISOString());
-    }
-
-    const { data, error } = await query;
-
-    if (error || !data) {
-      console.error('[PII Audit] Failed to get summary:', error?.message);
-      return null;
-    }
-
-    const events = data as unknown as PIIEventRow[];
+    // Note: Firestore requires composite indexes for multiple where clauses with different fields
+    // We'll filter dates client-side for simplicity
+    const snapshot = await getDocs(eventsQuery);
 
     const summary: PIIAuditSummary = {
-      totalDetections: events.length,
+      totalDetections: 0,
       savedAnyway: 0,
       edited: 0,
       cancelled: 0,
@@ -262,7 +239,18 @@ export async function getPiiAuditSummary(
       byType: {},
     };
 
-    events.forEach((event) => {
+    snapshot.docs.forEach((doc) => {
+      const event = doc.data();
+
+      // Filter by date range if specified
+      if (startDate || endDate) {
+        const createdAt = new Date(event.created_at);
+        if (startDate && createdAt < startDate) return;
+        if (endDate && createdAt > endDate) return;
+      }
+
+      summary.totalDetections++;
+
       // Count by action
       switch (event.user_action) {
         case 'saved_anyway':
@@ -309,28 +297,25 @@ export async function getPiiEventsForRecord(
   createdAt: string;
 }> | null> {
   try {
-    const { data, error } = await supabase
-      .from('pii_detection_events')
-      .select('id, field_label, detection_type, severity, user_action, created_at')
-      .eq('record_id', recordId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const eventsQuery = query(
+      collection(db, 'pii_detection_events'),
+      where('record_id', '==', recordId),
+      orderBy('created_at', 'desc'),
+      firestoreLimit(limit)
+    );
+    const snapshot = await getDocs(eventsQuery);
 
-    if (error || !data) {
-      console.error('[PII Audit] Failed to get record events:', error?.message);
-      return null;
-    }
-
-    const events = data as unknown as PIIEventRow[];
-
-    return events.map((event) => ({
-      id: event.id,
-      fieldLabel: event.field_label,
-      detectionType: event.detection_type,
-      severity: event.severity as PiiSeverity,
-      userAction: event.user_action as PiiUserAction,
-      createdAt: event.created_at,
-    }));
+    return snapshot.docs.map((doc) => {
+      const event = doc.data();
+      return {
+        id: doc.id,
+        fieldLabel: event.field_label,
+        detectionType: event.detection_type,
+        severity: event.severity as PiiSeverity,
+        userAction: event.user_action as PiiUserAction,
+        createdAt: event.created_at,
+      };
+    });
   } catch (err) {
     console.error('[PII Audit] Exception getting record events:', err);
     return null;

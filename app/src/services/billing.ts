@@ -1,9 +1,27 @@
 /**
  * Billing Service
- * Handles subscription plans, usage limits, invoices, and Stripe integration
+ * Handles subscription plans, usage limits, invoices
+ *
+ * Migrated to Firebase/Firestore
+ * Note: Stripe integration will need to be handled via Firebase Cloud Functions
  */
 
-import { supabase } from './supabase';
+import { auth, db } from './firebase';
+import {
+  doc,
+  getDoc,
+  getDocs,
+  collection,
+  query,
+  where,
+  orderBy,
+  limit as firestoreLimit,
+} from 'firebase/firestore';
+import { collections } from './firestore';
+
+// Cloud Function URL
+const CLOUD_FUNCTION_BASE_URL = process.env.EXPO_PUBLIC_FIREBASE_FUNCTIONS_URL ||
+  'https://europe-west2-donedex-72116.cloudfunctions.net';
 import type {
   SubscriptionPlan,
   OrganisationBilling,
@@ -28,18 +46,20 @@ export async function fetchPlans(): Promise<{
   error: string | null;
 }> {
   try {
-    const { data, error } = await supabase
-      .from('subscription_plans')
-      .select('*')
-      .eq('is_active', true)
-      .eq('is_public', true)
-      .order('display_order', { ascending: true });
+    // Simplified query to avoid composite index requirement
+    // Filter and sort client-side since there are only a few plans
+    const plansRef = collection(db, collections.subscriptionPlans);
+    const snapshot = await getDocs(plansRef);
 
-    if (error) {
-      return { data: null, error: error.message };
-    }
+    const plans: SubscriptionPlan[] = snapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      } as SubscriptionPlan))
+      .filter(plan => plan.is_active && plan.is_public)
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
 
-    return { data, error: null };
+    return { data: plans, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch plans';
     return { data: null, error: message };
@@ -54,17 +74,14 @@ export async function fetchPlanById(planId: string): Promise<{
   error: string | null;
 }> {
   try {
-    const { data, error } = await supabase
-      .from('subscription_plans')
-      .select('*')
-      .eq('id', planId)
-      .single();
+    const planRef = doc(db, collections.subscriptionPlans, planId);
+    const planSnap = await getDoc(planRef);
 
-    if (error) {
-      return { data: null, error: error.message };
+    if (!planSnap.exists()) {
+      return { data: null, error: 'Plan not found' };
     }
 
-    return { data, error: null };
+    return { data: { id: planSnap.id, ...planSnap.data() } as SubscriptionPlan, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch plan';
     return { data: null, error: message };
@@ -79,17 +96,18 @@ export async function fetchPlanBySlug(slug: string): Promise<{
   error: string | null;
 }> {
   try {
-    const { data, error } = await supabase
-      .from('subscription_plans')
-      .select('*')
-      .eq('slug', slug)
-      .single();
+    const plansQuery = query(
+      collection(db, collections.subscriptionPlans),
+      where('slug', '==', slug)
+    );
+    const snapshot = await getDocs(plansQuery);
 
-    if (error) {
-      return { data: null, error: error.message };
+    if (snapshot.empty) {
+      return { data: null, error: 'Plan not found' };
     }
 
-    return { data, error: null };
+    const planDoc = snapshot.docs[0];
+    return { data: { id: planDoc.id, ...planDoc.data() } as SubscriptionPlan, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch plan by slug';
     return { data: null, error: message };
@@ -100,15 +118,6 @@ export async function fetchPlanBySlug(slug: string): Promise<{
 // ORGANISATION BILLING
 // ============================================
 
-// Type for organisation billing query result
-interface OrgBillingQueryResult {
-  stripe_customer_id: string | null;
-  subscription_status: string | null;
-  trial_ends_at: string | null;
-  subscription_ends_at: string | null;
-  current_plan_id: string | null;
-}
-
 /**
  * Fetch billing status for an organisation
  */
@@ -117,41 +126,31 @@ export async function fetchBillingStatus(orgId: string): Promise<{
   error: string | null;
 }> {
   try {
-    // First fetch organisation billing data
-    const { data: orgData, error: orgError } = await supabase
-      .from('organisations')
-      .select(`
-        stripe_customer_id,
-        subscription_status,
-        trial_ends_at,
-        subscription_ends_at,
-        current_plan_id
-      `)
-      .eq('id', orgId)
-      .single() as unknown as { data: OrgBillingQueryResult | null; error: { message: string } | null };
+    const orgRef = doc(db, collections.organisations, orgId);
+    const orgSnap = await getDoc(orgRef);
 
-    if (orgError || !orgData) {
-      return { data: null, error: orgError?.message || 'Organisation not found' };
+    if (!orgSnap.exists()) {
+      return { data: null, error: 'Organisation not found' };
     }
+
+    const orgData = orgSnap.data();
 
     // Fetch plan separately if current_plan_id exists
     let currentPlan: SubscriptionPlan | null = null;
     if (orgData.current_plan_id) {
-      const { data: planData } = await supabase
-        .from('subscription_plans')
-        .select('*')
-        .eq('id', orgData.current_plan_id)
-        .single() as unknown as { data: SubscriptionPlan | null; error: { message: string } | null };
-
-      currentPlan = planData;
+      const planRef = doc(db, collections.subscriptionPlans, orgData.current_plan_id);
+      const planSnap = await getDoc(planRef);
+      if (planSnap.exists()) {
+        currentPlan = { id: planSnap.id, ...planSnap.data() } as SubscriptionPlan;
+      }
     }
 
     return {
       data: {
-        stripe_customer_id: orgData.stripe_customer_id,
-        subscription_status: (orgData.subscription_status as OrganisationBilling['subscription_status']) || 'incomplete',
-        trial_ends_at: orgData.trial_ends_at,
-        subscription_ends_at: orgData.subscription_ends_at,
+        stripe_customer_id: orgData.stripe_customer_id || null,
+        subscription_status: orgData.subscription_status || 'incomplete',
+        trial_ends_at: orgData.trial_ends_at || null,
+        subscription_ends_at: orgData.subscription_ends_at || null,
         current_plan: currentPlan,
       },
       error: null,
@@ -163,23 +162,45 @@ export async function fetchBillingStatus(orgId: string): Promise<{
 }
 
 /**
- * Fetch billing summary using database function
+ * Fetch billing summary
+ * Note: This was previously an RPC call - now computed client-side
  */
 export async function fetchBillingSummary(orgId: string): Promise<{
   data: BillingSummary | null;
   error: string | null;
 }> {
   try {
-    // Use type assertion for RPC call since types aren't generated
-    const { data, error } = await (supabase.rpc as Function)('get_billing_summary', {
-      org_id: orgId,
-    });
-
-    if (error) {
-      return { data: null, error: error.message };
+    const billing = await fetchBillingStatus(orgId);
+    if (billing.error || !billing.data) {
+      return { data: null, error: billing.error || 'Failed to fetch billing' };
     }
 
-    return { data: data as BillingSummary, error: null };
+    const usage = await fetchUsageLimits(orgId);
+
+    const billingData = billing.data;
+    const plan = billingData.current_plan;
+
+    return {
+      data: {
+        has_billing: !!billingData.stripe_customer_id,
+        subscription_status: billingData.subscription_status,
+        is_trialing: billingData.subscription_status === 'trialing',
+        trial_ends_at: billingData.trial_ends_at,
+        subscription_ends_at: billingData.subscription_ends_at,
+        current_plan: plan ? {
+          id: plan.id,
+          name: plan.name,
+          slug: plan.slug,
+          price_monthly_gbp: plan.price_monthly_gbp,
+          price_annual_gbp: plan.price_annual_gbp,
+          price_per_user_monthly_gbp: plan.price_per_user_monthly_gbp,
+          price_per_user_annual_gbp: plan.price_per_user_annual_gbp,
+          base_users_included: plan.base_users_included,
+        } : null,
+        latest_invoice: null, // Would need to fetch from invoices collection
+      },
+      error: null,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch billing summary';
     return { data: null, error: message };
@@ -192,22 +213,73 @@ export async function fetchBillingSummary(orgId: string): Promise<{
 
 /**
  * Fetch usage limits for an organisation
+ * Note: This was previously an RPC call - now computed client-side
  */
 export async function fetchUsageLimits(orgId: string): Promise<{
   data: UsageLimits | null;
   error: string | null;
 }> {
   try {
-    // Use type assertion for RPC call since types aren't generated
-    const { data, error } = await (supabase.rpc as Function)('check_org_limits', {
-      org_id: orgId,
-    });
-
-    if (error) {
-      return { data: null, error: error.message };
+    // Fetch billing status to get plan limits
+    const billing = await fetchBillingStatus(orgId);
+    if (!billing.data?.current_plan) {
+      return { data: null, error: 'No active plan' };
     }
 
-    return { data: data as UsageLimits, error: null };
+    const plan = billing.data.current_plan;
+
+    // Count current usage
+    const recordsQuery = query(
+      collection(db, collections.records),
+      where('organisation_id', '==', orgId),
+      where('archived', '==', false)
+    );
+    const recordsSnap = await getDocs(recordsQuery);
+    const recordCount = recordsSnap.size;
+
+    const reportsQuery = query(
+      collection(db, collections.reports),
+      where('organisation_id', '==', orgId)
+    );
+    const reportsSnap = await getDocs(reportsQuery);
+    const reportCount = reportsSnap.size;
+
+    const usersQuery = query(
+      collection(db, collections.users),
+      where('organisation_id', '==', orgId)
+    );
+    const usersSnap = await getDocs(usersQuery);
+    const userCount = usersSnap.size;
+
+    // Helper to compute percent and exceeded
+    const computeUsage = (current: number, limit: number) => ({
+      current,
+      limit,
+      exceeded: limit !== -1 && current >= limit,
+      percent: limit === -1 ? 0 : Math.round((current / limit) * 100),
+    });
+
+    return {
+      data: {
+        records: computeUsage(recordCount, plan.max_records),
+        reports: computeUsage(reportCount, plan.max_reports_per_month),
+        users: computeUsage(userCount, plan.max_users),
+        storage: {
+          ...computeUsage(0, plan.max_storage_gb * 1024 * 1024 * 1024),
+          current_bytes: 0,
+          current_gb: 0,
+          limit_gb: plan.max_storage_gb,
+          base_limit_gb: plan.max_storage_gb,
+          addon_gb: 0,
+        },
+        plan: {
+          id: plan.id,
+          name: plan.name,
+          slug: plan.slug,
+        },
+      },
+      error: null,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch usage limits';
     return { data: null, error: message };
@@ -219,16 +291,8 @@ export async function fetchUsageLimits(orgId: string): Promise<{
  */
 export async function canAddRecord(orgId: string): Promise<boolean> {
   try {
-    // Use type assertion for RPC call since types aren't generated
-    const { data, error } = await (supabase.rpc as Function)('can_add_record', {
-      org_id: orgId,
-    });
-
-    if (error) {
-      return false;
-    }
-
-    return data as boolean;
+    const limits = await fetchUsageLimits(orgId);
+    return limits.data?.records ? !limits.data.records.exceeded : false;
   } catch {
     return false;
   }
@@ -236,16 +300,8 @@ export async function canAddRecord(orgId: string): Promise<boolean> {
 
 export async function canAddReport(orgId: string): Promise<boolean> {
   try {
-    // Use type assertion for RPC call since types aren't generated
-    const { data, error } = await (supabase.rpc as Function)('can_add_report', {
-      org_id: orgId,
-    });
-
-    if (error) {
-      return false;
-    }
-
-    return data as boolean;
+    const limits = await fetchUsageLimits(orgId);
+    return limits.data?.reports ? !limits.data.reports.exceeded : false;
   } catch {
     return false;
   }
@@ -253,16 +309,8 @@ export async function canAddReport(orgId: string): Promise<boolean> {
 
 export async function canAddUser(orgId: string): Promise<boolean> {
   try {
-    // Use type assertion for RPC call since types aren't generated
-    const { data, error } = await (supabase.rpc as Function)('can_add_user', {
-      org_id: orgId,
-    });
-
-    if (error) {
-      return false;
-    }
-
-    return data as boolean;
+    const limits = await fetchUsageLimits(orgId);
+    return limits.data?.users ? !limits.data.users.exceeded : false;
   } catch {
     return false;
   }
@@ -277,24 +325,26 @@ export async function canAddUser(orgId: string): Promise<boolean> {
  */
 export async function fetchInvoices(
   orgId: string,
-  limit = 20
+  maxResults = 20
 ): Promise<{
   data: Invoice[] | null;
   error: string | null;
 }> {
   try {
-    const { data, error } = await supabase
-      .from('invoices')
-      .select('*')
-      .eq('organisation_id', orgId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const invoicesQuery = query(
+      collection(db, 'invoices'),
+      where('organisation_id', '==', orgId),
+      orderBy('created_at', 'desc'),
+      firestoreLimit(maxResults)
+    );
+    const snapshot = await getDocs(invoicesQuery);
 
-    if (error) {
-      return { data: null, error: error.message };
-    }
+    const invoices: Invoice[] = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    } as Invoice));
 
-    return { data, error: null };
+    return { data: invoices, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch invoices';
     return { data: null, error: message };
@@ -309,17 +359,14 @@ export async function fetchInvoiceById(invoiceId: string): Promise<{
   error: string | null;
 }> {
   try {
-    const { data, error } = await supabase
-      .from('invoices')
-      .select('*')
-      .eq('id', invoiceId)
-      .single();
+    const invoiceRef = doc(db, 'invoices', invoiceId);
+    const invoiceSnap = await getDoc(invoiceRef);
 
-    if (error) {
-      return { data: null, error: error.message };
+    if (!invoiceSnap.exists()) {
+      return { data: null, error: 'Invoice not found' };
     }
 
-    return { data, error: null };
+    return { data: { id: invoiceSnap.id, ...invoiceSnap.data() } as Invoice, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch invoice';
     return { data: null, error: message };
@@ -328,6 +375,7 @@ export async function fetchInvoiceById(invoiceId: string): Promise<{
 
 // ============================================
 // STRIPE INTEGRATION
+// Note: These will need Firebase Cloud Functions to be implemented
 // ============================================
 
 /**
@@ -347,21 +395,35 @@ export async function createCheckoutSession(
   error: string | null;
 }> {
   try {
-    const { data, error } = await supabase.functions.invoke('create-checkout-session', {
-      body: {
+    const user = auth.currentUser;
+    if (!user) {
+      return { data: null, error: 'Not authenticated' };
+    }
+
+    const idToken = await user.getIdToken();
+
+    const response = await fetch(`${CLOUD_FUNCTION_BASE_URL}/createCheckoutSessionHttp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
         organisationId,
         planId,
         billingInterval,
         userCount: options?.userCount,
         successUrl: options?.successUrl,
         cancelUrl: options?.cancelUrl,
-      },
+      }),
     });
 
-    if (error) {
-      return { data: null, error: error.message };
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to create checkout session' }));
+      return { data: null, error: errorData.error || 'Failed to create checkout session' };
     }
 
+    const data = await response.json();
     return { data: data as CheckoutSessionResponse, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to create checkout session';
@@ -380,20 +442,34 @@ export async function createCustomerPortal(
   error: string | null;
 }> {
   try {
-    const { data, error } = await supabase.functions.invoke('create-customer-portal', {
-      body: {
-        organisationId,
-        returnUrl,
-      },
-    });
-
-    if (error) {
-      return { data: null, error: error.message };
+    const user = auth.currentUser;
+    if (!user) {
+      return { data: null, error: 'Not authenticated' };
     }
 
+    const idToken = await user.getIdToken();
+
+    const response = await fetch(`${CLOUD_FUNCTION_BASE_URL}/createCustomerPortalHttp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        organisationId,
+        returnUrl,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to create customer portal session' }));
+      return { data: null, error: errorData.error || 'Failed to create customer portal session' };
+    }
+
+    const data = await response.json();
     return { data: data as CustomerPortalResponse, error: null };
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to create customer portal';
+    const message = err instanceof Error ? err.message : 'Failed to create customer portal session';
     return { data: null, error: message };
   }
 }
@@ -410,18 +486,19 @@ export async function fetchStorageAddOn(orgId: string): Promise<{
   error: string | null;
 }> {
   try {
-    const { data, error } = await supabase
-      .from('storage_addons')
-      .select('*')
-      .eq('organisation_id', orgId)
-      .eq('is_active', true)
-      .maybeSingle();
+    const addonsQuery = query(
+      collection(db, 'storage_addons'),
+      where('organisation_id', '==', orgId),
+      where('is_active', '==', true)
+    );
+    const snapshot = await getDocs(addonsQuery);
 
-    if (error) {
-      return { data: null, error: error.message };
+    if (snapshot.empty) {
+      return { data: null, error: null };
     }
 
-    return { data: data as StorageAddOn | null, error: null };
+    const addonDoc = snapshot.docs[0];
+    return { data: { id: addonDoc.id, ...addonDoc.data() } as StorageAddOn, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch storage add-on';
     return { data: null, error: message };
@@ -441,20 +518,34 @@ export async function purchaseStorageAddOn(
   error: string | null;
 }> {
   try {
-    const { data, error } = await supabase.functions.invoke('create-checkout-session', {
-      body: {
-        organisationId,
-        addOnType: 'storage',
-        quantityBlocks,
-        successUrl,
-        cancelUrl,
-      },
-    });
-
-    if (error) {
-      return { data: null, error: error.message };
+    const user = auth.currentUser;
+    if (!user) {
+      return { data: null, error: 'Not authenticated' };
     }
 
+    const idToken = await user.getIdToken();
+
+    const response = await fetch(`${CLOUD_FUNCTION_BASE_URL}/createCheckoutSessionHttp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        organisationId,
+        type: 'storage_addon',
+        storageBlocks: quantityBlocks,
+        successUrl,
+        cancelUrl,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to create storage add-on checkout' }));
+      return { data: null, error: errorData.error || 'Failed to create storage add-on checkout' };
+    }
+
+    const data = await response.json();
     return { data: data as CheckoutSessionResponse, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to purchase storage add-on';
@@ -474,20 +565,36 @@ export async function fetchSubscriptionHistory(orgId: string): Promise<{
   error: string | null;
 }> {
   try {
-    const { data, error } = await supabase
-      .from('subscription_history')
-      .select(`
-        *,
-        subscription_plans (*)
-      `)
-      .eq('organisation_id', orgId)
-      .order('started_at', { ascending: false });
+    const historyQuery = query(
+      collection(db, 'subscription_history'),
+      where('organisation_id', '==', orgId),
+      orderBy('started_at', 'desc')
+    );
+    const snapshot = await getDocs(historyQuery);
 
-    if (error) {
-      return { data: null, error: error.message };
+    const history: unknown[] = [];
+
+    for (const historyDoc of snapshot.docs) {
+      const data = historyDoc.data();
+
+      // Fetch plan details
+      let plan = null;
+      if (data.plan_id) {
+        const planRef = doc(db, collections.subscriptionPlans, data.plan_id);
+        const planSnap = await getDoc(planRef);
+        if (planSnap.exists()) {
+          plan = { id: planSnap.id, ...planSnap.data() };
+        }
+      }
+
+      history.push({
+        id: historyDoc.id,
+        ...data,
+        subscription_plans: plan,
+      });
     }
 
-    return { data, error: null };
+    return { data: history, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch subscription history';
     return { data: null, error: message };

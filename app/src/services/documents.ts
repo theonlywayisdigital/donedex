@@ -1,9 +1,26 @@
 /**
  * Documents Service
  * Handles CRUD operations for record documents and file uploads
+ *
+ * Migrated to Firebase/Firestore
  */
 
-import { supabase } from './supabase';
+import { auth, db, storage } from './firebase';
+import {
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  query,
+  where,
+  orderBy,
+  limit as firestoreLimit,
+} from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { collections, generateId } from './firestore';
 import type { RecordDocument, RecordDocumentCategory } from '../types';
 
 // ============================================
@@ -55,41 +72,54 @@ export interface DocumentsResult {
 export async function fetchRecordDocuments(
   options: FetchDocumentsOptions
 ): Promise<DocumentsResult> {
-  const { recordId, category, limit = 50, offset = 0 } = options;
+  const { recordId, category, limit = 50 } = options;
 
-  let query = supabase
-    .from('record_documents')
-    .select(
-      `
-      *,
-      uploader:user_profiles!uploaded_by (full_name)
-    `
-    )
-    .eq('record_id', recordId)
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
+  try {
+    let documentsQuery = query(
+      collection(db, 'record_documents'),
+      where('record_id', '==', recordId),
+      orderBy('created_at', 'desc'),
+      firestoreLimit(limit)
+    );
 
-  if (category) {
-    query = query.eq('category', category);
+    // Note: Firestore doesn't support adding where clause after orderBy easily
+    // We'll filter client-side if category is specified
+    const snapshot = await getDocs(documentsQuery);
+
+    const documents: DocumentWithUploader[] = [];
+
+    for (const docSnap of snapshot.docs) {
+      const data = docSnap.data();
+
+      // Filter by category if specified
+      if (category && data.category !== category) {
+        continue;
+      }
+
+      // Fetch uploader name
+      let uploaderName: string | null = null;
+      if (data.uploaded_by) {
+        const userRef = doc(db, collections.users, data.uploaded_by);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          uploaderName = userData.full_name || `${userData.first_name || ''} ${userData.last_name || ''}`.trim() || null;
+        }
+      }
+
+      documents.push({
+        id: docSnap.id,
+        ...data,
+        uploader_name: uploaderName,
+      } as DocumentWithUploader);
+    }
+
+    return { data: documents, error: null };
+  } catch (err) {
+    console.error('[Documents] Error fetching documents:', err);
+    const message = err instanceof Error ? err.message : 'Failed to fetch documents';
+    return { data: [], error: { message } };
   }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.error('[Documents] Error fetching documents:', error);
-    return { data: [], error: { message: error.message } };
-  }
-
-  // Transform to include uploader name
-  const documents: DocumentWithUploader[] = (data || []).map((doc: unknown) => {
-    const d = doc as RecordDocument & { uploader?: { full_name: string } | null };
-    return {
-      ...d,
-      uploader_name: d.uploader?.full_name || null,
-    };
-  });
-
-  return { data: documents, error: null };
 }
 
 /**
@@ -98,18 +128,20 @@ export async function fetchRecordDocuments(
 export async function fetchDocumentById(
   documentId: string
 ): Promise<DocumentResult> {
-  const { data, error } = await supabase
-    .from('record_documents')
-    .select('*')
-    .eq('id', documentId)
-    .single();
+  try {
+    const docRef = doc(db, 'record_documents', documentId);
+    const docSnap = await getDoc(docRef);
 
-  if (error) {
-    console.error('[Documents] Error fetching document:', error);
-    return { data: null, error: { message: error.message } };
+    if (!docSnap.exists()) {
+      return { data: null, error: { message: 'Document not found' } };
+    }
+
+    return { data: { id: docSnap.id, ...docSnap.data() } as RecordDocument, error: null };
+  } catch (err) {
+    console.error('[Documents] Error fetching document:', err);
+    const message = err instanceof Error ? err.message : 'Failed to fetch document';
+    return { data: null, error: { message } };
   }
-
-  return { data: data as RecordDocument, error: null };
 }
 
 /**
@@ -118,17 +150,19 @@ export async function fetchDocumentById(
 export async function getDocumentCount(
   recordId: string
 ): Promise<{ count: number; error: { message: string } | null }> {
-  const { count, error } = await supabase
-    .from('record_documents')
-    .select('*', { count: 'exact', head: true })
-    .eq('record_id', recordId);
+  try {
+    const documentsQuery = query(
+      collection(db, 'record_documents'),
+      where('record_id', '==', recordId)
+    );
+    const snapshot = await getDocs(documentsQuery);
 
-  if (error) {
-    console.error('[Documents] Error getting document count:', error);
-    return { count: 0, error: { message: error.message } };
+    return { count: snapshot.size, error: null };
+  } catch (err) {
+    console.error('[Documents] Error getting document count:', err);
+    const message = err instanceof Error ? err.message : 'Failed to get document count';
+    return { count: 0, error: { message } };
   }
-
-  return { count: count || 0, error: null };
 }
 
 // ============================================
@@ -150,11 +184,7 @@ export async function uploadDocument(
     description,
   } = options;
 
-  // Get current user
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const user = auth.currentUser;
   if (!user) {
     return { data: null, error: { message: 'Not authenticated' } };
   }
@@ -162,60 +192,48 @@ export async function uploadDocument(
   // Generate unique file path: {org_id}/{record_id}/{timestamp}_{filename}
   const timestamp = Date.now();
   const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-  const filePath = `${organisationId}/${recordId}/${timestamp}_${sanitizedName}`;
+  const filePath = `record-documents/${organisationId}/${recordId}/${timestamp}_${sanitizedName}`;
 
   try {
-    // Upload file to storage
+    // Upload file to Firebase Storage
     const response = await fetch(file.uri);
     const blob = await response.blob();
 
-    const { error: uploadError } = await supabase.storage
-      .from('record-documents')
-      .upload(filePath, blob, {
-        contentType: file.type,
-        upsert: false,
-      });
-
-    if (uploadError) {
-      console.error('[Documents] Storage upload error:', uploadError);
-      return { data: null, error: { message: uploadError.message } };
-    }
+    const storageRef = ref(storage, filePath);
+    await uploadBytes(storageRef, blob, {
+      contentType: file.type,
+    });
 
     // Get file size if not provided
     const fileSize = file.size || blob.size;
 
     // Create database record
-    const { data, error: dbError } = await supabase
-      .from('record_documents')
-      .insert({
-        record_id: recordId,
-        organisation_id: organisationId,
-        name: name || file.name,
-        original_filename: file.name,
-        file_path: filePath,
-        file_size: fileSize,
-        mime_type: file.type,
-        category,
-        description: description || null,
-        uploaded_by: user.id,
-      } as never)
-      .select()
-      .single();
+    const documentId = generateId();
+    const now = new Date().toISOString();
 
-    if (dbError) {
-      // Try to clean up the uploaded file
-      await supabase.storage.from('record-documents').remove([filePath]);
-      console.error('[Documents] Database insert error:', dbError);
-      return { data: null, error: { message: dbError.message } };
-    }
+    const documentData = {
+      record_id: recordId,
+      organisation_id: organisationId,
+      name: name || file.name,
+      original_filename: file.name,
+      file_path: filePath,
+      file_size: fileSize,
+      mime_type: file.type,
+      category,
+      description: description || null,
+      uploaded_by: user.uid,
+      created_at: now,
+      updated_at: now,
+    };
 
-    return { data: data as RecordDocument, error: null };
+    const docRef = doc(db, 'record_documents', documentId);
+    await setDoc(docRef, documentData);
+
+    return { data: { id: documentId, ...documentData } as RecordDocument, error: null };
   } catch (err) {
     console.error('[Documents] Upload error:', err);
-    return {
-      data: null,
-      error: { message: err instanceof Error ? err.message : 'Upload failed' },
-    };
+    const message = err instanceof Error ? err.message : 'Upload failed';
+    return { data: null, error: { message } };
   }
 }
 
@@ -234,19 +252,20 @@ export async function updateDocument(
     description?: string | null;
   }
 ): Promise<DocumentResult> {
-  const { data, error } = await supabase
-    .from('record_documents')
-    .update(updates as never)
-    .eq('id', documentId)
-    .select()
-    .single();
+  try {
+    const docRef = doc(db, 'record_documents', documentId);
+    await updateDoc(docRef, {
+      ...updates,
+      updated_at: new Date().toISOString(),
+    });
 
-  if (error) {
-    console.error('[Documents] Error updating document:', error);
-    return { data: null, error: { message: error.message } };
+    const docSnap = await getDoc(docRef);
+    return { data: { id: docSnap.id, ...docSnap.data() } as RecordDocument, error: null };
+  } catch (err) {
+    console.error('[Documents] Error updating document:', err);
+    const message = err instanceof Error ? err.message : 'Failed to update document';
+    return { data: null, error: { message } };
   }
-
-  return { data: data as RecordDocument, error: null };
 }
 
 // ============================================
@@ -259,42 +278,35 @@ export async function updateDocument(
 export async function deleteDocument(
   documentId: string
 ): Promise<{ error: { message: string } | null }> {
-  // First, get the document to find the file path
-  const { data: doc, error: fetchError } = await supabase
-    .from('record_documents')
-    .select('file_path')
-    .eq('id', documentId)
-    .single();
+  try {
+    // First, get the document to find the file path
+    const docRef = doc(db, 'record_documents', documentId);
+    const docSnap = await getDoc(docRef);
 
-  if (fetchError) {
-    console.error('[Documents] Error fetching document for deletion:', fetchError);
-    return { error: { message: fetchError.message } };
+    if (!docSnap.exists()) {
+      return { error: { message: 'Document not found' } };
+    }
+
+    const filePath = docSnap.data().file_path;
+
+    // Delete from Firebase Storage
+    try {
+      const storageRef = ref(storage, filePath);
+      await deleteObject(storageRef);
+    } catch (storageErr) {
+      console.error('[Documents] Storage deletion error:', storageErr);
+      // Continue anyway - the file might already be gone
+    }
+
+    // Delete database record
+    await deleteDoc(docRef);
+
+    return { error: null };
+  } catch (err) {
+    console.error('[Documents] Error deleting document:', err);
+    const message = err instanceof Error ? err.message : 'Failed to delete document';
+    return { error: { message } };
   }
-
-  const filePath = (doc as { file_path: string }).file_path;
-
-  // Delete from storage
-  const { error: storageError } = await supabase.storage
-    .from('record-documents')
-    .remove([filePath]);
-
-  if (storageError) {
-    console.error('[Documents] Storage deletion error:', storageError);
-    // Continue anyway - the file might already be gone
-  }
-
-  // Delete database record
-  const { error: dbError } = await supabase
-    .from('record_documents')
-    .delete()
-    .eq('id', documentId);
-
-  if (dbError) {
-    console.error('[Documents] Database deletion error:', dbError);
-    return { error: { message: dbError.message } };
-  }
-
-  return { error: null };
 }
 
 // ============================================
@@ -302,31 +314,28 @@ export async function deleteDocument(
 // ============================================
 
 /**
- * Get a signed URL for downloading a document
- * URLs expire after 1 hour by default
+ * Get a download URL for a document from Firebase Storage
  */
 export async function getDocumentUrl(
-  filePath: string,
-  expiresIn: number = 3600
+  filePath: string
 ): Promise<{ url: string | null; error: { message: string } | null }> {
-  const { data, error } = await supabase.storage
-    .from('record-documents')
-    .createSignedUrl(filePath, expiresIn);
-
-  if (error) {
-    console.error('[Documents] Error creating signed URL:', error);
-    return { url: null, error: { message: error.message } };
+  try {
+    const storageRef = ref(storage, filePath);
+    const url = await getDownloadURL(storageRef);
+    return { url, error: null };
+  } catch (err) {
+    console.error('[Documents] Error getting download URL:', err);
+    const message = err instanceof Error ? err.message : 'Failed to get download URL';
+    return { url: null, error: { message } };
   }
-
-  return { url: data.signedUrl, error: null };
 }
 
 /**
- * Get a public URL for a document (only works if bucket is public)
+ * Get a public URL for a document (alias for getDocumentUrl)
  */
-export function getDocumentPublicUrl(filePath: string): string {
-  const { data } = supabase.storage.from('record-documents').getPublicUrl(filePath);
-  return data.publicUrl;
+export async function getDocumentPublicUrl(filePath: string): Promise<string> {
+  const result = await getDocumentUrl(filePath);
+  return result.url || '';
 }
 
 // ============================================

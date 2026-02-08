@@ -1,4 +1,29 @@
-import { supabase } from './supabase';
+/**
+ * Team Service
+ * Handles team member management and invitations
+ *
+ * Uses Firebase/Firestore
+ */
+
+import { auth, db } from './firebase';
+import {
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  query,
+  where,
+  orderBy,
+  writeBatch,
+} from 'firebase/firestore';
+import { collections, generateId } from './firestore';
+
+// Cloud Function URL
+const CLOUD_FUNCTION_BASE_URL = process.env.EXPO_PUBLIC_FIREBASE_FUNCTIONS_URL ||
+  'https://europe-west2-donedex-72116.cloudfunctions.net';
 
 export type UserRole = 'owner' | 'admin' | 'user';
 
@@ -33,57 +58,48 @@ interface ServiceResult<T> {
 /**
  * Fetch all team members for an organisation
  */
-interface OrgUser {
-  id: string;
-  user_id: string;
-  role: UserRole;
-  created_at: string;
-}
-
 export async function fetchTeamMembers(
   organisationId: string
 ): Promise<ServiceResult<TeamMember[]>> {
-  const { data, error } = await supabase
-    .from('organisation_users')
-    .select(`
-      id,
-      user_id,
-      role,
-      created_at
-    `)
-    .eq('organisation_id', organisationId)
-    .order('created_at', { ascending: true });
+  try {
+    // Query users in this organisation
+    const usersQuery = query(
+      collection(db, collections.users),
+      where('organisation_id', '==', organisationId)
+    );
+    const usersSnapshot = await getDocs(usersQuery);
 
-  if (error) {
+    const members: TeamMember[] = [];
+
+    for (const userDoc of usersSnapshot.docs) {
+      const userData = userDoc.data();
+
+      members.push({
+        id: userDoc.id,
+        user_id: userDoc.id,
+        role: userData.role || 'user',
+        created_at: userData.created_at || '',
+        user_profile: {
+          id: userDoc.id,
+          full_name: userData.full_name || userData.first_name
+            ? `${userData.first_name || ''} ${userData.last_name || ''}`.trim()
+            : 'Unknown',
+          avatar_url: userData.avatar_url || null,
+        },
+        email: userData.email,
+      });
+    }
+
+    // Sort by created_at
+    members.sort((a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+
+    return { data: members, error: null };
+  } catch (error: any) {
     console.error('Error fetching team members:', error);
     return { data: [], error: { message: error.message } };
   }
-
-  const typedData = data as unknown as OrgUser[];
-
-  // Fetch user profiles separately (no direct FK relationship)
-  const userIds = typedData.map((m) => m.user_id);
-  const { data: profiles } = await supabase
-    .from('user_profiles')
-    .select('id, full_name, avatar_url')
-    .in('id', userIds);
-
-  // Fetch emails from auth.users via admin function or use profile data
-  // For now, we'll use profile data only
-
-  const profilesMap = new Map(
-    ((profiles || []) as Array<{ id: string; full_name: string; avatar_url: string | null }>).map(
-      (p) => [p.id, p]
-    )
-  );
-
-  const membersWithProfiles: TeamMember[] = typedData.map((member) => ({
-    ...member,
-    role: member.role as UserRole,
-    user_profile: profilesMap.get(member.user_id) || null,
-  }));
-
-  return { data: membersWithProfiles, error: null };
 }
 
 /**
@@ -93,34 +109,39 @@ export async function updateMemberRole(
   memberId: string,
   newRole: UserRole
 ): Promise<ServiceResult<null>> {
-  const { error } = await supabase
-    .from('organisation_users')
-    .update({ role: newRole } as never)
-    .eq('id', memberId);
+  try {
+    const userRef = doc(db, collections.users, memberId);
+    await updateDoc(userRef, {
+      role: newRole,
+      updated_at: new Date().toISOString(),
+    });
 
-  if (error) {
+    return { data: null, error: null };
+  } catch (error: any) {
     console.error('Error updating member role:', error);
     return { data: null, error: { message: error.message } };
   }
-
-  return { data: null, error: null };
 }
 
 /**
  * Remove a team member from the organisation
  */
 export async function removeMember(memberId: string): Promise<ServiceResult<null>> {
-  const { error } = await supabase
-    .from('organisation_users')
-    .delete()
-    .eq('id', memberId);
+  try {
+    const userRef = doc(db, collections.users, memberId);
 
-  if (error) {
+    // Instead of deleting the user, just remove their organisation association
+    await updateDoc(userRef, {
+      organisation_id: null,
+      role: null,
+      updated_at: new Date().toISOString(),
+    });
+
+    return { data: null, error: null };
+  } catch (error: any) {
     console.error('Error removing member:', error);
     return { data: null, error: { message: error.message } };
   }
-
-  return { data: null, error: null };
 }
 
 /**
@@ -129,23 +150,63 @@ export async function removeMember(memberId: string): Promise<ServiceResult<null
 export async function fetchInvitations(
   organisationId: string
 ): Promise<ServiceResult<Invitation[]>> {
-  const { data, error } = await supabase
-    .from('invitations')
-    .select('*')
-    .eq('organisation_id', organisationId)
-    .gt('expires_at', new Date().toISOString())
-    .order('created_at', { ascending: false });
+  try {
+    const now = new Date().toISOString();
+    const invitationsQuery = query(
+      collection(db, collections.invitations),
+      where('organisation_id', '==', organisationId),
+      where('expires_at', '>', now)
+    );
+    const snapshot = await getDocs(invitationsQuery);
 
-  if (error) {
-    // Table might not exist yet
-    if (error.code === '42P01') {
-      return { data: [], error: null };
-    }
+    const invitations: Invitation[] = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    } as Invitation));
+
+    // Sort by created_at descending
+    invitations.sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    return { data: invitations, error: null };
+  } catch (error: any) {
     console.error('Error fetching invitations:', error);
     return { data: [], error: { message: error.message } };
   }
+}
 
-  return { data: data || [], error: null };
+/**
+ * Send invitation email via Firebase Cloud Function
+ */
+async function sendInviteEmail(invitationId: string): Promise<void> {
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      console.error('Cannot send invite email: not authenticated');
+      return;
+    }
+
+    const idToken = await user.getIdToken();
+
+    const response = await fetch(`${CLOUD_FUNCTION_BASE_URL}/sendInviteHttp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ invitationId }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Failed to send invitation email:', errorText);
+    } else {
+      console.log('Invitation email sent successfully');
+    }
+  } catch (error) {
+    console.error('Error sending invitation email:', error);
+  }
 }
 
 /**
@@ -157,88 +218,78 @@ export async function createInvitation(
   role: UserRole,
   invitedBy: string
 ): Promise<ServiceResult<Invitation | null>> {
-  // Set expiration to 7 days from now
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
+  try {
+    // Set expiration to 7 days from now
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
 
-  const { data, error } = await supabase
-    .from('invitations')
-    .insert({
+    const invitationId = generateId();
+    const invitationRef = doc(db, collections.invitations, invitationId);
+
+    const invitationData: Omit<Invitation, 'id'> = {
       organisation_id: organisationId,
       email: email.toLowerCase().trim(),
       role,
       invited_by: invitedBy,
       expires_at: expiresAt.toISOString(),
-    } as never)
-    .select()
-    .single();
+      created_at: new Date().toISOString(),
+    };
 
-  if (error) {
+    await setDoc(invitationRef, invitationData);
+
+    const invitation: Invitation = { id: invitationId, ...invitationData };
+
+    // Send invitation email via Firebase Cloud Function
+    // Fire and forget - don't block on email sending
+    sendInviteEmail(invitationId).catch(err => {
+      console.error('Background email send failed:', err);
+    });
+
+    return { data: invitation, error: null };
+  } catch (error: any) {
     console.error('Error creating invitation:', error);
     return { data: null, error: { message: error.message } };
   }
-
-  const invitation = data as Invitation;
-
-  // Send invitation email via Edge Function
-  if (invitation) {
-    try {
-      await supabase.functions.invoke('send-invite', {
-        body: { invitationId: invitation.id },
-      });
-    } catch (emailError) {
-      // Log but don't fail - invitation was created successfully
-      console.error('Error sending invitation email:', emailError);
-    }
-  }
-
-  return { data: invitation, error: null };
 }
 
 /**
  * Cancel/delete an invitation
  */
 export async function cancelInvitation(invitationId: string): Promise<ServiceResult<null>> {
-  const { error } = await supabase
-    .from('invitations')
-    .delete()
-    .eq('id', invitationId);
+  try {
+    const invitationRef = doc(db, collections.invitations, invitationId);
+    await deleteDoc(invitationRef);
 
-  if (error) {
+    return { data: null, error: null };
+  } catch (error: any) {
     console.error('Error canceling invitation:', error);
     return { data: null, error: { message: error.message } };
   }
-
-  return { data: null, error: null };
 }
 
 /**
  * Resend an invitation (update expires_at and send email)
  */
 export async function resendInvitation(invitationId: string): Promise<ServiceResult<null>> {
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
+  try {
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
 
-  const { error } = await supabase
-    .from('invitations')
-    .update({ expires_at: expiresAt.toISOString() } as never)
-    .eq('id', invitationId);
+    const invitationRef = doc(db, collections.invitations, invitationId);
+    await updateDoc(invitationRef, {
+      expires_at: expiresAt.toISOString(),
+    });
 
-  if (error) {
+    // Re-send invitation email via Firebase Cloud Function
+    sendInviteEmail(invitationId).catch(err => {
+      console.error('Background email resend failed:', err);
+    });
+
+    return { data: null, error: null };
+  } catch (error: any) {
     console.error('Error resending invitation:', error);
     return { data: null, error: { message: error.message } };
   }
-
-  // Re-send invitation email
-  try {
-    await supabase.functions.invoke('send-invite', {
-      body: { invitationId },
-    });
-  } catch (emailError) {
-    console.error('Error sending invitation email:', emailError);
-  }
-
-  return { data: null, error: null };
 }
 
 /**
@@ -247,18 +298,20 @@ export async function resendInvitation(invitationId: string): Promise<ServiceRes
 export async function fetchUserRecordAssignments(
   userId: string
 ): Promise<ServiceResult<string[]>> {
-  const { data, error } = await supabase
-    .from('user_record_assignments')
-    .select('record_id')
-    .eq('user_id', userId);
+  try {
+    const assignmentsQuery = query(
+      collection(db, 'user_record_assignments'),
+      where('user_id', '==', userId)
+    );
+    const snapshot = await getDocs(assignmentsQuery);
 
-  if (error) {
+    const recordIds = snapshot.docs.map(doc => doc.data().record_id as string);
+
+    return { data: recordIds, error: null };
+  } catch (error: any) {
     console.error('Error fetching user record assignments:', error);
     return { data: [], error: { message: error.message } };
   }
-
-  const typedData = data as unknown as { record_id: string }[];
-  return { data: typedData.map((d) => d.record_id), error: null };
 }
 
 /**
@@ -273,30 +326,38 @@ export async function updateUserRecordAssignments(
   userId: string,
   recordIds: string[]
 ): Promise<ServiceResult<null>> {
-  // Delete existing assignments
-  const { error: deleteError } = await supabase
-    .from('user_record_assignments')
-    .delete()
-    .eq('user_id', userId);
+  try {
+    const batch = writeBatch(db);
 
-  if (deleteError) {
-    console.error('Error deleting record assignments:', deleteError);
-    return { data: null, error: { message: deleteError.message } };
-  }
+    // Delete existing assignments
+    const existingQuery = query(
+      collection(db, 'user_record_assignments'),
+      where('user_id', '==', userId)
+    );
+    const existingSnapshot = await getDocs(existingQuery);
 
-  // Insert new assignments
-  if (recordIds.length > 0) {
-    const { error: insertError } = await supabase
-      .from('user_record_assignments')
-      .insert(recordIds.map((recordId) => ({ user_id: userId, record_id: recordId })) as never);
+    existingSnapshot.docs.forEach(doc => {
+      batch.delete(doc.ref);
+    });
 
-    if (insertError) {
-      console.error('Error inserting record assignments:', insertError);
-      return { data: null, error: { message: insertError.message } };
+    // Insert new assignments
+    for (const recordId of recordIds) {
+      const assignmentId = generateId();
+      const assignmentRef = doc(db, 'user_record_assignments', assignmentId);
+      batch.set(assignmentRef, {
+        user_id: userId,
+        record_id: recordId,
+        created_at: new Date().toISOString(),
+      });
     }
-  }
 
-  return { data: null, error: null };
+    await batch.commit();
+
+    return { data: null, error: null };
+  } catch (error: any) {
+    console.error('Error updating record assignments:', error);
+    return { data: null, error: { message: error.message } };
+  }
 }
 
 /**

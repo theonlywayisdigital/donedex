@@ -225,9 +225,14 @@ export function CreateOrganisationScreen() {
         `${formData.organisationName} has been created on the ${selectedPlan?.name || 'selected'} plan.${membersText}${discountText}`,
         () => {
           if (result.data?.id) {
-            navigation.replace('OrganisationDetail', { orgId: result.data.id });
+            // Navigate to list with refresh flag, then to detail
+            // This ensures the list gets updated before viewing the new org
+            navigation.navigate('OrganisationsList', { refresh: true });
+            setTimeout(() => {
+              navigation.navigate('OrganisationDetail', { orgId: result.data!.id });
+            }, 100);
           } else {
-            navigation.goBack();
+            navigation.navigate('OrganisationsList', { refresh: true });
           }
         },
         () => {

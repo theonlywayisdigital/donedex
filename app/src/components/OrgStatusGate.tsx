@@ -13,7 +13,8 @@ import { View, Text, StyleSheet } from 'react-native';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../constants/theme';
 import { Icon, Button } from './ui';
 import { useAuthStore } from '../store/authStore';
-import { supabase } from '../services/supabase';
+import { checkIsSuperAdmin } from '../services/superAdmin';
+import { fetchOrgStatus } from '../services/auth';
 
 interface OrgStatusGateProps {
   children: ReactNode;
@@ -47,14 +48,9 @@ export function OrgStatusGate({ children }: OrgStatusGateProps) {
     if (!organisation?.id) {
       const verifyNotSuperAdmin = async () => {
         try {
-          const { data, error } = await supabase
-            .from('super_admins' as any)
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('is_active', true)
-            .maybeSingle();
+          const isSuperAdminUser = await checkIsSuperAdmin();
 
-          if (data) {
+          if (isSuperAdminUser) {
             // User IS a super admin - allow through
             setBlockReason(null);
           } else {
@@ -72,20 +68,16 @@ export function OrgStatusGate({ children }: OrgStatusGateProps) {
     }
 
     // Check org status (blocked/archived)
-    const checkOrgStatus = async () => {
+    const checkOrgStatusAsync = async () => {
       try {
-        const { data, error } = await supabase
-          .from('organisations')
-          .select('blocked,archived')
-          .eq('id', organisation.id)
-          .single();
+        const status = await fetchOrgStatus(organisation.id);
 
-        if (error) {
+        if (!status) {
           // On error, allow through (don't block user due to network issues)
           setBlockReason(null);
-        } else if ((data as { blocked: boolean; archived: boolean })?.blocked) {
+        } else if (status.blocked) {
           setBlockReason('blocked');
-        } else if ((data as { blocked: boolean; archived: boolean })?.archived) {
+        } else if (status.archived) {
           setBlockReason('archived');
         } else {
           setBlockReason(null);
@@ -97,7 +89,7 @@ export function OrgStatusGate({ children }: OrgStatusGateProps) {
       setIsChecking(false);
     };
 
-    checkOrgStatus();
+    checkOrgStatusAsync();
   }, [isInitialized, user, isSuperAdmin, organisation?.id, pendingOTPEmail]);
 
   // No user = let auth redirect handle it

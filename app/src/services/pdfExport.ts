@@ -27,10 +27,10 @@ function formatDateTime(dateString: string): string {
 /**
  * Get display text and color for a response value
  */
-function getResponseDisplay(
+async function getResponseDisplay(
   value: string | null | undefined,
   itemType: string
-): { text: string; color: string; isSignature?: boolean; signatureUrl?: string } {
+): Promise<{ text: string; color: string; isSignature?: boolean; signatureUrl?: string }> {
   if (!value) {
     return { text: 'Not answered', color: '#6B7280' };
   }
@@ -197,7 +197,7 @@ function getResponseDisplay(
     case 'signature':
       try {
         const parsed = JSON.parse(value);
-        const signatureUrl = getSignatureUrl(parsed.path);
+        const signatureUrl = await getSignatureUrl(parsed.path);
         const signerText = parsed.signerName ? ` (${parsed.signerName})` : '';
         return {
           text: `Signature captured${signerText}`,
@@ -210,7 +210,7 @@ function getResponseDisplay(
           text: 'Signature captured',
           color: '#059669',
           isSignature: true,
-          signatureUrl: getSignatureUrl(value),
+          signatureUrl: await getSignatureUrl(value),
         };
       }
 
@@ -226,7 +226,7 @@ function getResponseDisplay(
           text,
           color: hasSignature ? '#059669' : '#6B7280',
           isSignature: hasSignature,
-          signatureUrl: hasSignature ? getSignatureUrl(parsed.signaturePath) : undefined,
+          signatureUrl: hasSignature ? await getSignatureUrl(parsed.signaturePath) : undefined,
         };
       } catch {
         return { text: value, color: '#111827' };
@@ -286,84 +286,84 @@ function getResponseDisplay(
 /**
  * Generate HTML content for the PDF
  */
-function generateHtml(options: ExportOptions): string {
+async function generateHtml(options: ExportOptions): Promise<string> {
   const { report, template, responses } = options;
 
   const statusColor = report.status === 'submitted' ? '#059669' : '#D97706';
   const statusText = report.status === 'submitted' ? 'Completed' : 'Draft';
 
-  // Generate sections HTML
-  const sectionsHtml = template.template_sections
-    .map((section) => {
-      const itemsHtml = section.template_items
-        .map((item) => {
-          const response = responses.get(item.id);
-          const display = getResponseDisplay(response?.response_value, item.item_type);
+  // Generate sections HTML with async handling
+  const sectionPromises = template.template_sections.map(async (section) => {
+    const itemPromises = section.template_items.map(async (item) => {
+      const response = responses.get(item.id);
+      const display = await getResponseDisplay(response?.response_value, item.item_type);
 
-          let notesHtml = '';
-          if (response?.notes) {
-            notesHtml = `
-              <div class="notes">
-                <strong>Notes:</strong> ${escapeHtml(response.notes)}
-              </div>
-            `;
-          }
+      let notesHtml = '';
+      if (response?.notes) {
+        notesHtml = `
+          <div class="notes">
+            <strong>Notes:</strong> ${escapeHtml(response.notes)}
+          </div>
+        `;
+      }
 
-          let severityHtml = '';
-          if (response?.severity) {
-            const severityColor =
-              response.severity === 'low'
-                ? '#059669'
-                : response.severity === 'medium'
-                ? '#D97706'
-                : '#DC2626';
-            severityHtml = `
-              <div class="severity">
-                <strong>Severity:</strong>
-                <span style="color: ${severityColor}; font-weight: 600;">
-                  ${response.severity.charAt(0).toUpperCase() + response.severity.slice(1)}
-                </span>
-              </div>
-            `;
-          }
+      let severityHtml = '';
+      if (response?.severity) {
+        const severityColor =
+          response.severity === 'low'
+            ? '#059669'
+            : response.severity === 'medium'
+            ? '#D97706'
+            : '#DC2626';
+        severityHtml = `
+          <div class="severity">
+            <strong>Severity:</strong>
+            <span style="color: ${severityColor}; font-weight: 600;">
+              ${response.severity.charAt(0).toUpperCase() + response.severity.slice(1)}
+            </span>
+          </div>
+        `;
+      }
 
-          // Handle signature images
-          let signatureHtml = '';
-          if (display.isSignature && display.signatureUrl) {
-            signatureHtml = `
-              <div class="signature-container">
-                <img src="${display.signatureUrl}" alt="Signature" class="signature-image" />
-              </div>
-            `;
-          }
-
-          return `
-            <div class="item">
-              <div class="item-row">
-                <span class="item-label">
-                  ${escapeHtml(item.label)}
-                  ${item.is_required ? '<span class="required">*</span>' : ''}
-                </span>
-                <span class="item-value" style="color: ${display.color};">
-                  ${escapeHtml(display.text)}
-                </span>
-              </div>
-              ${signatureHtml}
-              ${notesHtml}
-              ${severityHtml}
-            </div>
-          `;
-        })
-        .join('');
+      // Handle signature images
+      let signatureHtml = '';
+      if (display.isSignature && display.signatureUrl) {
+        signatureHtml = `
+          <div class="signature-container">
+            <img src="${display.signatureUrl}" alt="Signature" class="signature-image" />
+          </div>
+        `;
+      }
 
       return `
-        <div class="section">
-          <h3 class="section-title">${escapeHtml(section.name)}</h3>
-          ${itemsHtml}
+        <div class="item">
+          <div class="item-row">
+            <span class="item-label">
+              ${escapeHtml(item.label)}
+              ${item.is_required ? '<span class="required">*</span>' : ''}
+            </span>
+            <span class="item-value" style="color: ${display.color};">
+              ${escapeHtml(display.text)}
+            </span>
+          </div>
+          ${signatureHtml}
+          ${notesHtml}
+          ${severityHtml}
         </div>
       `;
-    })
-    .join('');
+    });
+
+    const itemsHtml = (await Promise.all(itemPromises)).join('');
+
+    return `
+      <div class="section">
+        <h3 class="section-title">${escapeHtml(section.name)}</h3>
+        ${itemsHtml}
+      </div>
+    `;
+  });
+
+  const sectionsHtml = (await Promise.all(sectionPromises)).join('');
 
   return `
     <!DOCTYPE html>
@@ -593,7 +593,7 @@ function escapeHtml(text: string): string {
  */
 export async function exportReportToPdf(options: ExportOptions): Promise<{ success: boolean; error?: string }> {
   try {
-    const html = generateHtml(options);
+    const html = await generateHtml(options);
 
     // Generate PDF
     const { uri } = await Print.printToFileAsync({
@@ -629,7 +629,7 @@ export async function exportReportToPdf(options: ExportOptions): Promise<{ succe
  */
 export async function printReport(options: ExportOptions): Promise<{ success: boolean; error?: string }> {
   try {
-    const html = generateHtml(options);
+    const html = await generateHtml(options);
 
     await Print.printAsync({
       html,

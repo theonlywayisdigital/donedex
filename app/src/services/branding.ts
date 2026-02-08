@@ -1,9 +1,14 @@
 /**
  * Branding Service
  * Handles fetching, updating, and managing organisation branding settings
+ *
+ * Migrated to Firebase/Firestore
  */
 
-import { supabase } from './supabase';
+import { db, storage } from './firebase';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { collections } from './firestore';
 import { compressImage } from './imageCompression';
 import type {
   OrganisationBranding,
@@ -11,7 +16,7 @@ import type {
   UpdateBrandingInput,
 } from '../types/branding';
 
-const LOGO_BUCKET = 'organisation-logos';
+const LOGO_FOLDER = 'organisation-logos';
 
 /**
  * Fetch organisation branding settings
@@ -19,21 +24,29 @@ const LOGO_BUCKET = 'organisation-logos';
 export async function fetchOrganisationBranding(
   orgId: string
 ): Promise<{ data: OrganisationBranding | null; error: { message: string } | null }> {
-  const { data, error } = await supabase
-    .from('organisations')
-    .select('logo_path, primary_color, secondary_color, display_name')
-    .eq('id', orgId)
-    .single();
+  try {
+    const orgRef = doc(db, collections.organisations, orgId);
+    const orgSnap = await getDoc(orgRef);
 
-  if (error) {
-    console.error('Error fetching organisation branding:', error);
-    return { data: null, error: { message: error.message } };
+    if (!orgSnap.exists()) {
+      return { data: null, error: { message: 'Organisation not found' } };
+    }
+
+    const orgData = orgSnap.data();
+    return {
+      data: {
+        logo_path: orgData.logo_path || null,
+        primary_color: orgData.primary_color || null,
+        secondary_color: orgData.secondary_color || null,
+        display_name: orgData.display_name || null,
+      } as OrganisationBranding,
+      error: null,
+    };
+  } catch (err) {
+    console.error('Error fetching organisation branding:', err);
+    const message = err instanceof Error ? err.message : 'Failed to fetch branding';
+    return { data: null, error: { message } };
   }
-
-  return {
-    data: data as OrganisationBranding,
-    error: null,
-  };
 }
 
 /**
@@ -43,37 +56,38 @@ export async function updateOrganisationBranding(
   orgId: string,
   input: UpdateBrandingInput
 ): Promise<{ error: { message: string } | null }> {
-  const updateData: Record<string, unknown> = {};
+  try {
+    const updateData: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
 
-  if (input.logo_path !== undefined) {
-    updateData.logo_path = input.logo_path;
-  }
-  if (input.primary_color !== undefined) {
-    updateData.primary_color = input.primary_color;
-  }
-  if (input.secondary_color !== undefined) {
-    updateData.secondary_color = input.secondary_color;
-  }
-  if (input.display_name !== undefined) {
-    updateData.display_name = input.display_name;
-  }
+    if (input.logo_path !== undefined) {
+      updateData.logo_path = input.logo_path;
+    }
+    if (input.primary_color !== undefined) {
+      updateData.primary_color = input.primary_color;
+    }
+    if (input.secondary_color !== undefined) {
+      updateData.secondary_color = input.secondary_color;
+    }
+    if (input.display_name !== undefined) {
+      updateData.display_name = input.display_name;
+    }
 
-  const { error } = await supabase
-    .from('organisations')
-    .update(updateData as never)
-    .eq('id', orgId);
+    const orgRef = doc(db, collections.organisations, orgId);
+    await updateDoc(orgRef, updateData);
 
-  if (error) {
-    console.error('Error updating organisation branding:', error);
-    return { error: { message: error.message } };
+    return { error: null };
+  } catch (err) {
+    console.error('Error updating organisation branding:', err);
+    const message = err instanceof Error ? err.message : 'Failed to update branding';
+    return { error: { message } };
   }
-
-  return { error: null };
 }
 
 /**
  * Upload organisation logo
- * Compresses the image and uploads to storage
+ * Compresses the image and uploads to Firebase Storage
  */
 export async function uploadOrganisationLogo(
   orgId: string,
@@ -88,24 +102,17 @@ export async function uploadOrganisationLogo(
     });
 
     // Generate filename with timestamp to bust cache
-    const filename = `${orgId}/logo_${Date.now()}.jpg`;
+    const filename = `${LOGO_FOLDER}/${orgId}/logo_${Date.now()}.jpg`;
 
     // Fetch the compressed image as a blob
     const response = await fetch(compressed.uri);
     const blob = await response.blob();
 
-    // Upload to Supabase Storage
-    const { error: uploadError } = await supabase.storage
-      .from(LOGO_BUCKET)
-      .upload(filename, blob, {
-        contentType: 'image/jpeg',
-        upsert: true,
-      });
-
-    if (uploadError) {
-      console.error('Error uploading logo:', uploadError);
-      return { data: null, error: { message: uploadError.message } };
-    }
+    // Upload to Firebase Storage
+    const storageRef = ref(storage, filename);
+    await uploadBytes(storageRef, blob, {
+      contentType: 'image/jpeg',
+    });
 
     // Update organisation with new logo path
     const { error: updateError } = await updateOrganisationBranding(orgId, {
@@ -119,7 +126,8 @@ export async function uploadOrganisationLogo(
     return { data: filename, error: null };
   } catch (err) {
     console.error('Error in uploadOrganisationLogo:', err);
-    return { data: null, error: { message: 'Failed to upload logo' } };
+    const message = err instanceof Error ? err.message : 'Failed to upload logo';
+    return { data: null, error: { message } };
   }
 }
 
@@ -131,13 +139,12 @@ export async function deleteOrganisationLogo(
   logoPath: string
 ): Promise<{ error: { message: string } | null }> {
   try {
-    // Delete from storage
-    const { error: deleteError } = await supabase.storage
-      .from(LOGO_BUCKET)
-      .remove([logoPath]);
-
-    if (deleteError) {
-      console.error('Error deleting logo from storage:', deleteError);
+    // Delete from Firebase Storage
+    try {
+      const storageRef = ref(storage, logoPath);
+      await deleteObject(storageRef);
+    } catch (deleteErr) {
+      console.error('Error deleting logo from storage:', deleteErr);
       // Continue anyway to clear the database reference
     }
 
@@ -153,16 +160,22 @@ export async function deleteOrganisationLogo(
     return { error: null };
   } catch (err) {
     console.error('Error in deleteOrganisationLogo:', err);
-    return { error: { message: 'Failed to delete logo' } };
+    const message = err instanceof Error ? err.message : 'Failed to delete logo';
+    return { error: { message } };
   }
 }
 
 /**
- * Get public URL for a logo
+ * Get public URL for a logo from Firebase Storage
  */
-export function getLogoUrl(logoPath: string): string {
-  const { data } = supabase.storage.from(LOGO_BUCKET).getPublicUrl(logoPath);
-  return data.publicUrl;
+export async function getLogoUrl(logoPath: string): Promise<string> {
+  try {
+    const storageRef = ref(storage, logoPath);
+    return await getDownloadURL(storageRef);
+  } catch (err) {
+    console.error('Error getting logo URL:', err);
+    return '';
+  }
 }
 
 /**
@@ -171,7 +184,8 @@ export function getLogoUrl(logoPath: string): string {
  */
 export function buildBrandingContext(
   orgName: string,
-  branding: OrganisationBranding | null
+  branding: OrganisationBranding | null,
+  logoUrl?: string | null
 ): BrandingContext {
   const defaultBranding: BrandingContext = {
     orgName: 'Donedex',
@@ -189,7 +203,7 @@ export function buildBrandingContext(
 
   return {
     orgName: branding.display_name || orgName,
-    logoUrl: branding.logo_path ? getLogoUrl(branding.logo_path) : null,
+    logoUrl: logoUrl || null,
     primaryColor: branding.primary_color || defaultBranding.primaryColor,
     secondaryColor: branding.secondary_color || defaultBranding.secondaryColor,
   };
@@ -202,36 +216,38 @@ export function buildBrandingContext(
 export async function fetchBrandingContext(
   orgId: string
 ): Promise<{ data: BrandingContext | null; error: { message: string } | null }> {
-  const { data, error } = await supabase
-    .from('organisations')
-    .select('name, logo_path, primary_color, secondary_color, display_name')
-    .eq('id', orgId)
-    .single();
+  try {
+    const orgRef = doc(db, collections.organisations, orgId);
+    const orgSnap = await getDoc(orgRef);
 
-  if (error) {
-    console.error('Error fetching branding context:', error);
-    return { data: null, error: { message: error.message } };
+    if (!orgSnap.exists()) {
+      return { data: null, error: { message: 'Organisation not found' } };
+    }
+
+    const orgData = orgSnap.data();
+
+    const branding: OrganisationBranding = {
+      logo_path: orgData.logo_path || null,
+      primary_color: orgData.primary_color || null,
+      secondary_color: orgData.secondary_color || null,
+      display_name: orgData.display_name || null,
+    };
+
+    // Get logo URL if path exists
+    let logoUrl: string | null = null;
+    if (branding.logo_path) {
+      logoUrl = await getLogoUrl(branding.logo_path);
+    }
+
+    return {
+      data: buildBrandingContext(orgData.name, branding, logoUrl),
+      error: null,
+    };
+  } catch (err) {
+    console.error('Error fetching branding context:', err);
+    const message = err instanceof Error ? err.message : 'Failed to fetch branding context';
+    return { data: null, error: { message } };
   }
-
-  const org = data as {
-    name: string;
-    logo_path: string | null;
-    primary_color: string;
-    secondary_color: string;
-    display_name: string | null;
-  };
-
-  const branding: OrganisationBranding = {
-    logo_path: org.logo_path,
-    primary_color: org.primary_color,
-    secondary_color: org.secondary_color,
-    display_name: org.display_name,
-  };
-
-  return {
-    data: buildBrandingContext(org.name, branding),
-    error: null,
-  };
 }
 
 /**

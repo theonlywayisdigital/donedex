@@ -1,4 +1,24 @@
-import { supabase } from './supabase';
+/**
+ * Library Service
+ * Handles library record types and templates
+ *
+ * Migrated to Firebase/Firestore
+ */
+
+import { db } from './firebase';
+import {
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  deleteDoc,
+  collection,
+  query,
+  where,
+  orderBy,
+  writeBatch,
+} from 'firebase/firestore';
+import { collections, generateId } from './firestore';
 import { createRecordType } from './recordTypes';
 import { bulkCreateRecordTypeFields } from './recordTypeFields';
 import type { LibraryRecordType, LibraryTemplate, RecordType, Template } from '../types';
@@ -90,16 +110,18 @@ export interface LibraryTemplateItem {
  */
 export async function fetchLibraryRecordTypes(): Promise<LibraryRecordTypesResult> {
   try {
-    const { data, error } = await supabase
-      .from('library_record_types')
-      .select('*')
-      .order('sort_order', { ascending: true });
+    const libraryQuery = query(
+      collection(db, 'library_record_types'),
+      orderBy('sort_order', 'asc')
+    );
+    const snapshot = await getDocs(libraryQuery);
 
-    if (error) {
-      return { data: [], error: { message: error.message } };
-    }
+    const recordTypes: LibraryRecordType[] = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    } as LibraryRecordType));
 
-    return { data: (data as LibraryRecordType[]) || [], error: null };
+    return { data: recordTypes, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch library record types';
     return { data: [], error: { message } };
@@ -113,17 +135,14 @@ export async function fetchLibraryRecordTypeById(
   libraryId: string
 ): Promise<LibraryRecordTypeResult> {
   try {
-    const { data, error } = await supabase
-      .from('library_record_types')
-      .select('*')
-      .eq('id', libraryId)
-      .single();
+    const docRef = doc(db, 'library_record_types', libraryId);
+    const docSnap = await getDoc(docRef);
 
-    if (error) {
-      return { data: null, error: { message: error.message } };
+    if (!docSnap.exists()) {
+      return { data: null, error: { message: 'Library record type not found' } };
     }
 
-    return { data: data as LibraryRecordType, error: null };
+    return { data: { id: docSnap.id, ...docSnap.data() } as LibraryRecordType, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch library record type';
     return { data: null, error: { message } };
@@ -137,22 +156,29 @@ export async function fetchLibraryTemplates(
   recordTypeId?: string
 ): Promise<LibraryTemplatesResult> {
   try {
-    let query = supabase
-      .from('library_templates')
-      .select('*')
-      .order('sort_order', { ascending: true });
+    let templatesQuery;
 
     if (recordTypeId) {
-      query = query.eq('record_type_id', recordTypeId);
+      templatesQuery = query(
+        collection(db, 'library_templates'),
+        where('record_type_id', '==', recordTypeId),
+        orderBy('sort_order', 'asc')
+      );
+    } else {
+      templatesQuery = query(
+        collection(db, 'library_templates'),
+        orderBy('sort_order', 'asc')
+      );
     }
 
-    const { data, error } = await query;
+    const snapshot = await getDocs(templatesQuery);
 
-    if (error) {
-      return { data: [], error: { message: error.message } };
-    }
+    const templates: LibraryTemplate[] = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    } as LibraryTemplate));
 
-    return { data: (data as LibraryTemplate[]) || [], error: null };
+    return { data: templates, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch library templates';
     return { data: [], error: { message } };
@@ -166,17 +192,14 @@ export async function fetchLibraryTemplateById(
   templateId: string
 ): Promise<LibraryTemplateResult> {
   try {
-    const { data, error } = await supabase
-      .from('library_templates')
-      .select('*')
-      .eq('id', templateId)
-      .single();
+    const docRef = doc(db, 'library_templates', templateId);
+    const docSnap = await getDoc(docRef);
 
-    if (error) {
-      return { data: null, error: { message: error.message } };
+    if (!docSnap.exists()) {
+      return { data: null, error: { message: 'Library template not found' } };
     }
 
-    return { data: data as LibraryTemplate, error: null };
+    return { data: { id: docSnap.id, ...docSnap.data() } as LibraryTemplate, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch library template';
     return { data: null, error: { message } };
@@ -252,7 +275,8 @@ export async function copyLibraryRecordTypeToOrg(
 
     if (fieldsError) {
       // Rollback: delete the record type we just created
-      await supabase.from('record_types').delete().eq('id', newRecordType.id);
+      const recordTypeRef = doc(db, 'record_types', newRecordType.id);
+      await deleteDoc(recordTypeRef);
       return { data: null, error: fieldsError };
     }
 
@@ -288,102 +312,96 @@ export async function copyLibraryTemplateToOrg(
     // Parse the sections from the library template
     const librarySections = libraryTemplate.sections as unknown as LibraryTemplateSection[];
 
-    // Create the template - record_type_id is null since templates are company-wide
-    const { data: newTemplate, error: templateError } = await supabase
-      .from('templates')
-      .insert({
-        organisation_id: organisationId,
-        record_type_id: null,
-        name: customizations?.name || libraryTemplate.name,
-        description: customizations?.description || libraryTemplate.description,
-        is_published: false, // Start as draft
-        created_by: userId,
-      } as never)
-      .select()
-      .single();
+    // Create the template
+    const templateId = generateId();
+    const now = new Date().toISOString();
 
-    if (templateError || !newTemplate) {
-      return { data: null, error: templateError ? { message: templateError.message } : { message: 'Failed to create template' } };
-    }
+    const templateData = {
+      organisation_id: organisationId,
+      record_type_id: null,
+      name: customizations?.name || libraryTemplate.name,
+      description: customizations?.description || libraryTemplate.description,
+      is_published: false, // Start as draft
+      created_by: userId,
+      created_at: now,
+      updated_at: now,
+    };
 
-    // Create sections and items
+    const templateRef = doc(db, collections.templates, templateId);
+    await setDoc(templateRef, templateData);
+
+    // Create sections and items using batch
+    const batch = writeBatch(db);
+
     for (let sectionIndex = 0; sectionIndex < librarySections.length; sectionIndex++) {
       const section = librarySections[sectionIndex];
+      const sectionId = generateId();
 
       // Create section
-      const { data: newSection, error: sectionError } = await supabase
-        .from('template_sections')
-        .insert({
-          template_id: (newTemplate as Template).id,
-          name: section.name,
-          sort_order: sectionIndex,
-        } as never)
-        .select()
-        .single();
-
-      if (sectionError || !newSection) {
-        // Rollback: delete the template
-        await supabase.from('templates').delete().eq('id', (newTemplate as Template).id);
-        return { data: null, error: sectionError ? { message: sectionError.message } : { message: 'Failed to create section' } };
-      }
+      const sectionRef = doc(db, collections.templateSections, sectionId);
+      batch.set(sectionRef, {
+        template_id: templateId,
+        name: section.name,
+        sort_order: sectionIndex,
+        created_at: now,
+        updated_at: now,
+      });
 
       // Create items for this section
-      const items = section.items.map((item, itemIndex) => ({
-        section_id: (newSection as { id: string }).id,
-        label: item.label,
-        item_type: item.item_type,
-        is_required: item.is_required ?? false,
-        photo_rule: item.photo_rule ?? 'never',
-        options: item.options ?? null,
-        sort_order: itemIndex,
-        // Common options
-        help_text: item.help_text ?? null,
-        placeholder_text: item.placeholder_text ?? null,
-        default_value: item.default_value ?? null,
-        // Number-specific
-        min_value: item.min_value ?? null,
-        max_value: item.max_value ?? null,
-        step_value: item.step_value ?? null,
-        // DateTime config
-        datetime_mode: item.datetime_mode ?? null,
-        // Rating config
-        rating_max: item.rating_max ?? null,
-        rating_style: item.rating_style ?? null,
-        // Declaration/signature config
-        declaration_text: item.declaration_text ?? null,
-        signature_requires_name: item.signature_requires_name ?? null,
-        // Measurement unit config
-        unit_type: item.unit_type ?? null,
-        unit_options: item.unit_options ?? null,
-        default_unit: item.default_unit ?? null,
-        // Counter config
-        counter_min: item.counter_min ?? null,
-        counter_max: item.counter_max ?? null,
-        counter_step: item.counter_step ?? null,
-        // Expiry date config
-        warning_days_before: item.warning_days_before ?? null,
-        // Checklist/repeater config
-        sub_items: item.sub_items ?? null,
-        min_entries: item.min_entries ?? null,
-        max_entries: item.max_entries ?? null,
-        // Instruction field config
-        instruction_style: item.instruction_style ?? null,
-      }));
+      for (let itemIndex = 0; itemIndex < section.items.length; itemIndex++) {
+        const item = section.items[itemIndex];
+        const itemId = generateId();
+        const itemRef = doc(db, collections.templateItems, itemId);
 
-      if (items.length > 0) {
-        const { error: itemsError } = await supabase
-          .from('template_items')
-          .insert(items as never[]);
-
-        if (itemsError) {
-          // Rollback: delete the template
-          await supabase.from('templates').delete().eq('id', (newTemplate as Template).id);
-          return { data: null, error: { message: itemsError.message } };
-        }
+        batch.set(itemRef, {
+          section_id: sectionId,
+          label: item.label,
+          item_type: item.item_type,
+          is_required: item.is_required ?? false,
+          photo_rule: item.photo_rule ?? 'never',
+          options: item.options ?? null,
+          sort_order: itemIndex,
+          // Common options
+          help_text: item.help_text ?? null,
+          placeholder_text: item.placeholder_text ?? null,
+          default_value: item.default_value ?? null,
+          // Number-specific
+          min_value: item.min_value ?? null,
+          max_value: item.max_value ?? null,
+          step_value: item.step_value ?? null,
+          // DateTime config
+          datetime_mode: item.datetime_mode ?? null,
+          // Rating config
+          rating_max: item.rating_max ?? null,
+          rating_style: item.rating_style ?? null,
+          // Declaration/signature config
+          declaration_text: item.declaration_text ?? null,
+          signature_requires_name: item.signature_requires_name ?? null,
+          // Measurement unit config
+          unit_type: item.unit_type ?? null,
+          unit_options: item.unit_options ?? null,
+          default_unit: item.default_unit ?? null,
+          // Counter config
+          counter_min: item.counter_min ?? null,
+          counter_max: item.counter_max ?? null,
+          counter_step: item.counter_step ?? null,
+          // Expiry date config
+          warning_days_before: item.warning_days_before ?? null,
+          // Checklist/repeater config
+          sub_items: item.sub_items ?? null,
+          min_entries: item.min_entries ?? null,
+          max_entries: item.max_entries ?? null,
+          // Instruction field config
+          instruction_style: item.instruction_style ?? null,
+          created_at: now,
+          updated_at: now,
+        });
       }
     }
 
-    return { data: newTemplate as Template, error: null };
+    await batch.commit();
+
+    return { data: { id: templateId, ...templateData } as Template, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to copy library template';
     return { data: null, error: { message } };
@@ -398,22 +416,35 @@ export async function fetchLibraryRecordTypesWithTemplates(): Promise<{
   error: { message: string } | null;
 }> {
   try {
-    const { data, error } = await supabase
-      .from('library_record_types')
-      .select(`
-        *,
-        library_templates (*)
-      `)
-      .order('sort_order', { ascending: true });
-
-    if (error) {
-      return { data: [], error: { message: error.message } };
+    // Fetch all library record types
+    const { data: recordTypes, error: rtError } = await fetchLibraryRecordTypes();
+    if (rtError) {
+      return { data: [], error: rtError };
     }
 
-    return {
-      data: (data as (LibraryRecordType & { library_templates: LibraryTemplate[] })[]) || [],
-      error: null
-    };
+    // Fetch all library templates
+    const { data: templates, error: tError } = await fetchLibraryTemplates();
+    if (tError) {
+      return { data: [], error: tError };
+    }
+
+    // Group templates by record type
+    const templatesByRecordType = new Map<string, LibraryTemplate[]>();
+    for (const template of templates) {
+      const rtId = template.record_type_id || '';
+      if (!templatesByRecordType.has(rtId)) {
+        templatesByRecordType.set(rtId, []);
+      }
+      templatesByRecordType.get(rtId)!.push(template);
+    }
+
+    // Combine record types with their templates
+    const result = recordTypes.map(rt => ({
+      ...rt,
+      library_templates: templatesByRecordType.get(rt.id) || [],
+    }));
+
+    return { data: result, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch library record types with templates';
     return { data: [], error: { message } };

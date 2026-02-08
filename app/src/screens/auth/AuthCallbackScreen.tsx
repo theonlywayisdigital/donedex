@@ -1,8 +1,8 @@
 /**
  * Auth Callback Screen
- * Handles Supabase auth redirects (invite acceptance, password reset, email confirmation)
+ * Handles Firebase auth redirects (invite acceptance, password reset, email confirmation)
  *
- * When Supabase redirects back to the app, the URL contains auth tokens.
+ * When Firebase redirects back to the app, the URL contains auth tokens.
  * This screen extracts those tokens, exchanges them for a session,
  * and routes the user appropriately.
  */
@@ -12,7 +12,8 @@ import { View, Text, StyleSheet, ActivityIndicator, Platform } from 'react-nativ
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useRoute } from '@react-navigation/native';
-import { supabase } from '../../services/supabase';
+import { auth } from '../../services/firebase';
+import { isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
 import { useAuthStore } from '../../store/authStore';
 import { Button } from '../../components/ui';
 import { colors, spacing, fontSize, fontWeight } from '../../constants/theme';
@@ -38,131 +39,86 @@ export function AuthCallbackScreen({ navigation }: Props) {
 
   const handleCallback = async () => {
     try {
-      // On web, extract tokens from URL hash or query params
+      // On web, check if this is a Firebase email link sign-in
       if (Platform.OS === 'web') {
-        const hash = window.location.hash;
-        const search = window.location.search;
         const fullUrl = window.location.href;
+        const search = window.location.search;
+        const params = new URLSearchParams(search);
 
         console.log('[AuthCallback] Processing URL:', fullUrl);
 
-        // Supabase may send tokens in the hash fragment (#access_token=...&type=...)
-        // or as query params (?token_hash=...&type=...)
-        let params: URLSearchParams;
+        const mode = params.get('mode');
+        const oobCode = params.get('oobCode');
+        const type = params.get('type') || mode || 'unknown';
 
-        if (hash && hash.length > 1) {
-          // Hash fragment: #access_token=...&refresh_token=...&type=invite
-          params = new URLSearchParams(hash.substring(1));
-        } else {
-          // Query params: ?token_hash=...&type=invite
-          params = new URLSearchParams(search);
-        }
-
-        const accessToken = params.get('access_token');
-        const refreshToken = params.get('refresh_token');
-        const tokenHash = params.get('token_hash');
-        const type = params.get('type') || 'unknown';
-        const errorCode = params.get('error');
-        const errorDescription = params.get('error_description');
-
-        console.log('[AuthCallback] Type:', type, 'Has access_token:', !!accessToken, 'Has token_hash:', !!tokenHash);
-
-        // Check for error in redirect
-        if (errorCode) {
-          setError(errorDescription || errorCode || 'Authentication failed');
-          setStatus('error');
-          return;
-        }
+        console.log('[AuthCallback] Mode:', mode, 'Has oobCode:', !!oobCode);
 
         // Determine callback type
-        if (type === 'invite' || type === 'signup') {
+        if (type === 'invite' || type === 'signIn') {
           setCallbackType('invite');
-        } else if (type === 'recovery') {
+        } else if (type === 'recovery' || mode === 'resetPassword') {
           setCallbackType('recovery');
         } else {
           setCallbackType(type as CallbackType);
         }
 
-        // If we have access_token + refresh_token in hash, set the session directly
-        if (accessToken && refreshToken) {
-          console.log('[AuthCallback] Setting session from tokens...');
-          const { data, error: sessionError } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
+        // Check if this is a Firebase email link sign-in
+        if (isSignInWithEmailLink(auth, fullUrl)) {
+          console.log('[AuthCallback] Firebase email link detected');
 
-          if (sessionError) {
-            console.error('[AuthCallback] Session error:', sessionError);
-            setError(sessionError.message);
-            setStatus('error');
-            return;
+          // Get email from localStorage (set before sending the link)
+          let email = window.localStorage.getItem('emailForSignIn');
+          if (!email) {
+            // Prompt user to provide email if not found
+            email = window.prompt('Please provide your email for confirmation');
           }
 
-          if (data.session) {
-            console.log('[AuthCallback] Session set successfully, type:', type);
+          if (email) {
+            try {
+              await signInWithEmailLink(auth, email, fullUrl);
+              window.localStorage.removeItem('emailForSignIn');
+              console.log('[AuthCallback] Email link sign-in successful');
 
-            // For invite or recovery, navigate to set password screen
-            if (type === 'invite' || type === 'recovery') {
+              // Navigate to set password if this is an invite
+              if (type === 'invite' || type === 'signIn') {
+                setStatus('success');
+                navigation.replace('SetPassword', { type: 'invite' });
+                return;
+              }
+
+              await initialize();
               setStatus('success');
-              navigation.replace('SetPassword', { type: type as 'invite' | 'recovery' });
+              return;
+            } catch (linkError: any) {
+              console.error('[AuthCallback] Email link error:', linkError);
+              setError(linkError.message || 'Failed to sign in with email link');
+              setStatus('error');
               return;
             }
-
-            // For other types (signup confirmation), just reinitialize auth
-            await initialize();
-            setStatus('success');
-            return;
           }
         }
 
-        // If we have a token_hash (e.g. from email OTP/magic link flow)
-        if (tokenHash && type) {
-          console.log('[AuthCallback] Verifying token hash...');
-          const { data, error: verifyError } = await supabase.auth.verifyOtp({
-            token_hash: tokenHash,
-            type: type as 'invite' | 'recovery' | 'signup' | 'email',
-          });
+        // Check if there's already a user signed in (from password reset flow)
+        if (auth.currentUser) {
+          console.log('[AuthCallback] User already signed in');
 
-          if (verifyError) {
-            console.error('[AuthCallback] Verify error:', verifyError);
-            setError(verifyError.message);
-            setStatus('error');
-            return;
-          }
-
-          if (data.session) {
-            console.log('[AuthCallback] Token verified, session established');
-
-            if (type === 'invite' || type === 'recovery') {
-              setStatus('success');
-              navigation.replace('SetPassword', { type: type as 'invite' | 'recovery' });
-              return;
-            }
-
-            await initialize();
+          if (mode === 'resetPassword' || type === 'recovery') {
             setStatus('success');
+            navigation.replace('SetPassword', { type: 'recovery' });
             return;
           }
-        }
 
-        // If we reach here, try to let Supabase handle the URL automatically
-        // This handles the case where Supabase client auto-detects the tokens
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (sessionData.session) {
-          console.log('[AuthCallback] Session found after URL processing');
           await initialize();
           setStatus('success');
           return;
         }
 
-        // No tokens found
+        // No authentication found
         setError('Invalid or expired link. Please request a new invitation.');
         setStatus('error');
       } else {
-        // On native, deep links are handled differently
-        // The Supabase client should handle the URL automatically via the linking config
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (sessionData.session) {
+        // On native, check if user is signed in
+        if (auth.currentUser) {
           await initialize();
           setStatus('success');
         } else {

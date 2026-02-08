@@ -10,7 +10,7 @@ import {
 import { showNotification, showConfirm } from '../../utils/alert';
 import { Icon } from '../../components/ui';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getSignatureUrl } from '../../services/reports';
+import { AsyncSignatureImage } from '../../components/AsyncSignatureImage';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Card, Button } from '../../components/ui';
@@ -263,26 +263,8 @@ export function InspectionReviewScreen() {
               const photos = response?.photos || [];
               const hasPhotos = photos.length > 0;
 
-              // Check for signature (could be base64 or storage path in JSON)
-              let signatureUri: string | null = null;
-              if (item.item_type === 'signature' && value) {
-                if (isBase64Image(value)) {
-                  signatureUri = value;
-                } else {
-                  // Try parsing as JSON with path
-                  try {
-                    const parsed = JSON.parse(value);
-                    if (parsed.path) {
-                      signatureUri = getSignatureUrl(parsed.path);
-                    }
-                  } catch {
-                    // Not JSON, might be direct storage path
-                    if (!value.startsWith('data:') && !value.startsWith('blob:')) {
-                      signatureUri = getSignatureUrl(value);
-                    }
-                  }
-                }
-              }
+              // Check for signature
+              const hasSignature = item.item_type === 'signature' && value;
 
               const isPhotoType = ['photo', 'photo_before_after', 'annotated_photo'].includes(item.item_type);
               const hasMedia = isPhotoType ? hasPhotos : false;
@@ -295,10 +277,10 @@ export function InspectionReviewScreen() {
                     {item.is_required && <Text style={styles.requiredMark}> *</Text>}
                   </Text>
                   <View style={styles.itemValueContainer}>
-                    {signatureUri ? (
+                    {hasSignature ? (
                       <View style={styles.signaturePreviewContainer}>
-                        <Image
-                          source={{ uri: signatureUri }}
+                        <AsyncSignatureImage
+                          value={value!}
                           style={styles.signaturePreview}
                           resizeMode="contain"
                         />

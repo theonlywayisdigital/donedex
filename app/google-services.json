@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "317949580481",
+    "project_id": "donedex-72116",
+    "storage_bucket": "donedex-72116.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:317949580481:android:7a7b1f329875d6875ff040",
+        "android_client_info": {
+          "package_name": "com.donedex.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCeZhiPzEIqUuHBJce99_4EQLvVNzc9rAo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

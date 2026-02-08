@@ -1,4 +1,24 @@
-import { supabase } from './supabase';
+/**
+ * Usage Tracking Service
+ * Tracks template+record combinations for quick-start functionality
+ *
+ * Migrated to Firebase/Firestore
+ */
+
+import { db } from './firebase';
+import {
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  collection,
+  query,
+  where,
+  orderBy,
+  limit as firestoreLimit,
+} from 'firebase/firestore';
+import { collections, generateId } from './firestore';
 
 // ============================================
 // Types
@@ -37,7 +57,6 @@ export interface QuickStartData {
 
 /**
  * Track when a user starts an inspection with a template+record combination
- * Note: This uses direct table insert until the migration is applied, then can switch to RPC
  */
 export async function trackUsage(
   organisationId: string,
@@ -47,37 +66,27 @@ export async function trackUsage(
   reportId?: string
 ): Promise<{ data: { id: string } | null; error: { message: string } | null }> {
   try {
-    // Insert usage record directly
-    const { data, error } = await supabase
-      .from('report_usage_history')
-      .insert({
-        organisation_id: organisationId,
-        user_id: userId,
-        template_id: templateId,
-        record_id: recordId,
-        report_id: reportId || null,
-        used_at: new Date().toISOString(),
-      } as never)
-      .select('id')
-      .single();
+    const usageId = generateId();
+    const now = new Date().toISOString();
 
-    if (error) {
-      // Silently fail if table doesn't exist yet (migration not applied)
-      if (error.code === '42P01') {
-        console.log('Usage tracking table not yet created - skipping');
-        return { data: null, error: null };
-      }
-      console.error('Failed to track usage:', error);
-      return { data: null, error: { message: error.message } };
-    }
+    // Insert usage record
+    const usageRef = doc(db, 'report_usage_history', usageId);
+    await setDoc(usageRef, {
+      organisation_id: organisationId,
+      user_id: userId,
+      template_id: templateId,
+      record_id: recordId,
+      report_id: reportId || null,
+      used_at: now,
+    });
 
     // Also update last_used_at on the record
-    await supabase
-      .from('records')
-      .update({ last_used_at: new Date().toISOString() } as never)
-      .eq('id', recordId);
+    const recordRef = doc(db, collections.records, recordId);
+    await updateDoc(recordRef, {
+      last_used_at: now,
+    });
 
-    return { data: { id: (data as { id: string }).id }, error: null };
+    return { data: { id: usageId }, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to track usage';
     console.error('Failed to track usage:', message);
@@ -91,64 +100,74 @@ export async function trackUsage(
 
 /**
  * Get recent template+record combinations for quick-start
- * Uses direct query until migration is applied
  */
 export async function getRecentCombinations(
   userId: string,
   limit: number = 5
 ): Promise<{ data: RecentUsageCombination[]; error: { message: string } | null }> {
   try {
-    const { data, error } = await supabase
-      .from('report_usage_history')
-      .select(`
-        template_id,
-        record_id,
-        used_at,
-        template:templates!inner (name),
-        record:records!inner (name, record_type_id, archived, record_type:record_types (name))
-      `)
-      .eq('user_id', userId)
-      .eq('record.archived', false)
-      .order('used_at', { ascending: false })
-      .limit(limit * 2); // Fetch extra to account for deduplication
-
-    if (error) {
-      // Silently return empty if table doesn't exist yet
-      if (error.code === '42P01') {
-        return { data: [], error: null };
-      }
-      return { data: [], error: { message: error.message } };
-    }
+    const usageQuery = query(
+      collection(db, 'report_usage_history'),
+      where('user_id', '==', userId),
+      orderBy('used_at', 'desc'),
+      firestoreLimit(limit * 2) // Fetch extra to account for deduplication
+    );
+    const usageSnap = await getDocs(usageQuery);
 
     // Transform and deduplicate by template+record combination
     const seen = new Set<string>();
     const combinations: RecentUsageCombination[] = [];
 
-    for (const row of (data as unknown[]) || []) {
-      const r = row as {
-        template_id: string;
-        record_id: string;
-        used_at: string;
-        template: { name: string } | null;
-        record: {
-          name: string;
-          record_type_id: string;
-          record_type: { name: string } | null;
-        } | null;
-      };
+    for (const usageDoc of usageSnap.docs) {
+      const usage = usageDoc.data();
+      const key = `${usage.template_id}-${usage.record_id}`;
 
-      const key = `${r.template_id}-${r.record_id}`;
       if (seen.has(key)) continue;
       seen.add(key);
 
+      // Fetch template name
+      let templateName = 'Unknown Template';
+      const templateRef = doc(db, collections.templates, usage.template_id);
+      const templateSnap = await getDoc(templateRef);
+      if (templateSnap.exists()) {
+        templateName = templateSnap.data().name || templateName;
+      }
+
+      // Fetch record details
+      let recordName = 'Unknown Record';
+      let recordTypeId = '';
+      let recordTypeName = 'Unknown Type';
+      let archived = false;
+
+      const recordRef = doc(db, collections.records, usage.record_id);
+      const recordSnap = await getDoc(recordRef);
+      if (recordSnap.exists()) {
+        const recordData = recordSnap.data();
+        recordName = recordData.name || recordName;
+        recordTypeId = recordData.record_type_id || '';
+        archived = recordData.archived || false;
+
+        // Fetch record type name
+        if (recordTypeId) {
+          const rtRef = doc(db, 'record_types', recordTypeId);
+          const rtSnap = await getDoc(rtRef);
+          if (rtSnap.exists()) {
+            recordTypeName = rtSnap.data().name || recordTypeName;
+          }
+        }
+      }
+
+      // Skip archived records
+      if (archived) continue;
+
       combinations.push({
-        template_id: r.template_id,
-        template_name: r.template?.name || 'Unknown Template',
-        record_id: r.record_id,
-        record_name: r.record?.name || 'Unknown Record',
-        record_type_id: r.record?.record_type_id || '',
-        record_type_name: r.record?.record_type?.name || 'Unknown Type',
-        last_used_at: r.used_at,
+        template_id: usage.template_id,
+        template_name: templateName,
+        record_id: usage.record_id,
+        record_name: recordName,
+        record_type_id: recordTypeId,
+        record_type_name: recordTypeName,
+        last_used_at: usage.used_at,
         use_count: 1, // Simplified - actual count would need aggregation
       });
 
@@ -174,53 +193,53 @@ export async function getDraftReports(
   limit: number = 5
 ): Promise<{ data: DraftReport[]; error: { message: string } | null }> {
   try {
-    const { data, error } = await supabase
-      .from('reports')
-      .select(
-        `
-        id,
-        status,
-        started_at,
-        created_at,
-        template_id,
-        record_id,
-        template:templates (name),
-        record:records!inner (name, archived)
-      `
-      )
-      .eq('user_id', userId)
-      .eq('status', 'draft')
-      .eq('record.archived', false)
-      .order('updated_at', { ascending: false })
-      .limit(limit);
+    const reportsQuery = query(
+      collection(db, collections.reports),
+      where('user_id', '==', userId),
+      where('status', '==', 'draft'),
+      orderBy('updated_at', 'desc'),
+      firestoreLimit(limit)
+    );
+    const reportsSnap = await getDocs(reportsQuery);
 
-    if (error) {
-      return { data: [], error: { message: error.message } };
+    const drafts: DraftReport[] = [];
+
+    for (const reportDoc of reportsSnap.docs) {
+      const report = reportDoc.data();
+
+      // Fetch template name
+      let templateName = 'Unknown Template';
+      const templateRef = doc(db, collections.templates, report.template_id);
+      const templateSnap = await getDoc(templateRef);
+      if (templateSnap.exists()) {
+        templateName = templateSnap.data().name || templateName;
+      }
+
+      // Fetch record details and check if archived
+      let recordName = 'Unknown Record';
+      let archived = false;
+      const recordRef = doc(db, collections.records, report.record_id);
+      const recordSnap = await getDoc(recordRef);
+      if (recordSnap.exists()) {
+        const recordData = recordSnap.data();
+        recordName = recordData.name || recordName;
+        archived = recordData.archived || false;
+      }
+
+      // Skip reports for archived records
+      if (archived) continue;
+
+      drafts.push({
+        id: reportDoc.id,
+        status: 'draft',
+        started_at: report.started_at,
+        created_at: report.created_at,
+        template_id: report.template_id,
+        template_name: templateName,
+        record_id: report.record_id,
+        record_name: recordName,
+      });
     }
-
-    // Transform to DraftReport format
-    const drafts: DraftReport[] = ((data as unknown[]) || []).map((report: unknown) => {
-      const r = report as {
-        id: string;
-        status: 'draft';
-        started_at: string;
-        created_at: string;
-        template_id: string;
-        record_id: string;
-        template: { name: string } | null;
-        record: { name: string } | null;
-      };
-      return {
-        id: r.id,
-        status: r.status,
-        started_at: r.started_at,
-        created_at: r.created_at,
-        template_id: r.template_id,
-        template_name: r.template?.name || 'Unknown Template',
-        record_id: r.record_id,
-        record_name: r.record?.name || 'Unknown Record',
-      };
-    });
 
     return { data: drafts, error: null };
   } catch (err) {
@@ -284,29 +303,29 @@ export async function getRecentRecordsByType(
   error: { message: string } | null;
 }> {
   try {
-    const { data, error } = await supabase
-      .from('records')
-      .select('id, name, address, last_used_at')
-      .eq('record_type_id', recordTypeId)
-      .eq('archived', false)
-      .not('last_used_at', 'is', null)
-      .order('last_used_at', { ascending: false })
-      .limit(limit);
+    // Query records with last_used_at, ordered by most recent
+    const recordsQuery = query(
+      collection(db, collections.records),
+      where('record_type_id', '==', recordTypeId),
+      where('archived', '==', false),
+      orderBy('last_used_at', 'desc'),
+      firestoreLimit(limit)
+    );
+    const recordsSnap = await getDocs(recordsQuery);
 
-    if (error) {
-      return { data: [], error: { message: error.message } };
-    }
+    const records = recordsSnap.docs
+      .filter(doc => doc.data().last_used_at != null)
+      .map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: data.name,
+          address: data.address || null,
+          last_used_at: data.last_used_at || null,
+        };
+      });
 
-    return {
-      data:
-        (data as Array<{
-          id: string;
-          name: string;
-          address: string | null;
-          last_used_at: string | null;
-        }>) || [],
-      error: null,
-    };
+    return { data: records, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to get recent records by type';
     return { data: [], error: { message } };

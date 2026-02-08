@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Card, Icon, FullScreenLoader } from '../../components/ui';
-import { supabase } from '../../services/supabase';
+import { fetchPublishedTemplates } from '../../services/templates';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
 import type { HomeStackParamList } from '../../navigation/MainNavigator';
 
@@ -24,7 +24,7 @@ interface TemplateWithRecordType {
   name: string;
   description: string | null;
   record_type_id: string | null;
-  record_type: {
+  record_type?: {
     id: string;
     name: string;
     name_singular: string;
@@ -49,37 +49,29 @@ export function TemplatePickerScreen() {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    fetchTemplates();
+    fetchTemplatesData();
   }, []);
 
-  const fetchTemplates = async () => {
+  const fetchTemplatesData = async () => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const { data, error: fetchError } = await supabase
-        .from('templates')
-        .select(`
-          id,
-          name,
-          description,
-          record_type_id,
-          record_type:record_types (
-            id,
-            name,
-            name_singular,
-            icon,
-            color
-          )
-        `)
-        .eq('is_published', true)
-        .order('name', { ascending: true });
+      const { data, error: fetchError } = await fetchPublishedTemplates();
 
       if (fetchError) {
         setError(fetchError.message);
         setTemplates([]);
       } else {
-        setTemplates((data as TemplateWithRecordType[]) || []);
+        // Map to expected interface - record_type is not fetched in Firestore version
+        const mappedData: TemplateWithRecordType[] = (data || []).map(t => ({
+          id: t.id,
+          name: t.name,
+          description: t.description || null,
+          record_type_id: t.record_type_id || null,
+          record_type: null, // Not available in Firestore fetch
+        }));
+        setTemplates(mappedData);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch templates');
@@ -250,7 +242,7 @@ export function TemplatePickerScreen() {
       {error ? (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={fetchTemplates}>
+          <TouchableOpacity style={styles.retryButton} onPress={fetchTemplatesData}>
             <Text style={styles.retryButtonText}>Try Again</Text>
           </TouchableOpacity>
         </View>
@@ -266,7 +258,7 @@ export function TemplatePickerScreen() {
           refreshControl={
             <RefreshControl
               refreshing={isLoading}
-              onRefresh={fetchTemplates}
+              onRefresh={fetchTemplatesData}
               colors={[colors.primary.DEFAULT]}
             />
           }

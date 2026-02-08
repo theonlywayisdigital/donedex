@@ -16,7 +16,7 @@ import { showNotification } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Button, Input } from '../../components/ui';
-import { supabase } from '../../services/supabase';
+import { changePassword } from '../../services/auth';
 import { colors, spacing, fontSize, fontWeight, borderRadius } from '../../constants/theme';
 import type { SettingsStackParamList } from '../../navigation/MainNavigator';
 
@@ -63,12 +63,10 @@ export function ChangePasswordScreen({ navigation }: Props) {
     setIsLoading(true);
 
     try {
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
+      const { error: updateError } = await changePassword(newPassword);
 
       if (updateError) {
-        setError(updateError.message);
+        setError(updateError);
         setIsLoading(false);
         return;
       }

@@ -47,7 +47,7 @@ function DashboardNavigator() {
 
 // Organisations Stack
 export type OrgsStackParamList = {
-  OrganisationsList: undefined;
+  OrganisationsList: { refresh?: boolean } | undefined;
   OrganisationDetail: { orgId: string };
   CreateOrganisation: undefined;
 };

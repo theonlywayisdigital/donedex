@@ -1,13 +1,17 @@
 /**
  * Push Notification Service
  * Handles Expo push notification registration, token management, and listeners.
+ *
+ * Migrated to Firebase/Firestore
  */
 
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
-import { supabase } from './supabase';
+import { auth, db } from './firebase';
+import { doc, setDoc, deleteDoc, query, collection, where, getDocs } from 'firebase/firestore';
+import { generateId } from './firestore';
 
 // Configure how notifications appear when app is in foreground
 Notifications.setNotificationHandler({
@@ -85,25 +89,19 @@ export async function savePushToken(token: string): Promise<void> {
   const platform = Platform.OS as 'ios' | 'android' | 'web';
 
   try {
-    const { data: { user } } = await supabase.auth.getUser();
+    const user = auth.currentUser;
     if (!user) return;
 
-    // Upsert the token (update if exists, insert if new)
-    const { error } = await (supabase
-      .from('push_tokens') as any)
-      .upsert(
-        {
-          user_id: user.id,
-          token,
-          platform,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,token' }
-      );
+    // Create a unique ID based on user and token
+    const tokenId = `${user.uid}_${token.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50)}`;
+    const tokenRef = doc(db, 'push_tokens', tokenId);
 
-    if (error) {
-      console.error('[Push] Failed to save token:', error.message);
-    }
+    await setDoc(tokenRef, {
+      user_id: user.uid,
+      token,
+      platform,
+      updated_at: new Date().toISOString(),
+    }, { merge: true });
   } catch (err) {
     console.error('[Push] Error saving token:', err);
   }
@@ -114,14 +112,20 @@ export async function savePushToken(token: string): Promise<void> {
  */
 export async function removePushToken(token: string): Promise<void> {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
+    const user = auth.currentUser;
     if (!user) return;
 
-    await (supabase
-      .from('push_tokens') as any)
-      .delete()
-      .eq('user_id', user.id)
-      .eq('token', token);
+    // Find and delete the token
+    const tokensQuery = query(
+      collection(db, 'push_tokens'),
+      where('user_id', '==', user.uid),
+      where('token', '==', token)
+    );
+    const tokensSnap = await getDocs(tokensQuery);
+
+    for (const tokenDoc of tokensSnap.docs) {
+      await deleteDoc(tokenDoc.ref);
+    }
   } catch (err) {
     console.error('[Push] Error removing token:', err);
   }

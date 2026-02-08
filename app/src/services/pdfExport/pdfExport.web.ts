@@ -38,13 +38,13 @@ async function imageUrlToBase64(url: string): Promise<string | null> {
  * Pre-load all images as base64 data URIs
  */
 async function preloadImages(options: ExportOptions): Promise<{ imageDataMap: ImageDataMap; failedCount: number }> {
-  const imageUrls = collectImageUrls(options);
+  const imageUrls = await collectImageUrls(options);
   const imageDataMap: ImageDataMap = new Map();
   let failedCount = 0;
 
   // Fetch all images in parallel
   const results = await Promise.all(
-    imageUrls.map(async (url) => {
+    imageUrls.map(async (url: string) => {
       const base64 = await imageUrlToBase64(url);
       return { url, base64 };
     })
@@ -71,7 +71,7 @@ export async function exportReportToPdf(options: ExportOptions): Promise<ExportR
     // Pre-load all images as base64 for reliable PDF embedding
     const { imageDataMap, failedCount } = await preloadImages(options);
 
-    const html = generateHtml({ ...options, imageDataMap });
+    const html = await generateHtml({ ...options, imageDataMap });
 
     // Create a Blob with the HTML content
     const blob = new Blob([html], { type: 'text/html' });
@@ -161,7 +161,7 @@ export async function downloadAsHtml(options: ExportOptions): Promise<ExportResu
     // Pre-load all images as base64 for reliable embedding
     const { imageDataMap, failedCount } = await preloadImages(options);
 
-    const html = generateHtml({ ...options, imageDataMap });
+    const html = await generateHtml({ ...options, imageDataMap });
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
 

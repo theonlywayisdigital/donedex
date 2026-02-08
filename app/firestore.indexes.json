@@ -1,0 +1,14 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "subscription_plans",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "is_active", "order": "ASCENDING" },
+        { "fieldPath": "is_public", "order": "ASCENDING" },
+        { "fieldPath": "display_order", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

@@ -1,9 +1,11 @@
 /**
  * Document Template Builder Service
  * Handles document upload and analysis for template creation using Claude Vision API
+ *
+ * Uses Firebase Cloud Functions (HTTP callable)
  */
 
-import { supabase } from './supabase';
+import { auth } from './firebase';
 import type { ChatMessage, GeneratedTemplate } from '../types/templateBuilder';
 
 /** Image data for the API */
@@ -12,14 +14,14 @@ interface ImageData {
   mimeType: string;
 }
 
-/** Response from the document analysis Edge Function */
+/** Response from the document analysis Cloud Function */
 interface DocumentAnalysisResponse {
   message: string;
   quickReplies: string[];
   generatedTemplate: GeneratedTemplate | null;
 }
 
-/** Error response from the Edge Function */
+/** Error response from the Cloud Function */
 interface DocumentAnalysisError {
   error: string;
 }
@@ -29,6 +31,10 @@ interface ServiceResult<T> {
   data: T | null;
   error: { message: string } | null;
 }
+
+// Cloud Function URL - update this with your deployed function URL
+const CLOUD_FUNCTION_BASE_URL = process.env.EXPO_PUBLIC_FIREBASE_FUNCTIONS_URL ||
+  'https://europe-west2-donedex-72116.cloudfunctions.net';
 
 /**
  * Analyze a document (image or PDF pages) and generate a template
@@ -40,34 +46,47 @@ export async function analyzeDocument(
   messages?: ChatMessage[]
 ): Promise<ServiceResult<DocumentAnalysisResponse>> {
   try {
-    const { data, error } = await supabase.functions.invoke<DocumentAnalysisResponse>(
-      'template-from-document',
-      {
-        body: {
-          images,
-          messages: messages ? formatMessagesForApi(messages) : undefined,
-        },
-      }
-    );
+    // Get current user's ID token for authentication
+    const user = auth.currentUser;
+    if (!user) {
+      return { data: null, error: { message: 'Not authenticated' } };
+    }
 
-    if (error) {
-      console.error('Edge function error:', error);
+    const idToken = await user.getIdToken();
+
+    const response = await fetch(`${CLOUD_FUNCTION_BASE_URL}/templateFromDocument`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        images,
+        messages: messages ? formatMessagesForApi(messages) : undefined,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Cloud function error:', errorText);
       return {
         data: null,
-        error: { message: error.message || 'Failed to analyze document' },
+        error: { message: `Failed to analyze document: ${response.status}` },
       };
     }
 
+    const data = await response.json();
+
     // Check if response indicates an error
     if (data && 'error' in data) {
-      const errorResponse = data as unknown as DocumentAnalysisError;
+      const errorResponse = data as DocumentAnalysisError;
       return {
         data: null,
         error: { message: errorResponse.error },
       };
     }
 
-    return { data, error: null };
+    return { data: data as DocumentAnalysisResponse, error: null };
   } catch (err) {
     console.error('Document analysis error:', err);
     return {
@@ -91,7 +110,7 @@ export async function refineTemplate(
   currentTemplate: GeneratedTemplate
 ): Promise<ServiceResult<DocumentAnalysisResponse>> {
   // Just call analyzeDocument with the full conversation
-  // The Edge Function will handle the refinement based on the messages
+  // The Cloud Function will handle the refinement based on the messages
   return analyzeDocument(images, messages);
 }
 
@@ -118,7 +137,7 @@ export function createChatMessage(
 }
 
 /**
- * Convert ChatMessage array to the format expected by the Edge Function
+ * Convert ChatMessage array to the format expected by the Cloud Function
  */
 function formatMessagesForApi(
   messages: ChatMessage[]

@@ -1,4 +1,26 @@
-import { supabase } from './supabase';
+/**
+ * Records Service
+ * Handles record (formerly "site") management
+ *
+ * Migrated to Firebase/Firestore
+ */
+
+import { db } from './firebase';
+import {
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  query,
+  where,
+  orderBy,
+  limit as firestoreLimit,
+  startAfter,
+} from 'firebase/firestore';
+import { collections, generateId } from './firestore';
 import type { Record as RecordModel, RecordType, Template } from '../types';
 import {
   type PaginationParams,
@@ -39,31 +61,44 @@ export interface RecordsWithRecordTypeResult {
  */
 export async function fetchRecords(): Promise<RecordsResult> {
   try {
-    const { data, error } = await supabase
-      .from('records')
-      .select('*, record_type:record_types(id, archived)')
-      .eq('archived', false)
-      .order('name', { ascending: true });
+    const recordsQuery = query(
+      collection(db, collections.records),
+      where('archived', '==', false),
+      orderBy('name', 'asc')
+    );
+    const snapshot = await getDocs(recordsQuery);
 
-    if (error) {
-      return { data: [], error: { message: error.message } };
+    // Get all record type IDs to filter out archived ones
+    const recordTypeIds = new Set<string>();
+    snapshot.docs.forEach(doc => {
+      const data = doc.data();
+      if (data.record_type_id) {
+        recordTypeIds.add(data.record_type_id);
+      }
+    });
+
+    // Fetch record types to check which are archived
+    const archivedRecordTypeIds = new Set<string>();
+    for (const rtId of recordTypeIds) {
+      const rtDoc = await getDoc(doc(db, 'record_types', rtId));
+      if (rtDoc.exists() && rtDoc.data().archived === true) {
+        archivedRecordTypeIds.add(rtId);
+      }
     }
 
-    // Filter out records whose record type is archived or missing
-    // Then strip out the record_type join data
-    const records = (data || [])
-      .filter((r: any) => {
-        // Exclude if record_type is null, undefined, empty, or archived
-        if (!r.record_type) return false;
-        if (typeof r.record_type !== 'object') return false;
-        if (!r.record_type.id) return false; // Empty object check
-        if (r.record_type.archived === true) return false;
+    const records: RecordModel[] = snapshot.docs
+      .filter(doc => {
+        const data = doc.data();
+        // Filter out records with archived record types
+        if (data.record_type_id && archivedRecordTypeIds.has(data.record_type_id)) {
+          return false;
+        }
         return true;
       })
-      .map((r: any) => {
-        const { record_type, ...record } = r;
-        return record as RecordModel;
-      });
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      } as RecordModel));
 
     return { data: records, error: null };
   } catch (err) {
@@ -77,20 +112,37 @@ export async function fetchRecords(): Promise<RecordsResult> {
  */
 export async function fetchRecordsWithRecordType(): Promise<RecordsWithRecordTypeResult> {
   try {
-    const { data, error } = await supabase
-      .from('records')
-      .select(`
-        *,
-        record_type:record_types (*)
-      `)
-      .eq('archived', false)
-      .order('name', { ascending: true });
+    const recordsQuery = query(
+      collection(db, collections.records),
+      where('archived', '==', false),
+      orderBy('name', 'asc')
+    );
+    const snapshot = await getDocs(recordsQuery);
 
-    if (error) {
-      return { data: [], error: { message: error.message } };
+    const records: RecordWithRecordType[] = [];
+
+    for (const recordDoc of snapshot.docs) {
+      const recordData = recordDoc.data();
+
+      // Fetch the record type
+      let recordType: RecordType | null = null;
+      if (recordData.record_type_id) {
+        const rtDoc = await getDoc(doc(db, 'record_types', recordData.record_type_id));
+        if (rtDoc.exists()) {
+          recordType = { id: rtDoc.id, ...rtDoc.data() } as RecordType;
+        }
+      }
+
+      if (recordType) {
+        records.push({
+          id: recordDoc.id,
+          ...recordData,
+          record_type: recordType,
+        } as RecordWithRecordType);
+      }
     }
 
-    return { data: (data as RecordWithRecordType[]) || [], error: null };
+    return { data: records, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch records with record type';
     return { data: [], error: { message } };
@@ -102,18 +154,20 @@ export async function fetchRecordsWithRecordType(): Promise<RecordsWithRecordTyp
  */
 export async function fetchRecordsByType(recordTypeId: string): Promise<RecordsResult> {
   try {
-    const { data, error } = await supabase
-      .from('records')
-      .select('*')
-      .eq('record_type_id', recordTypeId)
-      .eq('archived', false)
-      .order('name', { ascending: true });
+    const recordsQuery = query(
+      collection(db, collections.records),
+      where('record_type_id', '==', recordTypeId),
+      where('archived', '==', false),
+      orderBy('name', 'asc')
+    );
+    const snapshot = await getDocs(recordsQuery);
 
-    if (error) {
-      return { data: [], error: { message: error.message } };
-    }
+    const records: RecordModel[] = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    } as RecordModel));
 
-    return { data: (data as RecordModel[]) || [], error: null };
+    return { data: records, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch records by type';
     return { data: [], error: { message } };
@@ -125,17 +179,14 @@ export async function fetchRecordsByType(recordTypeId: string): Promise<RecordsR
  */
 export async function fetchRecordById(recordId: string): Promise<RecordResult> {
   try {
-    const { data, error } = await supabase
-      .from('records')
-      .select('*')
-      .eq('id', recordId)
-      .single();
+    const recordRef = doc(db, collections.records, recordId);
+    const recordSnap = await getDoc(recordRef);
 
-    if (error) {
-      return { data: null, error: { message: error.message } };
+    if (!recordSnap.exists()) {
+      return { data: null, error: { message: 'Record not found' } };
     }
 
-    return { data: data as RecordModel, error: null };
+    return { data: { id: recordSnap.id, ...recordSnap.data() } as RecordModel, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch record';
     return { data: null, error: { message } };
@@ -149,17 +200,20 @@ export async function createRecord(
   record: Omit<RecordModel, 'id' | 'created_at' | 'updated_at' | 'archived'>
 ): Promise<RecordResult> {
   try {
-    const { data, error } = await supabase
-      .from('records')
-      .insert(record as never)
-      .select()
-      .single();
+    const recordId = generateId();
+    const recordRef = doc(db, collections.records, recordId);
+    const now = new Date().toISOString();
 
-    if (error) {
-      return { data: null, error: { message: error.message } };
-    }
+    const recordData = {
+      ...record,
+      archived: false,
+      created_at: now,
+      updated_at: now,
+    };
 
-    return { data: data as RecordModel, error: null };
+    await setDoc(recordRef, recordData);
+
+    return { data: { id: recordId, ...recordData } as RecordModel, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to create record';
     return { data: null, error: { message } };
@@ -174,18 +228,14 @@ export async function updateRecord(
   updates: Partial<Omit<RecordModel, 'id' | 'created_at' | 'updated_at' | 'organisation_id' | 'record_type_id'>>
 ): Promise<RecordResult> {
   try {
-    const { data, error } = await supabase
-      .from('records')
-      .update(updates as never)
-      .eq('id', recordId)
-      .select()
-      .single();
+    const recordRef = doc(db, collections.records, recordId);
+    await updateDoc(recordRef, {
+      ...updates,
+      updated_at: new Date().toISOString(),
+    });
 
-    if (error) {
-      return { data: null, error: { message: error.message } };
-    }
-
-    return { data: data as RecordModel, error: null };
+    const recordSnap = await getDoc(recordRef);
+    return { data: { id: recordSnap.id, ...recordSnap.data() } as RecordModel, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to update record';
     return { data: null, error: { message } };
@@ -197,14 +247,11 @@ export async function updateRecord(
  */
 export async function archiveRecord(recordId: string): Promise<{ error: { message: string } | null }> {
   try {
-    const { error } = await supabase
-      .from('records')
-      .update({ archived: true } as never)
-      .eq('id', recordId);
-
-    if (error) {
-      return { error: { message: error.message } };
-    }
+    const recordRef = doc(db, collections.records, recordId);
+    await updateDoc(recordRef, {
+      archived: true,
+      updated_at: new Date().toISOString(),
+    });
 
     return { error: null };
   } catch (err) {
@@ -219,14 +266,8 @@ export async function archiveRecord(recordId: string): Promise<{ error: { messag
  */
 export async function deleteRecord(recordId: string): Promise<{ error: { message: string } | null }> {
   try {
-    const { error } = await supabase
-      .from('records')
-      .delete()
-      .eq('id', recordId);
-
-    if (error) {
-      return { error: { message: error.message } };
-    }
+    const recordRef = doc(db, collections.records, recordId);
+    await deleteDoc(recordRef);
 
     return { error: null };
   } catch (err) {
@@ -241,17 +282,20 @@ export async function deleteRecord(recordId: string): Promise<{ error: { message
  */
 export async function fetchPublishedTemplates(): Promise<{ data: Template[]; error: { message: string } | null }> {
   try {
-    const { data, error } = await supabase
-      .from('templates')
-      .select('*')
-      .eq('is_published', true)
-      .order('name', { ascending: true });
+    const templatesQuery = query(
+      collection(db, collections.templates),
+      where('is_published', '==', true),
+      where('archived', '==', false),
+      orderBy('name', 'asc')
+    );
+    const snapshot = await getDocs(templatesQuery);
 
-    if (error) {
-      return { data: [], error: { message: error.message } };
-    }
+    const templates: Template[] = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    } as Template));
 
-    return { data: (data as Template[]) || [], error: null };
+    return { data: templates, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch templates';
     return { data: [], error: { message } };
@@ -300,74 +344,63 @@ export async function fetchRecordsPaginated(
       sortDirection = 'asc',
     } = options;
 
-    const { cursor, direction = 'forward' } = pagination;
+    const { cursor } = pagination;
     const limit = getValidPageSize(pagination.limit);
-    // Fetch one extra to determine if there's a next page
     const fetchLimit = limit + 1;
 
-    let query = supabase
-      .from('records')
-      .select(
-        `
-        *,
-        record_type:record_types (*)
-      `,
-        { count: 'exact' }
-      )
-      .eq('archived', false);
+    // Build base query
+    let constraints: any[] = [
+      where('archived', '==', false),
+    ];
 
-    // Apply record type filter
     if (recordTypeId) {
-      query = query.eq('record_type_id', recordTypeId);
+      constraints.push(where('record_type_id', '==', recordTypeId));
     }
 
-    // Apply search filter (name or address)
-    if (search && search.trim().length >= 2) {
-      const searchTerm = `%${search.trim()}%`;
-      query = query.or(`name.ilike.${searchTerm},address.ilike.${searchTerm}`);
-    }
+    constraints.push(orderBy('created_at', sortDirection));
+    constraints.push(orderBy('__name__', 'asc'));
+    constraints.push(firestoreLimit(fetchLimit));
 
-    // Apply cursor pagination
-    if (cursor) {
-      const cursorData = decodeCursor(cursor);
-      if (cursorData) {
-        // For cursor-based pagination, we need to filter based on sort field
-        // Using created_at for cursor positioning
-        if (direction === 'forward') {
-          if (sortDirection === 'asc') {
-            query = query.or(
-              `created_at.gt.${cursorData.timestamp},and(created_at.eq.${cursorData.timestamp},id.gt.${cursorData.id})`
-            );
-          } else {
-            query = query.or(
-              `created_at.lt.${cursorData.timestamp},and(created_at.eq.${cursorData.timestamp},id.lt.${cursorData.id})`
-            );
-          }
+    const recordsQuery = query(collection(db, collections.records), ...constraints);
+    const snapshot = await getDocs(recordsQuery);
+
+    // Fetch record types
+    const recordTypeCache = new Map<string, RecordType>();
+
+    let records: RecordWithRecordType[] = [];
+
+    for (const recordDoc of snapshot.docs) {
+      const data = recordDoc.data();
+
+      // Get or fetch record type
+      let recordType = recordTypeCache.get(data.record_type_id);
+      if (!recordType && data.record_type_id) {
+        const rtDoc = await getDoc(doc(db, 'record_types', data.record_type_id));
+        if (rtDoc.exists()) {
+          recordType = { id: rtDoc.id, ...rtDoc.data() } as RecordType;
+          recordTypeCache.set(data.record_type_id, recordType);
         }
+      }
+
+      if (recordType) {
+        records.push({
+          id: recordDoc.id,
+          ...data,
+          record_type: recordType,
+        } as RecordWithRecordType);
       }
     }
 
-    // Apply sorting - use created_at for consistent cursor pagination
-    query = query
-      .order('created_at', { ascending: sortDirection === 'asc' })
-      .order('id', { ascending: true })
-      .limit(fetchLimit);
-
-    const { data, error, count } = await query;
-
-    if (error) {
-      return emptyPaginatedResult();
+    // Apply client-side search filter
+    if (search && search.trim().length >= 2) {
+      const searchLower = search.toLowerCase().trim();
+      records = records.filter(r =>
+        r.name.toLowerCase().includes(searchLower) ||
+        (r.address && r.address.toLowerCase().includes(searchLower))
+      );
     }
 
-    const records = (data || []) as RecordWithRecordType[];
-    const result = processPaginatedResults(records, limit, cursor);
-
-    // Add total count if available
-    if (count !== null) {
-      result.pageInfo.totalCount = count;
-    }
-
-    return result;
+    return processPaginatedResults(records, limit, cursor);
   } catch {
     return emptyPaginatedResult();
   }
@@ -403,47 +436,72 @@ export async function searchRecords(
   options: SearchRecordsOptions
 ): Promise<{ data: RecordSearchResult[]; error: { message: string } | null }> {
   try {
-    const { query, recordTypeId, limit = 10 } = options;
+    const { query: searchQuery, recordTypeId, limit: maxResults = 10 } = options;
 
     // Require at least 2 characters for search
-    if (!query || query.trim().length < 2) {
+    if (!searchQuery || searchQuery.trim().length < 2) {
       return { data: [], error: null };
     }
 
-    const searchTerm = `%${query.trim()}%`;
+    const searchLower = searchQuery.toLowerCase().trim();
 
-    let dbQuery = supabase
-      .from('records')
-      .select(
-        `
-        id,
-        name,
-        address,
-        record_type:record_types (
-          id,
-          name,
-          name_singular,
-          icon,
-          color
-        )
-      `
-      )
-      .eq('archived', false)
-      .or(`name.ilike.${searchTerm},address.ilike.${searchTerm}`)
-      .order('name', { ascending: true })
-      .limit(limit);
+    // Build query
+    let constraints: any[] = [
+      where('archived', '==', false),
+    ];
 
     if (recordTypeId) {
-      dbQuery = dbQuery.eq('record_type_id', recordTypeId);
+      constraints.push(where('record_type_id', '==', recordTypeId));
     }
 
-    const { data, error } = await dbQuery;
+    constraints.push(orderBy('name', 'asc'));
+    constraints.push(firestoreLimit(100)); // Fetch more for client-side filtering
 
-    if (error) {
-      return { data: [], error: { message: error.message } };
+    const recordsQuery = query(collection(db, collections.records), ...constraints);
+    const snapshot = await getDocs(recordsQuery);
+
+    const recordTypeCache = new Map<string, any>();
+    const results: RecordSearchResult[] = [];
+
+    for (const recordDoc of snapshot.docs) {
+      if (results.length >= maxResults) break;
+
+      const data = recordDoc.data();
+
+      // Check if matches search
+      const nameMatch = data.name?.toLowerCase().includes(searchLower);
+      const addressMatch = data.address?.toLowerCase().includes(searchLower);
+
+      if (!nameMatch && !addressMatch) continue;
+
+      // Get or fetch record type
+      let recordType = recordTypeCache.get(data.record_type_id);
+      if (!recordType && data.record_type_id) {
+        const rtDoc = await getDoc(doc(db, 'record_types', data.record_type_id));
+        if (rtDoc.exists()) {
+          const rtData = rtDoc.data();
+          recordType = {
+            id: rtDoc.id,
+            name: rtData.name,
+            name_singular: rtData.name_singular || null,
+            icon: rtData.icon || null,
+            color: rtData.color || null,
+          };
+          recordTypeCache.set(data.record_type_id, recordType);
+        }
+      }
+
+      if (recordType) {
+        results.push({
+          id: recordDoc.id,
+          name: data.name,
+          address: data.address || null,
+          record_type: recordType,
+        });
+      }
     }
 
-    return { data: (data || []) as RecordSearchResult[], error: null };
+    return { data: results, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to search records';
     return { data: [], error: { message } };
@@ -457,22 +515,36 @@ export async function fetchRecordWithType(
   recordId: string
 ): Promise<{ data: RecordWithRecordType | null; error: { message: string } | null }> {
   try {
-    const { data, error } = await supabase
-      .from('records')
-      .select(
-        `
-        *,
-        record_type:record_types (*)
-      `
-      )
-      .eq('id', recordId)
-      .single();
+    const recordRef = doc(db, collections.records, recordId);
+    const recordSnap = await getDoc(recordRef);
 
-    if (error) {
-      return { data: null, error: { message: error.message } };
+    if (!recordSnap.exists()) {
+      return { data: null, error: { message: 'Record not found' } };
     }
 
-    return { data: data as RecordWithRecordType, error: null };
+    const recordData = recordSnap.data();
+
+    // Fetch record type
+    let recordType: RecordType | null = null;
+    if (recordData.record_type_id) {
+      const rtDoc = await getDoc(doc(db, 'record_types', recordData.record_type_id));
+      if (rtDoc.exists()) {
+        recordType = { id: rtDoc.id, ...rtDoc.data() } as RecordType;
+      }
+    }
+
+    if (!recordType) {
+      return { data: null, error: { message: 'Record type not found' } };
+    }
+
+    return {
+      data: {
+        id: recordSnap.id,
+        ...recordData,
+        record_type: recordType,
+      } as RecordWithRecordType,
+      error: null,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch record with type';
     return { data: null, error: { message } };
@@ -497,51 +569,51 @@ export interface ReportSummary {
  */
 export async function fetchRecordReportsSummary(
   recordId: string,
-  limit: number = 20
+  maxResults: number = 20
 ): Promise<{ data: ReportSummary[]; error: { message: string } | null }> {
   try {
-    const { data, error } = await supabase
-      .from('reports')
-      .select(
-        `
-        id,
-        status,
-        started_at,
-        submitted_at,
-        created_at,
-        template:templates (name),
-        user_profile:user_profiles (full_name)
-      `
-      )
-      .eq('record_id', recordId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const reportsQuery = query(
+      collection(db, collections.reports),
+      where('record_id', '==', recordId),
+      orderBy('created_at', 'desc'),
+      firestoreLimit(maxResults)
+    );
+    const snapshot = await getDocs(reportsQuery);
 
-    if (error) {
-      return { data: [], error: { message: error.message } };
+    const summaries: ReportSummary[] = [];
+
+    for (const reportDoc of snapshot.docs) {
+      const data = reportDoc.data();
+
+      // Fetch template name
+      let templateName = 'Unknown Template';
+      if (data.template_id) {
+        const templateDoc = await getDoc(doc(db, collections.templates, data.template_id));
+        if (templateDoc.exists()) {
+          templateName = templateDoc.data().name || templateName;
+        }
+      }
+
+      // Fetch user name
+      let userName: string | null = null;
+      if (data.user_id) {
+        const userDoc = await getDoc(doc(db, collections.users, data.user_id));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          userName = userData.full_name || `${userData.first_name || ''} ${userData.last_name || ''}`.trim() || null;
+        }
+      }
+
+      summaries.push({
+        id: reportDoc.id,
+        status: data.status,
+        started_at: data.started_at,
+        submitted_at: data.submitted_at || null,
+        created_at: data.created_at,
+        template_name: templateName,
+        user_name: userName,
+      });
     }
-
-    // Transform to summary format
-    const summaries: ReportSummary[] = ((data as unknown[]) || []).map((report: unknown) => {
-      const r = report as {
-        id: string;
-        status: 'draft' | 'submitted';
-        started_at: string;
-        submitted_at: string | null;
-        created_at: string;
-        template: { name: string } | null;
-        user_profile: { full_name: string } | null;
-      };
-      return {
-        id: r.id,
-        status: r.status,
-        started_at: r.started_at,
-        submitted_at: r.submitted_at,
-        created_at: r.created_at,
-        template_name: r.template?.name || 'Unknown Template',
-        user_name: r.user_profile?.full_name || null,
-      };
-    });
 
     return { data: summaries, error: null };
   } catch (err) {
@@ -558,74 +630,54 @@ export async function fetchRecordReportsPaginated(
   pagination: PaginationParams = {}
 ): Promise<PaginatedResult<ReportSummary>> {
   try {
-    const { cursor, direction = 'forward' } = pagination;
+    const { cursor } = pagination;
     const limit = getValidPageSize(pagination.limit);
     const fetchLimit = limit + 1;
 
-    let query = supabase
-      .from('reports')
-      .select(
-        `
-        id,
-        status,
-        started_at,
-        submitted_at,
-        created_at,
-        template:templates (name),
-        user_profile:user_profiles (full_name)
-      `,
-        { count: 'exact' }
-      )
-      .eq('record_id', recordId);
+    const reportsQuery = query(
+      collection(db, collections.reports),
+      where('record_id', '==', recordId),
+      orderBy('created_at', 'desc'),
+      firestoreLimit(fetchLimit)
+    );
+    const snapshot = await getDocs(reportsQuery);
 
-    // Apply cursor pagination
-    if (cursor) {
-      const cursorData = decodeCursor(cursor);
-      if (cursorData) {
-        // Descending order - so "forward" means older records
-        query = query.lt('created_at', cursorData.timestamp);
+    const reports: (ReportSummary & { created_at: string; id: string })[] = [];
+
+    for (const reportDoc of snapshot.docs) {
+      const data = reportDoc.data();
+
+      // Fetch template name
+      let templateName = 'Unknown Template';
+      if (data.template_id) {
+        const templateDoc = await getDoc(doc(db, collections.templates, data.template_id));
+        if (templateDoc.exists()) {
+          templateName = templateDoc.data().name || templateName;
+        }
       }
+
+      // Fetch user name
+      let userName: string | null = null;
+      if (data.user_id) {
+        const userDoc = await getDoc(doc(db, collections.users, data.user_id));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          userName = userData.full_name || `${userData.first_name || ''} ${userData.last_name || ''}`.trim() || null;
+        }
+      }
+
+      reports.push({
+        id: reportDoc.id,
+        status: data.status,
+        started_at: data.started_at,
+        submitted_at: data.submitted_at || null,
+        created_at: data.created_at,
+        template_name: templateName,
+        user_name: userName,
+      });
     }
 
-    query = query.order('created_at', { ascending: false }).limit(fetchLimit);
-
-    const { data, error, count } = await query;
-
-    if (error) {
-      return emptyPaginatedResult();
-    }
-
-    // Transform to summary format
-    const reports: (ReportSummary & { created_at: string; id: string })[] = (
-      (data as unknown[]) || []
-    ).map((report: unknown) => {
-      const r = report as {
-        id: string;
-        status: 'draft' | 'submitted';
-        started_at: string;
-        submitted_at: string | null;
-        created_at: string;
-        template: { name: string } | null;
-        user_profile: { full_name: string } | null;
-      };
-      return {
-        id: r.id,
-        status: r.status,
-        started_at: r.started_at,
-        submitted_at: r.submitted_at,
-        created_at: r.created_at,
-        template_name: r.template?.name || 'Unknown Template',
-        user_name: r.user_profile?.full_name || null,
-      };
-    });
-
-    const result = processPaginatedResults(reports, limit, cursor);
-
-    if (count !== null) {
-      result.pageInfo.totalCount = count;
-    }
-
-    return result;
+    return processPaginatedResults(reports, limit, cursor);
   } catch {
     return emptyPaginatedResult();
   }
@@ -670,116 +722,85 @@ export async function fetchRecordReportsFiltered(
     const limit = getValidPageSize(pagination.limit);
     const fetchLimit = limit + 1;
 
-    let query = supabase
-      .from('reports')
-      .select(
-        `
-        id,
-        status,
-        started_at,
-        submitted_at,
-        created_at,
-        template_id,
-        user_id,
-        template:templates (name),
-        user_profile:user_profiles (full_name)
-      `,
-        { count: 'exact' }
-      )
-      .eq('record_id', recordId);
+    // Build query constraints
+    let constraints: any[] = [
+      where('record_id', '==', recordId),
+    ];
 
-    // Apply template filter
     if (templateId) {
-      query = query.eq('template_id', templateId);
+      constraints.push(where('template_id', '==', templateId));
     }
 
-    // Apply status filter
     if (status && status !== 'all') {
-      query = query.eq('status', status);
+      constraints.push(where('status', '==', status));
     }
 
-    // Apply date range filters
-    if (dateFrom) {
-      query = query.gte('created_at', dateFrom);
-    }
-    if (dateTo) {
-      // Add one day to include the entire end date
-      const endDate = new Date(dateTo);
-      endDate.setDate(endDate.getDate() + 1);
-      query = query.lt('created_at', endDate.toISOString());
-    }
-
-    // Apply user filter
     if (userId) {
-      query = query.eq('user_id', userId);
+      constraints.push(where('user_id', '==', userId));
     }
 
-    // Apply search filter (searches template name via a subquery approach)
-    // Note: For search, we fetch and filter client-side since Supabase doesn't support
-    // searching across joined tables efficiently
+    constraints.push(orderBy('created_at', 'desc'));
+    constraints.push(firestoreLimit(fetchLimit));
 
-    // Apply cursor pagination
-    if (cursor) {
-      const cursorData = decodeCursor(cursor);
-      if (cursorData) {
-        query = query.lt('created_at', cursorData.timestamp);
+    const reportsQuery = query(collection(db, collections.reports), ...constraints);
+    const snapshot = await getDocs(reportsQuery);
+
+    let reports: (ReportSummaryExtended & { created_at: string; id: string })[] = [];
+
+    for (const reportDoc of snapshot.docs) {
+      const data = reportDoc.data();
+
+      // Apply date filters client-side
+      if (dateFrom && data.created_at < dateFrom) continue;
+      if (dateTo) {
+        const endDate = new Date(dateTo);
+        endDate.setDate(endDate.getDate() + 1);
+        if (data.created_at >= endDate.toISOString()) continue;
       }
+
+      // Fetch template name
+      let templateName = 'Unknown Template';
+      if (data.template_id) {
+        const templateDoc = await getDoc(doc(db, collections.templates, data.template_id));
+        if (templateDoc.exists()) {
+          templateName = templateDoc.data().name || templateName;
+        }
+      }
+
+      // Fetch user name
+      let userName: string | null = null;
+      if (data.user_id) {
+        const userDoc = await getDoc(doc(db, collections.users, data.user_id));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          userName = userData.full_name || `${userData.first_name || ''} ${userData.last_name || ''}`.trim() || null;
+        }
+      }
+
+      reports.push({
+        id: reportDoc.id,
+        status: data.status,
+        started_at: data.started_at,
+        submitted_at: data.submitted_at || null,
+        created_at: data.created_at,
+        template_id: data.template_id,
+        user_id: data.user_id || null,
+        template_name: templateName,
+        user_name: userName,
+      });
     }
 
-    query = query.order('created_at', { ascending: false }).limit(fetchLimit);
-
-    const { data, error, count } = await query;
-
-    if (error) {
-      return emptyPaginatedResult();
-    }
-
-    // Transform to summary format
-    let reports: (ReportSummaryExtended & { created_at: string; id: string })[] = (
-      (data as unknown[]) || []
-    ).map((report: unknown) => {
-      const r = report as {
-        id: string;
-        status: 'draft' | 'submitted';
-        started_at: string;
-        submitted_at: string | null;
-        created_at: string;
-        template_id: string;
-        user_id: string | null;
-        template: { name: string } | null;
-        user_profile: { full_name: string } | null;
-      };
-      return {
-        id: r.id,
-        status: r.status,
-        started_at: r.started_at,
-        submitted_at: r.submitted_at,
-        created_at: r.created_at,
-        template_id: r.template_id,
-        user_id: r.user_id,
-        template_name: r.template?.name || 'Unknown Template',
-        user_name: r.user_profile?.full_name || null,
-      };
-    });
-
-    // Apply client-side search filter if provided
+    // Apply client-side search filter
     if (search && search.trim().length > 0) {
       const searchLower = search.toLowerCase().trim();
       reports = reports.filter(
-        (r) =>
+        r =>
           r.template_name.toLowerCase().includes(searchLower) ||
           (r.user_name && r.user_name.toLowerCase().includes(searchLower))
       );
     }
 
-    const result = processPaginatedResults(reports, limit, cursor);
-
-    if (count !== null) {
-      // Adjust total count if we're doing client-side search filtering
-      result.pageInfo.totalCount = search ? reports.length : count;
-    }
-
-    return result;
+    return processPaginatedResults(reports, limit, cursor);
   } catch {
     return emptyPaginatedResult();
   }
@@ -800,22 +821,23 @@ export async function createRecordQuick(
   address?: string
 ): Promise<RecordResult> {
   try {
-    const { data, error } = await supabase
-      .from('records')
-      .insert({
-        organisation_id: organisationId,
-        record_type_id: recordTypeId,
-        name: name.trim(),
-        address: address?.trim() || null,
-      } as never)
-      .select()
-      .single();
+    const recordId = generateId();
+    const recordRef = doc(db, collections.records, recordId);
+    const now = new Date().toISOString();
 
-    if (error) {
-      return { data: null, error: { message: error.message } };
-    }
+    const recordData = {
+      organisation_id: organisationId,
+      record_type_id: recordTypeId,
+      name: name.trim(),
+      address: address?.trim() || null,
+      archived: false,
+      created_at: now,
+      updated_at: now,
+    };
 
-    return { data: data as RecordModel, error: null };
+    await setDoc(recordRef, recordData);
+
+    return { data: { id: recordId, ...recordData } as RecordModel, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to create record';
     return { data: null, error: { message } };

@@ -19,9 +19,9 @@ import {
   fetchReportResponses,
   ReportWithDetails,
   ReportResponse,
-  getPhotoUrl,
-  getSignatureUrl,
 } from '../../services/reports';
+import { AsyncSignatureImage } from '../../components/AsyncSignatureImage';
+import { AsyncPhotoImage } from '../../components/AsyncPhotoImage';
 import { fetchTemplateWithSections, TemplateWithSections } from '../../services/templates';
 import { exportReportToPdf, printReport } from '../../services/pdfExport/index';
 import { fetchBrandingContext } from '../../services/branding';
@@ -244,48 +244,17 @@ export function ReportDetailScreen() {
     if (itemType === 'signature' && response?.response_value) {
       const value = response.response_value;
 
-      // Try to get signature image URL
-      let signatureUri: string | null = null;
-
-      if (isBase64Image(value)) {
-        // Direct base64 data
-        signatureUri = value;
-      } else {
-        // Try parsing as JSON (may contain path and signerName)
-        try {
-          const parsed = JSON.parse(value);
-          if (parsed.path) {
-            signatureUri = getSignatureUrl(parsed.path);
-          }
-        } catch {
-          // Not JSON, treat as storage path directly
-          if (isStoragePath(value)) {
-            signatureUri = getSignatureUrl(value);
-          }
-        }
-      }
-
-      if (signatureUri) {
-        return (
-          <View style={styles.signatureContainer}>
-            <Image
-              source={{ uri: signatureUri }}
-              style={styles.signatureImage}
-              resizeMode="contain"
-            />
-            <View style={styles.responseValueContainer}>
-              <Icon name="check-circle" size={16} color={colors.success} style={styles.responseIcon} />
-              <Text style={[styles.responseValue, { color: colors.success }]}>Captured</Text>
-            </View>
-          </View>
-        );
-      }
-
-      // Fallback to text indicator
       return (
-        <View style={styles.responseValueContainer}>
-          <Icon name="check-circle" size={18} color={colors.success} style={styles.responseIcon} />
-          <Text style={[styles.responseValue, { color: colors.success }]}>Signature captured</Text>
+        <View style={styles.signatureContainer}>
+          <AsyncSignatureImage
+            value={value}
+            style={styles.signatureImage}
+            resizeMode="contain"
+          />
+          <View style={styles.responseValueContainer}>
+            <Icon name="check-circle" size={16} color={colors.success} style={styles.responseIcon} />
+            <Text style={[styles.responseValue, { color: colors.success }]}>Captured</Text>
+          </View>
         </View>
       );
     }
@@ -295,23 +264,22 @@ export function ReportDetailScreen() {
       try {
         const parsed = JSON.parse(response.response_value);
         const hasSignature = !!parsed.signaturePath;
-        const signatureUri = hasSignature ? getSignatureUrl(parsed.signaturePath) : null;
 
         return (
           <View style={styles.witnessContainer}>
             {parsed.name && (
               <Text style={styles.witnessName}>{parsed.name}</Text>
             )}
-            {signatureUri && (
+            {hasSignature && (
               <View style={styles.signatureContainer}>
-                <Image
-                  source={{ uri: signatureUri }}
+                <AsyncSignatureImage
+                  value={JSON.stringify({ path: parsed.signaturePath })}
                   style={styles.signatureImage}
                   resizeMode="contain"
                 />
               </View>
             )}
-            {!signatureUri && !parsed.name && (
+            {!hasSignature && !parsed.name && (
               <View style={styles.responseValueContainer}>
                 <Text style={[styles.responseValue, { color: colors.text.tertiary }]}>Not completed</Text>
               </View>
@@ -334,23 +302,15 @@ export function ReportDetailScreen() {
       if (paths.length > 0) {
         return (
           <View style={styles.photoGallery}>
-            {paths.map((path, index) => {
-              const photoUrl = getPhotoUrl(path);
-              return (
-                <TouchableOpacity
-                  key={index}
-                  onPress={() => setSelectedPhoto(path)}
-                  activeOpacity={0.8}
-                >
-                  <Image
-                    source={{ uri: photoUrl }}
-                    style={styles.photoThumbnail}
-                    resizeMode="cover"
-                    onError={(e) => console.error(`[ReportDetailScreen] Image load error for ${photoUrl}:`, e.nativeEvent.error)}
-                  />
-                </TouchableOpacity>
-              );
-            })}
+            {paths.map((path, index) => (
+              <AsyncPhotoImage
+                key={index}
+                storagePath={path}
+                style={styles.photoThumbnail}
+                resizeMode="cover"
+                onPress={() => setSelectedPhoto(path)}
+              />
+            ))}
           </View>
         );
       }
@@ -536,8 +496,8 @@ export function ReportDetailScreen() {
           onPress={() => setSelectedPhoto(null)}
         >
           {selectedPhoto && (
-            <Image
-              source={{ uri: getPhotoUrl(selectedPhoto) }}
+            <AsyncPhotoImage
+              storagePath={selectedPhoto}
               style={styles.photoModalImage}
               resizeMode="contain"
             />

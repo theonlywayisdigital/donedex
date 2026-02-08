@@ -272,7 +272,7 @@ export function TemplatePreviewScreen() {
       });
 
       // Generate HTML
-      const html = generateHtml({
+      const html = await generateHtml({
         report: mockReport,
         template,
         responses: mockResponsesMap,

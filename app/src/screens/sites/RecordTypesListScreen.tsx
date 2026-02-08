@@ -16,7 +16,8 @@ import { SitesStackParamList } from '../../navigation/MainNavigator';
 import { colors, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../constants/theme';
 import { Icon, IconName, FullScreenLoader } from '../../components/ui';
 import { fetchRecordTypes, archiveRecordType } from '../../services/recordTypes';
-import { supabase } from '../../services/supabase';
+import { db } from '../../services/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { showDestructiveConfirm, showNotification } from '../../utils/alert';
 import type { RecordType } from '../../types';
 
@@ -80,16 +81,24 @@ export function RecordTypesListScreen() {
     // Fetch record counts for each type
     const typesWithCounts = await Promise.all(
       types.map(async (type) => {
-        const { count } = await supabase
-          .from('records')
-          .select('*', { count: 'exact', head: true })
-          .eq('record_type_id', type.id)
-          .eq('archived', false);
-
-        return {
-          ...type,
-          record_count: count || 0,
-        };
+        try {
+          const recordsQuery = query(
+            collection(db, 'records'),
+            where('record_type_id', '==', type.id),
+            where('archived', '==', false)
+          );
+          const snapshot = await getDocs(recordsQuery);
+          return {
+            ...type,
+            record_count: snapshot.size,
+          };
+        } catch (err) {
+          console.error('Error counting records for type', type.id, err);
+          return {
+            ...type,
+            record_count: 0,
+          };
+        }
       })
     );
 

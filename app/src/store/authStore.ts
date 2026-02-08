@@ -1,89 +1,55 @@
-import { create } from 'zustand';
-import { Platform } from 'react-native';
-import type { User, Session } from '@supabase/supabase-js';
-import * as authService from '../services/auth';
-import * as superAdminService from '../services/superAdmin';
-import type { UserRole } from '../services/auth';
-import type { UserProfile, Organisation } from '../types';
-import type { SuperAdminPermission, ImpersonationContext } from '../types/superAdmin';
-
 /**
- * Check the current URL for Supabase auth callback type parameters.
- * Supabase's JS client auto-detects tokens in URL hash and creates a session
- * BEFORE React mounts. We need to capture the `type` parameter (invite/recovery)
- * before it gets consumed, so we can route the user to SetPassword screen.
+ * Auth Store - Firebase Version
+ * Zustand store for Firebase authentication state management
  */
-function detectAuthCallbackType(): 'invite' | 'recovery' | null {
-  if (Platform.OS !== 'web') return null;
-  try {
-    const hash = window.location.hash;
-    const search = window.location.search;
 
-    // Check hash fragment first (Supabase typically sends tokens here)
-    if (hash && hash.length > 1) {
-      const params = new URLSearchParams(hash.substring(1));
-      const type = params.get('type');
-      if (type === 'invite' || type === 'signup') return 'invite';
-      if (type === 'recovery') return 'recovery';
-    }
+import { create } from 'zustand';
+import * as authService from '../services/auth';
+import type { User, UserRole, UserProfile, Organisation } from '../services/auth';
 
-    // Also check query params
-    if (search) {
-      const params = new URLSearchParams(search);
-      const type = params.get('type');
-      if (type === 'invite' || type === 'signup') return 'invite';
-      if (type === 'recovery') return 'recovery';
-    }
+// Re-export types for backwards compatibility
+export type { UserRole };
 
-    // Check if we're on the /auth/callback path (even if tokens already consumed)
-    if (window.location.pathname.includes('/auth/callback')) {
-      // If we're on the callback path but no type found, Supabase may have already
-      // consumed the tokens. Check if there's a session — if so, it was likely an invite.
-      return null;
-    }
+// Super admin types (stub for now - will implement later)
+export type SuperAdminPermission =
+  | 'view_all_orgs'
+  | 'manage_users'
+  | 'impersonate'
+  | 'manage_billing'
+  | 'edit_all_organisations'
+  | 'impersonate_users'
+  | 'edit_all_users';
 
-    return null;
-  } catch {
-    return null;
-  }
+export interface ImpersonationContext {
+  isImpersonating: boolean;
+  sessionId: string;
+  originalUserId: string;
+  impersonatedUserId: string;
+  impersonatedOrgId: string;
+  impersonatedUserName: string | null;
+  impersonatedOrgName: string | null;
+  impersonatedRole: 'owner' | 'admin' | 'user';
+  expiresAt: string;
 }
-
-// Timeout wrapper for async operations
-const withTimeout = <T>(promise: Promise<T>, ms: number, fallback?: T): Promise<T> => {
-  const timeout = new Promise<T>((resolve, reject) => {
-    setTimeout(() => {
-      if (fallback !== undefined) {
-        resolve(fallback);
-      } else {
-        reject(new Error(`Operation timed out after ${ms}ms`));
-      }
-    }, ms);
-  });
-  return Promise.race([promise, timeout]);
-};
 
 interface AuthState {
   // State
   user: User | null;
-  session: Session | null;
+  session: { user: User } | null; // Backwards compatible session
   profile: UserProfile | null;
   organisation: Organisation | null;
   role: UserRole | null;
   isLoading: boolean;
   isInitialized: boolean;
 
-  // Password Setup State (for invite/recovery flows)
-  // When Supabase auto-detects tokens in URL and creates a session,
-  // we need to know if the user still needs to set their password.
+  // Password Setup State (for invite/recovery flows) - simplified for Firebase
   needsPasswordSetup: boolean;
   passwordSetupType: 'invite' | 'recovery' | null;
 
-  // OTP State (for 2FA login)
-  pendingOTPUser: User | null;
+  // OTP State - removed in Firebase version (no longer used)
   pendingOTPEmail: string | null;
-  pendingOTPPassword: string | null;
 
-  // Super Admin State
+  // Super Admin State (stub for now)
   isSuperAdmin: boolean;
   superAdminPermissions: SuperAdminPermission[];
   impersonationContext: ImpersonationContext | null;
@@ -98,20 +64,13 @@ interface AuthState {
   // Actions
   initialize: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signInStep1: (email: string, password: string) => Promise<{ error: string | null; requiresOTP: boolean }>;
-  signInStep2: (otpCode: string) => Promise<{ error: string | null }>;
-  resendOTP: () => Promise<{ error: string | null }>;
-  cancelOTP: () => void;
-  signUp: (email: string, password: string, fullName?: string) => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string, fullName?: string, phone?: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
-  setSession: (session: Session | null) => void;
-  clearPasswordSetup: () => void;
-
-  // Refresh Actions
   refreshOrgData: () => Promise<void>;
   validateOrgStatus: () => Promise<{ valid: boolean; reason?: 'blocked' | 'archived' | 'removed' }>;
+  clearPasswordSetup: () => void;
 
-  // Super Admin Actions
+  // Super Admin Actions (stubs for now)
   checkSuperAdminStatus: () => Promise<void>;
   hasSuperAdminPermission: (permission: SuperAdminPermission) => boolean;
   startImpersonation: (userId: string, orgId: string, userName: string, orgName: string, role?: 'owner' | 'admin' | 'user') => Promise<{ error: string | null }>;
@@ -132,10 +91,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   needsPasswordSetup: false,
   passwordSetupType: null,
 
-  // OTP initial state
-  pendingOTPUser: null,
+  // OTP state (not used in Firebase version)
   pendingOTPEmail: null,
-  pendingOTPPassword: null,
 
   // Super Admin initial state
   isSuperAdmin: false,
@@ -144,7 +101,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   // Computed (as getters)
   get isAuthenticated() {
-    return get().session !== null;
+    return get().user !== null;
   },
   get isAdmin() {
     const role = get().role;
@@ -155,7 +112,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
   get effectiveOrganisation() {
     const { impersonationContext, organisation } = get();
-    // When impersonating, return the impersonated org details
     if (impersonationContext?.isImpersonating && impersonationContext.impersonatedOrgId) {
       return {
         id: impersonationContext.impersonatedOrgId,
@@ -167,13 +123,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     return organisation;
   },
-  get effectiveRole() {
-    const { impersonationContext, role } = get();
-    if (impersonationContext?.isImpersonating && impersonationContext.impersonatedRole) {
-      return impersonationContext.impersonatedRole;
-    }
-    return role;
-  },
   get isImpersonating() {
     return get().impersonationContext?.isImpersonating === true;
   },
@@ -181,110 +130,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   // Actions
   initialize: async () => {
     try {
-      // Preserve current password setup state - if it was explicitly cleared, don't re-detect
-      const currentState = get();
-      const wasPasswordSetupCleared = currentState.isInitialized && !currentState.needsPasswordSetup;
-
       set({ isLoading: true });
-
-      // CRITICAL: Detect auth callback type BEFORE Supabase auto-session consumes URL tokens.
-      // Supabase JS client auto-detects #access_token=...&type=invite in URL hash
-      // and creates a session before React mounts. We capture the type here so we can
-      // route the user to SetPassword screen after the auto-session is established.
-      // BUT: Skip detection if password setup was already completed (cleared).
-      const authCallbackType = wasPasswordSetupCleared ? null : detectAuthCallbackType();
-      if (authCallbackType) {
-        console.log('[AuthStore] Detected auth callback type:', authCallbackType);
-      }
-
-      const session = await authService.getCurrentSession();
-
-      if (session?.user) {
-        console.log('[AuthStore] Session found, user:', session.user.id);
-
-        // If we detected an invite/recovery callback, the user needs to set their password.
-        // The session is valid (Supabase auto-created it), but we must show SetPassword first.
-        // Skip if password setup was already cleared (user already set their password).
-        const needsPasswordSetup = !wasPasswordSetupCleared && (authCallbackType === 'invite' || authCallbackType === 'recovery');
-        if (needsPasswordSetup) {
-          console.log('[AuthStore] User needs password setup, type:', authCallbackType);
-          // Clean up URL hash so refreshing doesn't re-trigger
-          if (Platform.OS === 'web') {
-            try {
-              window.history.replaceState(null, '', window.location.pathname);
-            } catch { /* ignore */ }
-          }
-        }
-
-        // Fetch ALL data in parallel - including super admin status
-        const [profile, orgData, superAdminData] = await Promise.all([
-          authService.fetchUserProfile(session.user.id),
-          authService.fetchUserOrganisation(session.user.id),
-          superAdminService.fetchCurrentSuperAdmin(),
-        ]);
-
-        console.log('[AuthStore] Parallel fetch results:', {
-          hasProfile: !!profile,
-          hasOrgData: !!orgData,
-          orgId: orgData?.organisation?.id,
-          superAdminData: {
-            hasData: !!superAdminData.data,
-            error: superAdminData.error?.message,
-            permissions: superAdminData.data?.permissions?.length || 0,
-          },
-        });
-
-        // Set ALL state at once - super admin status is known BEFORE isInitialized
-        set({
-          user: session.user,
-          session,
-          profile,
-          organisation: orgData?.organisation as Organisation | null,
-          role: orgData?.role as UserRole | null,
-          isSuperAdmin: !!superAdminData.data,
-          superAdminPermissions: superAdminData.data?.permissions || [],
-          needsPasswordSetup,
-          passwordSetupType: needsPasswordSetup ? authCallbackType : null,
-        });
-
-        console.log('[AuthStore] State set, isSuperAdmin:', !!superAdminData.data, 'needsPasswordSetup:', needsPasswordSetup);
-      } else {
-        set({
-          user: null,
-          session: null,
-          profile: null,
-          organisation: null,
-          role: null,
-          isSuperAdmin: false,
-          superAdminPermissions: [],
-          impersonationContext: null,
-          needsPasswordSetup: false,
-          passwordSetupType: null,
-        });
-      }
+      console.log('[AuthStore] Initializing...');
 
       // Set up auth state listener
-      authService.onAuthStateChange(async (event, newSession) => {
-        console.log('[AuthStore] Auth state change event:', event);
+      authService.onAuthStateChange(async (event, sessionData) => {
+        console.log('[AuthStore] Auth state changed:', event);
 
-        // Skip ALL auth state changes during 2FA flow (password verified, waiting for OTP)
-        // This includes SIGNED_IN (from password check) and SIGNED_OUT (from immediate signOut)
-        const pendingOTP = get().pendingOTPEmail;
-        if (pendingOTP) {
-          console.log('[AuthStore] Ignoring auth state change during OTP flow:', event);
-          return;
-        }
+        if (event === 'SIGNED_IN' && sessionData?.user) {
+          // Avoid re-fetching if already set for this user
+          const currentState = get();
+          if (currentState.user?.uid === sessionData.user.uid && currentState.profile) {
+            console.log('[AuthStore] User already loaded, skipping fetch');
+            return;
+          }
 
-        // Skip USER_UPDATED events - these fire after password changes and shouldn't
-        // trigger any navigation or state resets
-        if (event === 'USER_UPDATED') {
-          console.log('[AuthStore] Ignoring USER_UPDATED event');
-          return;
-        }
+          console.log('[AuthStore] Fetching user data...');
+          const [profile, orgData] = await Promise.all([
+            authService.fetchUserProfile(sessionData.user.uid),
+            authService.fetchUserOrganisation(sessionData.user.uid),
+          ]);
 
-        if (event === 'SIGNED_OUT') {
-          // Only clear state if we're not in OTP flow (already checked above)
-          console.log('[AuthStore] SIGNED_OUT event, clearing state');
+          set({
+            user: sessionData.user,
+            session: sessionData,
+            profile,
+            organisation: orgData?.organisation || null,
+            role: orgData?.role || null,
+            isLoading: false,
+            isInitialized: true,
+          });
+        } else if (event === 'SIGNED_OUT') {
           set({
             user: null,
             session: null,
@@ -294,42 +170,42 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             isSuperAdmin: false,
             superAdminPermissions: [],
             impersonationContext: null,
-          });
-        } else if (event === 'SIGNED_IN' && newSession?.user) {
-          // If signInStep2 already set up the session for this user, skip
-          // This prevents a race condition where the listener re-fetches and
-          // briefly clobbers isSuperAdmin before the async calls complete
-          const currentState = get();
-          if (currentState.session?.user?.id === newSession.user.id && currentState.user) {
-            console.log('[AuthStore] SIGNED_IN event - session already set by signInStep2, skipping');
-            return;
-          }
-
-          console.log('[AuthStore] SIGNED_IN event, fetching user data...');
-          // Fetch ALL data in parallel
-          const [profile, orgData, superAdminData] = await Promise.all([
-            authService.fetchUserProfile(newSession.user.id),
-            authService.fetchUserOrganisation(newSession.user.id),
-            superAdminService.fetchCurrentSuperAdmin(),
-          ]);
-
-          set({
-            user: newSession.user,
-            session: newSession,
-            profile,
-            organisation: orgData?.organisation as Organisation | null,
-            role: orgData?.role as UserRole | null,
-            isSuperAdmin: !!superAdminData.data,
-            superAdminPermissions: superAdminData.data?.permissions || [],
+            needsPasswordSetup: false,
+            passwordSetupType: null,
+            isLoading: false,
+            isInitialized: true,
           });
         }
       });
 
-      // Now mark as initialized - super admin status is already set
-      set({
-        isLoading: false,
-        isInitialized: true,
-      });
+      // Check for existing session
+      const sessionData = await authService.getCurrentSession();
+      if (sessionData?.user) {
+        console.log('[AuthStore] Found existing session');
+        const [profile, orgData] = await Promise.all([
+          authService.fetchUserProfile(sessionData.user.uid),
+          authService.fetchUserOrganisation(sessionData.user.uid),
+        ]);
+
+        set({
+          user: sessionData.user,
+          session: sessionData,
+          profile,
+          organisation: orgData?.organisation || null,
+          role: orgData?.role || null,
+          isLoading: false,
+          isInitialized: true,
+        });
+
+        // Check super admin status
+        await get().checkSuperAdminStatus();
+      } else {
+        console.log('[AuthStore] No existing session');
+        set({
+          isLoading: false,
+          isInitialized: true,
+        });
+      }
     } catch (error) {
       console.error('Auth initialization error:', error);
       set({
@@ -350,83 +226,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     if (result.user) {
+      // Fetch user data
       const [profile, orgData] = await Promise.all([
-        authService.fetchUserProfile(result.user.id),
-        authService.fetchUserOrganisation(result.user.id),
+        authService.fetchUserProfile(result.user.uid),
+        authService.fetchUserOrganisation(result.user.uid),
       ]);
 
       set({
         user: result.user,
-        session: result.session,
+        session: { user: result.user },
         profile,
-        organisation: orgData?.organisation as Organisation | null,
-        role: orgData?.role as UserRole | null,
+        organisation: orgData?.organisation || null,
+        role: orgData?.role || null,
+        isLoading: false,
       });
 
-      // Check super admin status before completing sign in
+      // Check super admin status after setting user
       await get().checkSuperAdminStatus();
-
-      set({ isLoading: false });
     }
 
     return { error: null };
   },
 
-  // Step 1: Verify password and send OTP
-  signInStep1: async (email: string, password: string) => {
-    console.log('[AuthStore] signInStep1 called for:', email);
-    // Set pendingOTPEmail BEFORE calling verifyPasswordAndSendOTP
-    // This prevents auth state listener from reacting to the temporary sign-in
-    set({ isLoading: true, pendingOTPEmail: email });
-
-    const result = await authService.verifyPasswordAndSendOTP(email, password);
-    console.log('[AuthStore] verifyPasswordAndSendOTP result:', {
-      hasError: !!result.error,
-      error: result.error?.message,
-      requiresOTP: result.requiresOTP,
-      hasUser: !!result.user,
-    });
-
-    if (result.error) {
-      // Clear pending state on error
-      set({ isLoading: false, pendingOTPEmail: null });
-      return { error: result.error.message, requiresOTP: false };
-    }
-
-    if (result.requiresOTP && result.user) {
-      // Store full pending OTP state
-      console.log('[AuthStore] OTP required, storing pending state');
-      set({
-        pendingOTPUser: result.user,
-        pendingOTPEmail: email,
-        pendingOTPPassword: password,
-        isLoading: false,
-      });
-      return { error: null, requiresOTP: true };
-    }
-
-    // Clear pending state on unexpected result
-    set({ isLoading: false, pendingOTPEmail: null });
-    console.log('[AuthStore] Unexpected state - no error but no OTP requirement');
-    return { error: 'Unexpected error', requiresOTP: false };
-  },
-
-  // Step 2: Verify OTP and complete sign in
-  signInStep2: async (otpCode: string) => {
-    const { pendingOTPUser, pendingOTPEmail, pendingOTPPassword } = get();
-
-    if (!pendingOTPUser || !pendingOTPEmail || !pendingOTPPassword) {
-      return { error: 'No pending OTP verification' };
-    }
-
+  signUp: async (email: string, password: string, fullName?: string, phone?: string) => {
     set({ isLoading: true });
 
-    const result = await authService.verifyOTPAndSignIn(
-      pendingOTPEmail,
-      pendingOTPPassword,
-      pendingOTPUser.id,
-      otpCode
-    );
+    const result = await authService.signUp(email, password, fullName, phone);
 
     if (result.error) {
       set({ isLoading: false });
@@ -434,75 +259,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     if (result.user) {
-      // Fetch ALL data in parallel - including super admin status
-      const [profile, orgData, superAdminData] = await Promise.all([
-        authService.fetchUserProfile(result.user.id),
-        authService.fetchUserOrganisation(result.user.id),
-        superAdminService.fetchCurrentSuperAdmin(),
-      ]);
+      // User profile already created in signUp, fetch it
+      const profile = await authService.fetchUserProfile(result.user.uid);
 
-      // Set ALL state at once - super admin status is known immediately
       set({
         user: result.user,
-        session: result.session,
+        session: { user: result.user },
         profile,
-        organisation: orgData?.organisation as Organisation | null,
-        role: orgData?.role as UserRole | null,
-        isSuperAdmin: !!superAdminData.data,
-        superAdminPermissions: superAdminData.data?.permissions || [],
-        // Clear OTP state
-        pendingOTPUser: null,
-        pendingOTPEmail: null,
-        pendingOTPPassword: null,
-        isLoading: false,
-      });
-    }
-
-    return { error: null };
-  },
-
-  // Resend OTP code
-  resendOTP: async () => {
-    const { pendingOTPUser, pendingOTPEmail } = get();
-
-    if (!pendingOTPUser || !pendingOTPEmail) {
-      return { error: 'No pending OTP verification' };
-    }
-
-    const result = await authService.resendOTP(pendingOTPUser.id, pendingOTPEmail);
-
-    if (result.error) {
-      return { error: result.error.message };
-    }
-
-    return { error: null };
-  },
-
-  // Cancel OTP verification
-  cancelOTP: () => {
-    set({
-      pendingOTPUser: null,
-      pendingOTPEmail: null,
-      pendingOTPPassword: null,
-    });
-  },
-
-  signUp: async (email: string, password: string, fullName?: string) => {
-    set({ isLoading: true });
-
-    const result = await authService.signUp(email, password, fullName);
-
-    if (result.error) {
-      set({ isLoading: false });
-      return { error: result.error.message };
-    }
-
-    if (result.user) {
-      set({
-        user: result.user,
-        session: result.session,
-        profile: null,
-        organisation: null,
+        organisation: null, // New users don't have an org yet
         role: null,
         isLoading: false,
       });
@@ -513,13 +277,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signOut: async () => {
     set({ isLoading: true });
-
-    // End any active impersonation session first
-    const { impersonationContext } = get();
-    if (impersonationContext?.sessionId) {
-      await superAdminService.endImpersonation(impersonationContext.sessionId);
-    }
-
     await authService.signOut();
     set({
       user: null,
@@ -537,7 +294,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   refreshOrgData: async () => {
-    const userId = get().user?.id;
+    const userId = get().user?.uid;
     if (!userId) return;
 
     try {
@@ -546,9 +303,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         authService.fetchUserOrganisation(userId),
       ]);
 
-      // User removed from org or profile deleted
       if (!orgData || !orgData.organisation) {
-        // Will be handled by validateOrgStatus returning 'removed'
         set({
           profile: profile || get().profile,
           organisation: null,
@@ -559,20 +314,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       set({
         profile: profile || get().profile,
-        organisation: orgData.organisation as Organisation | null,
-        role: orgData.role as UserRole | null,
+        organisation: orgData.organisation,
+        role: orgData.role,
       });
-
-      // Chain billing refresh if billing store has data
-      try {
-        const { useBillingStore } = await import('./billingStore');
-        const billingStore = useBillingStore.getState();
-        if (billingStore.billing && orgData.organisation) {
-          billingStore.loadBilling(orgData.organisation.id);
-        }
-      } catch {
-        // Billing refresh is non-critical
-      }
     } catch (error) {
       console.error('Error refreshing org data:', error);
     }
@@ -581,10 +325,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   validateOrgStatus: async () => {
     const orgId = get().organisation?.id;
     if (!orgId) {
-      // No org means user was removed
-      const userId = get().user?.id;
+      const userId = get().user?.uid;
       if (userId) {
-        // Double-check by re-fetching org data
         const orgData = await authService.fetchUserOrganisation(userId);
         if (!orgData || !orgData.organisation) {
           return { valid: false, reason: 'removed' as const };
@@ -594,7 +336,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     const status = await authService.fetchOrgStatus(orgId);
-    if (!status) return { valid: true }; // Can't reach server, don't block
+    if (!status) return { valid: true };
 
     if (status.blocked) {
       return { valid: false, reason: 'blocked' as const };
@@ -605,67 +347,38 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return { valid: true };
   },
 
-  setSession: (session: Session | null) => {
-    set({ session, user: session?.user ?? null });
-  },
-
   clearPasswordSetup: () => {
     set({ needsPasswordSetup: false, passwordSetupType: null });
   },
 
   // Super Admin Actions
   checkSuperAdminStatus: async () => {
-    console.log('[AuthStore] checkSuperAdminStatus called');
+    const userId = get().user?.uid;
+    if (!userId) {
+      set({ isSuperAdmin: false, superAdminPermissions: [] });
+      return;
+    }
+
     try {
-      const result = await superAdminService.fetchCurrentSuperAdmin();
-      console.log('[AuthStore] fetchCurrentSuperAdmin result:', {
-        hasData: !!result.data,
-        hasError: !!result.error,
-        errorMsg: result.error?.message,
-      });
+      // Import Firestore functions
+      const { doc, getDoc } = await import('firebase/firestore');
+      const { db } = await import('../services/firebase');
 
-      if (result.data) {
-        console.log('[AuthStore] Setting isSuperAdmin = true');
-        set({
-          isSuperAdmin: true,
-          superAdminPermissions: result.data.permissions,
-        });
-
-        // Check for active impersonation session
-        const sessionResult = await superAdminService.getActiveSession();
-        if (sessionResult.data) {
+      const superAdminDoc = await getDoc(doc(db, 'super_admins', userId));
+      if (superAdminDoc.exists()) {
+        const data = superAdminDoc.data();
+        if (data.is_active) {
           set({
-            impersonationContext: {
-              isImpersonating: true,
-              sessionId: sessionResult.data.id,
-              originalUserId: get().user?.id || '',
-              impersonatedUserId: sessionResult.data.impersonating_user_id,
-              impersonatedOrgId: sessionResult.data.impersonating_org_id,
-              impersonatedUserName: null, // Would need to fetch
-              impersonatedOrgName: null, // Would need to fetch
-              impersonatedRole: 'user', // Default, would need to fetch actual role
-              expiresAt: sessionResult.data.expires_at,
-            },
+            isSuperAdmin: true,
+            superAdminPermissions: data.permissions || [],
           });
-        } else {
-          // No active session - clear any stale impersonation context
-          set({ impersonationContext: null });
+          return;
         }
-      } else {
-        console.log('[AuthStore] No super admin data, setting isSuperAdmin = false');
-        set({
-          isSuperAdmin: false,
-          superAdminPermissions: [],
-          impersonationContext: null,
-        });
       }
+      set({ isSuperAdmin: false, superAdminPermissions: [] });
     } catch (error) {
-      console.error('[AuthStore] Error checking super admin status:', error);
-      set({
-        isSuperAdmin: false,
-        superAdminPermissions: [],
-        impersonationContext: null,
-      });
+      console.error('Error checking super admin status:', error);
+      set({ isSuperAdmin: false, superAdminPermissions: [] });
     }
   },
 
@@ -673,45 +386,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return get().superAdminPermissions.includes(permission);
   },
 
-  startImpersonation: async (userId: string, orgId: string, userName: string, orgName: string, role?: 'owner' | 'admin' | 'user') => {
-    const result = await superAdminService.startImpersonation(userId, orgId);
-
-    if (result.error) {
-      return { error: result.error.message };
-    }
-
-    if (result.data) {
-      set({
-        impersonationContext: {
-          isImpersonating: true,
-          sessionId: result.data.id,
-          originalUserId: get().user?.id || '',
-          impersonatedUserId: userId,
-          impersonatedOrgId: orgId,
-          impersonatedUserName: userName,
-          impersonatedOrgName: orgName,
-          impersonatedRole: role || 'user',
-          expiresAt: result.data.expires_at,
-        },
-      });
-    }
-
-    return { error: null };
+  startImpersonation: async (_userId: string, _orgId: string, _userName: string, _orgName: string, _role?: 'owner' | 'admin' | 'user') => {
+    // TODO: Implement with Firestore
+    return { error: 'Not implemented yet' };
   },
 
   endImpersonation: async () => {
-    const { impersonationContext } = get();
-
-    if (!impersonationContext?.sessionId) {
-      return { error: 'No active impersonation session' };
-    }
-
-    const result = await superAdminService.endImpersonation(impersonationContext.sessionId);
-
-    if (result.error) {
-      return { error: result.error.message };
-    }
-
+    // TODO: Implement with Firestore
     set({ impersonationContext: null });
     return { error: null };
   },

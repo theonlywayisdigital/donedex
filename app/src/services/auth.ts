@@ -1,13 +1,26 @@
-import { supabase } from './supabase';
-import type { User, Session } from '@supabase/supabase-js';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../constants/config';
+/**
+ * Authentication Service
+ * Uses Firebase Auth for authentication
+ */
+
 import {
-  checkActiveSession,
-  createSession,
-  deactivateSession,
-  getUserRole,
-  isRoleRestricted,
-} from './deviceSession';
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut as firebaseSignOut,
+  sendPasswordResetEmail,
+  onAuthStateChanged,
+  User as FirebaseUser,
+  updateProfile,
+  updatePassword,
+} from 'firebase/auth';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { auth, db } from './firebase';
+
+// Extended User type with 'id' for backwards compatibility
+// Firebase uses 'uid', but our app uses 'id' everywhere
+export interface User extends FirebaseUser {
+  id: string; // Alias for uid
+}
 
 export interface AuthError {
   message: string;
@@ -15,7 +28,6 @@ export interface AuthError {
 
 export interface SignInResult {
   user: User | null;
-  session: Session | null;
   error: AuthError | null;
 }
 
@@ -29,77 +41,74 @@ export interface ResetPasswordResult {
 
 export interface SignUpResult {
   user: User | null;
-  session: Session | null;
   error: AuthError | null;
 }
 
-export interface PasswordVerifyResult {
-  user: User | null;
-  requiresOTP: boolean;
-  error: AuthError | null;
+export type UserRole = 'owner' | 'admin' | 'user';
+
+export interface UserProfile {
+  id: string;
+  full_name: string | null;
+  phone_number: string | null;
+  email?: string | null;
+  organisation_id?: string | null;
+  role?: UserRole | null;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface OTPResult {
-  success: boolean;
-  error: AuthError | null;
+export interface Organisation {
+  id: string;
+  name: string;
+  slug: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserOrganisationData {
+  role: UserRole;
+  organisation: Organisation | null;
+}
+
+// Helper to add 'id' property to Firebase user
+function extendUser(firebaseUser: FirebaseUser): User {
+  return Object.assign(firebaseUser, { id: firebaseUser.uid });
 }
 
 /**
  * Sign up with email and password
- * Note: If email confirmation is disabled, this will create a session immediately.
- * If email confirmation is enabled but we want auto-login, we sign in after sign-up.
  */
-export async function signUp(email: string, password: string, fullName?: string): Promise<SignUpResult> {
+export async function signUp(
+  email: string,
+  password: string,
+  fullName?: string,
+  phone?: string
+): Promise<SignUpResult> {
   try {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: fullName ? { data: { full_name: fullName } } : undefined,
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = extendUser(userCredential.user);
+
+    // Update display name if provided
+    if (fullName) {
+      await updateProfile(user, { displayName: fullName });
+    }
+
+    // Create user profile in Firestore
+    await setDoc(doc(db, 'users', user.uid), {
+      id: user.uid,
+      email: user.email,
+      full_name: fullName || null,
+      phone_number: phone || null,
+      organisation_id: null,
+      role: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     });
 
-    if (error) {
-      return {
-        user: null,
-        session: null,
-        error: { message: error.message },
-      };
-    }
-
-    // If no session returned (email confirmation required), try to sign in immediately
-    // This works if "Confirm email" is disabled in Supabase Auth settings
-    // or if we manually confirmed the user
-    if (data.user && !data.session) {
-      // Try to sign in - this will fail if email confirmation is truly required
-      const signInResult = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (signInResult.error) {
-        // If sign in fails, return the user but no session
-        // The UI should handle this case (show "check your email" message)
-        return {
-          user: data.user,
-          session: null,
-          error: { message: 'Please check your email to confirm your account.' },
-        };
-      }
-
-      return {
-        user: signInResult.data.user,
-        session: signInResult.data.session,
-        error: null,
-      };
-    }
-
-    return {
-      user: data.user,
-      session: data.session,
-      error: null,
-    };
-  } catch (err) {
+    return { user, error: null };
+  } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Sign up failed';
-    return { user: null, session: null, error: { message } };
+    return { user: null, error: { message: mapFirebaseError(message) } };
   }
 }
 
@@ -108,257 +117,22 @@ export async function signUp(email: string, password: string, fullName?: string)
  */
 export async function signIn(email: string, password: string): Promise<SignInResult> {
   try {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      return {
-        user: null,
-        session: null,
-        error: { message: error.message },
-      };
-    }
-
-    return {
-      user: data.user,
-      session: data.session,
-      error: null,
-    };
-  } catch (err) {
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    return { user: extendUser(userCredential.user), error: null };
+  } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Sign in failed';
-    return { user: null, session: null, error: { message } };
-  }
-}
-
-/**
- * Verify password and send OTP (Step 1 of 2FA login)
- * Returns user info if password correct, triggers OTP email
- */
-export async function verifyPasswordAndSendOTP(email: string, password: string): Promise<PasswordVerifyResult> {
-  console.log('[Auth] verifyPasswordAndSendOTP called for:', email);
-  try {
-    // First verify the password is correct by attempting sign in
-    console.log('[Auth] Attempting password sign in...');
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      console.error('[Auth] Password sign in failed:', error.message);
-      return {
-        user: null,
-        requiresOTP: false,
-        error: { message: error.message },
-      };
-    }
-
-    if (!data.user) {
-      console.error('[Auth] No user returned from sign in');
-      return {
-        user: null,
-        requiresOTP: false,
-        error: { message: 'Invalid credentials' },
-      };
-    }
-
-    console.log('[Auth] Password verified for user:', data.user.id);
-
-    // Sign out immediately - we don't want to complete login yet
-    await supabase.auth.signOut();
-
-    // Send OTP to the user's email via Edge Function
-    console.log('[Auth] Sending OTP to:', data.user.email);
-    console.log('[Auth] SUPABASE_URL:', SUPABASE_URL);
-
-    try {
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/send-login-otp`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({
-          userId: data.user.id,
-          email: data.user.email,
-        }),
-      });
-
-      console.log('[Auth] OTP response status:', response.status);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('[Auth] OTP send failed:', errorData);
-        return {
-          user: data.user,
-          requiresOTP: false,
-          error: { message: errorData.error || 'Failed to send verification code' },
-        };
-      }
-
-      console.log('[Auth] OTP sent successfully');
-      return {
-        user: data.user,
-        requiresOTP: true,
-        error: null,
-      };
-    } catch (fetchError) {
-      console.error('[Auth] OTP fetch error:', fetchError);
-      return {
-        user: data.user,
-        requiresOTP: false,
-        error: { message: 'Failed to send verification code. Please try again.' },
-      };
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Verification failed';
-    return { user: null, requiresOTP: false, error: { message } };
-  }
-}
-
-/**
- * Verify OTP and complete login (Step 2 of 2FA login)
- * Includes single-device login check for staff users
- */
-export async function verifyOTPAndSignIn(
-  email: string,
-  password: string,
-  userId: string,
-  otpCode: string
-): Promise<SignInResult> {
-  try {
-    // Verify OTP via database function
-    const { data: isValid, error: otpError } = await supabase.rpc('verify_email_otp' as never, {
-      p_user_id: userId,
-      p_code: otpCode,
-    } as never);
-
-    if (otpError) {
-      console.error('OTP verification error:', otpError);
-      return {
-        user: null,
-        session: null,
-        error: { message: 'Failed to verify code' },
-      };
-    }
-
-    if (!isValid) {
-      return {
-        user: null,
-        session: null,
-        error: { message: 'Invalid or expired code. Please try again.' },
-      };
-    }
-
-    // Check if user is staff (requires single-device login)
-    const userRole = await getUserRole(userId);
-    console.log('[Auth] User role:', userRole);
-
-    if (isRoleRestricted(userRole)) {
-      // Check for existing active session
-      const sessionInfo = await checkActiveSession(userId);
-      console.log('[Auth] Session check result:', sessionInfo);
-
-      if (sessionInfo.hasActiveSession) {
-        // BLOCK login - don't kick the existing user
-        console.log('[Auth] Blocking login - active session exists on:', sessionInfo.deviceName);
-        return {
-          user: null,
-          session: null,
-          error: {
-            message: 'This account is already logged in on another device. Contact your admin if you need to reset your session.',
-          },
-        };
-      }
-    }
-
-    // OTP is valid and no session conflict, complete the sign in
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      return {
-        user: null,
-        session: null,
-        error: { message: error.message },
-      };
-    }
-
-    // Create session record for staff users
-    if (data.user && isRoleRestricted(userRole)) {
-      await createSession(data.user.id);
-    }
-
-    return {
-      user: data.user,
-      session: data.session,
-      error: null,
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Sign in failed';
-    return { user: null, session: null, error: { message } };
-  }
-}
-
-/**
- * Resend OTP code
- */
-export async function resendOTP(userId: string, email: string): Promise<OTPResult> {
-  try {
-    console.log('[Auth] Resending OTP to:', email);
-
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/send-login-otp`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify({
-        userId,
-        email,
-      }),
-    });
-
-    console.log('[Auth] Resend OTP response status:', response.status);
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('[Auth] Resend OTP failed:', errorData);
-      return {
-        success: false,
-        error: { message: errorData.error || 'Failed to resend code' },
-      };
-    }
-
-    return { success: true, error: null };
-  } catch (err) {
-    console.error('[Auth] Resend OTP error:', err);
-    const message = err instanceof Error ? err.message : 'Failed to resend code';
-    return { success: false, error: { message } };
+    return { user: null, error: { message: mapFirebaseError(message) } };
   }
 }
 
 /**
  * Sign out the current user
- * Also deactivates the device session for single-device enforcement
  */
 export async function signOut(): Promise<SignOutResult> {
   try {
-    // Deactivate session record first (before signing out, while still authenticated)
-    await deactivateSession();
-
-    const { error } = await supabase.auth.signOut();
-
-    if (error) {
-      return { error: { message: error.message } };
-    }
-
+    await firebaseSignOut(auth);
     return { error: null };
-  } catch (err) {
+  } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Sign out failed';
     return { error: { message } };
   }
@@ -369,124 +143,104 @@ export async function signOut(): Promise<SignOutResult> {
  */
 export async function resetPassword(email: string): Promise<ResetPasswordResult> {
   try {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'https://donedex-app.netlify.app/auth/callback',
+    const redirectUrl = typeof window !== 'undefined'
+      ? window.location.origin + '/auth/callback'
+      : 'http://localhost:8081/auth/callback';
+
+    await sendPasswordResetEmail(auth, email, {
+      url: redirectUrl,
     });
-
-    if (error) {
-      return { error: { message: error.message } };
-    }
-
     return { error: null };
-  } catch (err) {
+  } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Password reset failed';
-    return { error: { message } };
+    return { error: { message: mapFirebaseError(message) } };
   }
 }
 
 /**
- * Get current session
+ * Update password for current user
  */
-export async function getCurrentSession(): Promise<Session | null> {
+export async function changePassword(newPassword: string): Promise<{ error: string | null }> {
   try {
-    const { data } = await supabase.auth.getSession();
-    return data.session;
-  } catch (err) {
-    console.error('getCurrentSession error:', err);
-    return null;
+    const user = auth.currentUser;
+    if (!user) {
+      return { error: 'No user signed in' };
+    }
+    await updatePassword(user, newPassword);
+    return { error: null };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Password change failed';
+    return { error: mapFirebaseError(message) };
   }
+}
+
+/**
+ * Get current session (Firebase doesn't have sessions, just return user)
+ */
+export async function getCurrentSession(): Promise<{ user: User } | null> {
+  const user = auth.currentUser;
+  return user ? { user: extendUser(user) } : null;
 }
 
 /**
  * Get current user
  */
 export async function getCurrentUser(): Promise<User | null> {
-  try {
-    const { data } = await supabase.auth.getUser();
-    return data.user;
-  } catch (err) {
-    console.error('getCurrentUser error:', err);
-    return null;
-  }
+  const user = auth.currentUser;
+  return user ? extendUser(user) : null;
 }
 
 /**
  * Listen for auth state changes
  */
 export function onAuthStateChange(
-  callback: (event: string, session: Session | null) => void
-) {
-  const { data } = supabase.auth.onAuthStateChange((event, session) => {
-    callback(event, session);
+  callback: (event: string, session: { user: User } | null) => void
+): { unsubscribe: () => void } {
+  const unsubscribe = onAuthStateChanged(auth, (user) => {
+    if (user) {
+      callback('SIGNED_IN', { user: extendUser(user) });
+    } else {
+      callback('SIGNED_OUT', null);
+    }
   });
-
-  return data.subscription;
-}
-
-export type UserRole = 'owner' | 'admin' | 'user';
-
-export interface UserOrganisationData {
-  role: UserRole;
-  organisation: {
-    id: string;
-    name: string;
-  } | null;
+  return { unsubscribe };
 }
 
 /**
- * Fetch user profile from user_profiles table
+ * Fetch user profile from Firestore
  */
-export async function fetchUserProfile(userId: string) {
+export async function fetchUserProfile(userId: string): Promise<UserProfile | null> {
   try {
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
+    const docRef = doc(db, 'users', userId);
+    const docSnap = await getDoc(docRef);
 
-    if (error) {
-      console.error('fetchUserProfile error:', error.message);
-      return null;
+    if (docSnap.exists()) {
+      return docSnap.data() as UserProfile;
     }
-
-    return data;
+    return null;
   } catch (err) {
-    console.error('fetchUserProfile exception:', err);
+    console.error('fetchUserProfile error:', err);
     return null;
   }
 }
 
 /**
- * Fetch organisation blocked/archived status (lightweight check)
+ * Update user profile in Firestore
  */
-export async function fetchOrgStatus(orgId: string): Promise<{
-  blocked: boolean;
-  archived: boolean;
-  blocked_reason?: string | null;
-} | null> {
+export async function updateUserProfile(
+  userId: string,
+  updates: Partial<UserProfile>
+): Promise<{ error: string | null }> {
   try {
-    const { data, error } = await supabase
-      .from('organisations')
-      .select('blocked, archived, blocked_reason')
-      .eq('id', orgId)
-      .single() as unknown as {
-        data: { blocked: boolean | null; archived: boolean | null; blocked_reason: string | null } | null;
-        error: { message: string } | null;
-      };
-
-    if (error || !data) {
-      if (error) console.error('fetchOrgStatus error:', error.message);
-      return null;
-    }
-
-    return {
-      blocked: data.blocked ?? false,
-      archived: data.archived ?? false,
-      blocked_reason: data.blocked_reason,
-    };
+    const docRef = doc(db, 'users', userId);
+    await updateDoc(docRef, {
+      ...updates,
+      updated_at: new Date().toISOString(),
+    });
+    return { error: null };
   } catch (err) {
-    console.error('fetchOrgStatus exception:', err);
-    return null;
+    console.error('updateUserProfile error:', err);
+    return { error: err instanceof Error ? err.message : 'Update failed' };
   }
 }
 
@@ -495,26 +249,85 @@ export async function fetchOrgStatus(orgId: string): Promise<{
  */
 export async function fetchUserOrganisation(userId: string): Promise<UserOrganisationData | null> {
   try {
-    const { data, error } = await supabase
-      .from('organisation_users')
-      .select(`
-        role,
-        organisation:organisations (
-          id,
-          name
-        )
-      `)
-      .eq('user_id', userId)
-      .single() as unknown as { data: UserOrganisationData | null; error: { message: string } | null };
+    // Get user's profile which contains org membership
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (!userDoc.exists()) return null;
 
-    if (error) {
-      console.error('fetchUserOrganisation error:', error.message);
-      return null;
-    }
+    const userData = userDoc.data();
+    const orgId = userData.organisation_id;
+    const role = userData.role || 'user';
 
-    return data;
+    if (!orgId) return null;
+
+    // Get organisation details
+    const orgDoc = await getDoc(doc(db, 'organisations', orgId));
+    if (!orgDoc.exists()) return null;
+
+    const orgData = orgDoc.data();
+    return {
+      role: role as UserRole,
+      organisation: {
+        id: orgId,
+        name: orgData.name,
+        slug: orgData.slug || null,
+        created_at: orgData.created_at,
+        updated_at: orgData.updated_at,
+      },
+    };
   } catch (err) {
-    console.error('fetchUserOrganisation exception:', err);
+    console.error('fetchUserOrganisation error:', err);
     return null;
   }
+}
+
+/**
+ * Fetch organisation status (blocked/archived)
+ */
+export async function fetchOrgStatus(orgId: string): Promise<{
+  blocked: boolean;
+  archived: boolean;
+  blocked_reason?: string | null;
+} | null> {
+  try {
+    const orgDoc = await getDoc(doc(db, 'organisations', orgId));
+    if (!orgDoc.exists()) return null;
+
+    const data = orgDoc.data();
+    return {
+      blocked: data.blocked ?? false,
+      archived: data.archived ?? false,
+      blocked_reason: data.blocked_reason || null,
+    };
+  } catch (err) {
+    console.error('fetchOrgStatus error:', err);
+    return null;
+  }
+}
+
+/**
+ * Map Firebase error codes to user-friendly messages
+ */
+function mapFirebaseError(message: string): string {
+  if (message.includes('auth/email-already-in-use')) {
+    return 'An account with this email already exists';
+  }
+  if (message.includes('auth/invalid-email')) {
+    return 'Please enter a valid email address';
+  }
+  if (message.includes('auth/weak-password')) {
+    return 'Password should be at least 6 characters';
+  }
+  if (message.includes('auth/user-not-found')) {
+    return 'No account found with this email';
+  }
+  if (message.includes('auth/wrong-password')) {
+    return 'Incorrect password';
+  }
+  if (message.includes('auth/invalid-credential')) {
+    return 'Invalid email or password';
+  }
+  if (message.includes('auth/too-many-requests')) {
+    return 'Too many failed attempts. Please try again later';
+  }
+  return message;
 }

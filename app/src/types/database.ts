@@ -1,7 +1,6 @@
 /**
  * Donedex Database Types
- * These types should be regenerated using: supabase gen types typescript
- * Updated for Record Types refactor (Migration 007)
+ * Updated for Record Types refactor
  */
 
 export type Json =

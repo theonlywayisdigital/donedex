@@ -17,6 +17,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.donedex.app",
       "associatedDomains": ["applinks:donedex-app.netlify.app"],
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -28,6 +29,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.donedex.app",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.CAMERA"

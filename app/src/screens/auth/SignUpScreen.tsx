@@ -27,7 +27,10 @@ interface Props {
 }
 
 export function SignUpScreen({ navigation }: Props) {
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +38,14 @@ export function SignUpScreen({ navigation }: Props) {
   const { signUp, isLoading } = useAuthStore();
 
   const validateForm = (): boolean => {
+    if (!firstName.trim()) {
+      setError('Please enter your first name');
+      return false;
+    }
+    if (!lastName.trim()) {
+      setError('Please enter your last name');
+      return false;
+    }
     if (!email.trim()) {
       setError('Please enter your email address');
       return false;
@@ -65,7 +76,8 @@ export function SignUpScreen({ navigation }: Props) {
       return;
     }
 
-    const result = await signUp(email.trim(), password);
+    const fullName = `${firstName.trim()} ${lastName.trim()}`;
+    const result = await signUp(email.trim(), password, fullName, phone.trim() || undefined);
 
     if (result.error) {
       setError(result.error);
@@ -101,6 +113,24 @@ export function SignUpScreen({ navigation }: Props) {
             )}
 
             <Input
+              label="First Name"
+              placeholder="Enter your first name"
+              value={firstName}
+              onChangeText={setFirstName}
+              autoCapitalize="words"
+              autoComplete="given-name"
+            />
+
+            <Input
+              label="Last Name"
+              placeholder="Enter your last name"
+              value={lastName}
+              onChangeText={setLastName}
+              autoCapitalize="words"
+              autoComplete="family-name"
+            />
+
+            <Input
               label="Email"
               placeholder="Enter your email"
               value={email}
@@ -109,6 +139,15 @@ export function SignUpScreen({ navigation }: Props) {
               autoCapitalize="none"
               autoCorrect={false}
               autoComplete="email"
+            />
+
+            <Input
+              label="Phone (optional)"
+              placeholder="Enter your phone number"
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              autoComplete="tel"
             />
 
             <Input
@@ -147,7 +186,7 @@ export function SignUpScreen({ navigation }: Props) {
               title="Create Account"
               onPress={handleSignUp}
               loading={isLoading}
-              disabled={!email || !password || !confirmPassword}
+              disabled={!firstName || !lastName || !email || !password || !confirmPassword}
               fullWidth
             />
 
