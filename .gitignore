@@ -59,3 +59,7 @@ android/
 # Google Cloud SDK (local install)
 functions/google-cloud-sdk/
 functions/google-cloud-cli-*.tar.gz
+
+# Firebase config files with API keys
+app/google-services.json
+app/GoogleService-Info.plist
