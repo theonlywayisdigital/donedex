@@ -24,6 +24,10 @@ import {
   setDoc,
   deleteDoc,
 } from './firestore';
+
+// Cloud Function URL
+const CLOUD_FUNCTION_BASE_URL = process.env.EXPO_PUBLIC_FIREBASE_FUNCTIONS_URL ||
+  'https://europe-west2-donedex-72116.cloudfunctions.net';
 import type {
   SuperAdmin,
   SuperAdminWithPermissions,
@@ -639,16 +643,43 @@ interface CreateOrganisationParams {
 }
 
 /**
- * Provision users for an organisation
- * Note: In Firebase, this would need Cloud Functions for full implementation
+ * Provision users for an organisation via Cloud Function
  */
 export async function provisionOrgUsers(
   organisationId: string,
   users: OrgUserToProvision[]
 ): Promise<ServiceResult<ProvisionResult[]>> {
-  // TODO: Implement via Firebase Cloud Functions
-  console.warn('[SuperAdmin] provisionOrgUsers requires Cloud Functions');
-  return { data: [], error: { message: 'User provisioning requires Cloud Functions (not yet implemented)' } };
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      return { data: null, error: { message: 'Not authenticated' } };
+    }
+
+    const idToken = await user.getIdToken();
+
+    const response = await fetch(`${CLOUD_FUNCTION_BASE_URL}/provisionOrgUsersHttp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        organisationId,
+        users,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to provision users' }));
+      return { data: null, error: { message: errorData.error || 'Failed to provision users' } };
+    }
+
+    const data = await response.json();
+    return { data: data.results || [], error: null };
+  } catch (err) {
+    console.error('[SuperAdmin] Error provisioning users:', err);
+    return { data: null, error: { message: err instanceof Error ? err.message : 'Failed to provision users' } };
+  }
 }
 
 /**
@@ -709,12 +740,36 @@ export async function createOrganisation(
 // ============================================
 
 /**
- * Send an invitation email
- * Note: Requires Cloud Functions for email sending
+ * Send an invitation email via Cloud Function
  */
 export async function sendInviteEmail(invitationId: string): Promise<ServiceResult<null>> {
-  console.warn('[SuperAdmin] sendInviteEmail requires Cloud Functions');
-  return { data: null, error: { message: 'Email sending requires Cloud Functions' } };
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      return { data: null, error: { message: 'Not authenticated' } };
+    }
+
+    const idToken = await user.getIdToken();
+
+    const response = await fetch(`${CLOUD_FUNCTION_BASE_URL}/sendInviteHttp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ invitationId }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to send invitation email' }));
+      return { data: null, error: { message: errorData.error || 'Failed to send invitation email' } };
+    }
+
+    return { data: null, error: null };
+  } catch (err) {
+    console.error('[SuperAdmin] Error sending invite email:', err);
+    return { data: null, error: { message: err instanceof Error ? err.message : 'Failed to send invitation email' } };
+  }
 }
 
 /**
