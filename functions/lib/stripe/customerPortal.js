@@ -57,7 +57,7 @@ function getStripe() {
     }
     return stripeClient;
 }
-exports.createCustomerPortal = (0, https_1.onCall)({ region: 'europe-west2' }, async (request) => {
+exports.createCustomerPortal = (0, https_1.onCall)({ region: 'europe-west2', secrets: ['STRIPE_SECRET_KEY'] }, async (request) => {
     // Verify authentication
     if (!request.auth) {
         throw new https_1.HttpsError('unauthenticated', 'Must be authenticated');
@@ -100,7 +100,7 @@ exports.createCustomerPortal = (0, https_1.onCall)({ region: 'europe-west2' }, a
     };
 });
 // HTTP version
-exports.createCustomerPortalHttp = (0, https_1.onRequest)({ cors: true, region: 'europe-west2' }, async (req, res) => {
+exports.createCustomerPortalHttp = (0, https_1.onRequest)({ cors: true, region: 'europe-west2', secrets: ['STRIPE_SECRET_KEY'] }, async (req, res) => {
     if (req.method === 'OPTIONS') {
         res.status(200).send('');
         return;

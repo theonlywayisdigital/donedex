@@ -110,7 +110,7 @@ function generateInviteEmail(orgName, inviterName, role, inviteToken, isNewUser)
 </body>
 </html>`;
 }
-exports.sendInvite = (0, https_1.onCall)({ region: 'europe-west2' }, async (request) => {
+exports.sendInvite = (0, https_1.onCall)({ region: 'europe-west2', secrets: ['RESEND_API_KEY'] }, async (request) => {
     var _a;
     const { invitationId } = request.data;
     if (!invitationId) {
@@ -218,7 +218,7 @@ exports.sendInvite = (0, https_1.onCall)({ region: 'europe-west2' }, async (requ
     };
 });
 // HTTP version for internal calls
-exports.sendInviteHttp = (0, https_1.onRequest)({ cors: true, region: 'europe-west2' }, async (req, res) => {
+exports.sendInviteHttp = (0, https_1.onRequest)({ cors: true, region: 'europe-west2', secrets: ['RESEND_API_KEY'] }, async (req, res) => {
     var _a;
     if (req.method === 'OPTIONS') {
         res.status(200).send('');

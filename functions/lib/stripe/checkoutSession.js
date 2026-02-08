@@ -184,7 +184,7 @@ async function createCheckoutLogic(data, callerUid) {
         sessionId: session.id,
     };
 }
-exports.createCheckoutSession = (0, https_1.onCall)({ region: 'europe-west2' }, async (request) => {
+exports.createCheckoutSession = (0, https_1.onCall)({ region: 'europe-west2', secrets: ['STRIPE_SECRET_KEY'] }, async (request) => {
     // Verify authentication
     if (!request.auth) {
         throw new https_1.HttpsError('unauthenticated', 'Must be authenticated');
@@ -192,7 +192,7 @@ exports.createCheckoutSession = (0, https_1.onCall)({ region: 'europe-west2' }, 
     return createCheckoutLogic(request.data, request.auth.uid);
 });
 // HTTP version for flexibility
-exports.createCheckoutSessionHttp = (0, https_1.onRequest)({ cors: true, region: 'europe-west2' }, async (req, res) => {
+exports.createCheckoutSessionHttp = (0, https_1.onRequest)({ cors: true, region: 'europe-west2', secrets: ['STRIPE_SECRET_KEY'] }, async (req, res) => {
     if (req.method === 'OPTIONS') {
         res.status(200).send('');
         return;

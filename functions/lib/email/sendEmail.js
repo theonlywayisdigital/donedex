@@ -404,7 +404,7 @@ async function sendEmailWithResend(to, subject, html) {
     }
 }
 // Main Cloud Function - v2 API
-exports.sendEmail = (0, https_1.onCall)({ region: 'europe-west2' }, async (request) => {
+exports.sendEmail = (0, https_1.onCall)({ region: 'europe-west2', secrets: ['RESEND_API_KEY'] }, async (request) => {
     const { type, to, data: emailData, branding } = request.data;
     // Validate request
     if (!type || !to || !emailData) {
@@ -422,7 +422,7 @@ exports.sendEmail = (0, https_1.onCall)({ region: 'europe-west2' }, async (reque
     }
 });
 // HTTP endpoint version for webhooks
-exports.sendEmailHttp = (0, https_1.onRequest)({ cors: true, region: 'europe-west2' }, async (req, res) => {
+exports.sendEmailHttp = (0, https_1.onRequest)({ cors: true, region: 'europe-west2', secrets: ['RESEND_API_KEY'] }, async (req, res) => {
     if (req.method === 'OPTIONS') {
         res.status(200).send('');
         return;

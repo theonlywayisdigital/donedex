@@ -445,7 +445,7 @@ export async function sendEmailWithResend(
 }
 
 // Main Cloud Function - v2 API
-export const sendEmail = onCall<EmailRequest>({ region: 'europe-west2' }, async (request) => {
+export const sendEmail = onCall<EmailRequest>({ region: 'europe-west2', secrets: ['RESEND_API_KEY'] }, async (request) => {
   const { type, to, data: emailData, branding } = request.data;
 
   // Validate request
@@ -470,7 +470,7 @@ export const sendEmail = onCall<EmailRequest>({ region: 'europe-west2' }, async 
 });
 
 // HTTP endpoint version for webhooks
-export const sendEmailHttp = onRequest({ cors: true, region: 'europe-west2' }, async (req, res) => {
+export const sendEmailHttp = onRequest({ cors: true, region: 'europe-west2', secrets: ['RESEND_API_KEY'] }, async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.status(200).send('');
     return;

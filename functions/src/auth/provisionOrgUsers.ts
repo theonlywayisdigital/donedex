@@ -242,7 +242,7 @@ async function provisionUsersLogic(
   };
 }
 
-export const provisionOrgUsers = onCall<ProvisionRequest>({ region: 'europe-west2' }, async (request) => {
+export const provisionOrgUsers = onCall<ProvisionRequest>({ region: 'europe-west2', secrets: ['RESEND_API_KEY'] }, async (request) => {
   // Verify caller is authenticated
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be authenticated');
@@ -258,7 +258,7 @@ export const provisionOrgUsers = onCall<ProvisionRequest>({ region: 'europe-west
 });
 
 // HTTP version for internal use
-export const provisionOrgUsersHttp = onRequest({ cors: true, region: 'europe-west2' }, async (req, res) => {
+export const provisionOrgUsersHttp = onRequest({ cors: true, region: 'europe-west2', secrets: ['RESEND_API_KEY'] }, async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.status(200).send('');
     return;

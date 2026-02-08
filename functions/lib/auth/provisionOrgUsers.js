@@ -221,7 +221,7 @@ async function provisionUsersLogic(organisationId, users, callerUid) {
         success: errors.length < results.length,
     };
 }
-exports.provisionOrgUsers = (0, https_1.onCall)({ region: 'europe-west2' }, async (request) => {
+exports.provisionOrgUsers = (0, https_1.onCall)({ region: 'europe-west2', secrets: ['RESEND_API_KEY'] }, async (request) => {
     // Verify caller is authenticated
     if (!request.auth) {
         throw new https_1.HttpsError('unauthenticated', 'Must be authenticated');
@@ -233,7 +233,7 @@ exports.provisionOrgUsers = (0, https_1.onCall)({ region: 'europe-west2' }, asyn
     return provisionUsersLogic(organisationId, users, request.auth.uid);
 });
 // HTTP version for internal use
-exports.provisionOrgUsersHttp = (0, https_1.onRequest)({ cors: true, region: 'europe-west2' }, async (req, res) => {
+exports.provisionOrgUsersHttp = (0, https_1.onRequest)({ cors: true, region: 'europe-west2', secrets: ['RESEND_API_KEY'] }, async (req, res) => {
     if (req.method === 'OPTIONS') {
         res.status(200).send('');
         return;

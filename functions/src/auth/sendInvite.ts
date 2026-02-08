@@ -92,7 +92,7 @@ function generateInviteEmail(
 </html>`;
 }
 
-export const sendInvite = onCall<InviteRequest>({ region: 'europe-west2' }, async (request) => {
+export const sendInvite = onCall<InviteRequest>({ region: 'europe-west2', secrets: ['RESEND_API_KEY'] }, async (request) => {
   const { invitationId } = request.data;
 
   if (!invitationId) {
@@ -220,7 +220,7 @@ export const sendInvite = onCall<InviteRequest>({ region: 'europe-west2' }, asyn
 });
 
 // HTTP version for internal calls
-export const sendInviteHttp = onRequest({ cors: true, region: 'europe-west2' }, async (req, res) => {
+export const sendInviteHttp = onRequest({ cors: true, region: 'europe-west2', secrets: ['RESEND_API_KEY'] }, async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.status(200).send('');
     return;

@@ -26,7 +26,7 @@ interface PortalRequest {
   returnUrl?: string;
 }
 
-export const createCustomerPortal = onCall<PortalRequest>({ region: 'europe-west2' }, async (request) => {
+export const createCustomerPortal = onCall<PortalRequest>({ region: 'europe-west2', secrets: ['STRIPE_SECRET_KEY'] }, async (request) => {
   // Verify authentication
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Must be authenticated');
@@ -93,7 +93,7 @@ export const createCustomerPortal = onCall<PortalRequest>({ region: 'europe-west
 });
 
 // HTTP version
-export const createCustomerPortalHttp = onRequest({ cors: true, region: 'europe-west2' }, async (req, res) => {
+export const createCustomerPortalHttp = onRequest({ cors: true, region: 'europe-west2', secrets: ['STRIPE_SECRET_KEY'] }, async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.status(200).send('');
     return;

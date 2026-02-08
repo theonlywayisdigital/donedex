@@ -444,7 +444,7 @@ async function logWebhookEvent(event, error) {
     });
 }
 // Main webhook handler
-exports.stripeWebhook = (0, https_1.onRequest)({ region: 'europe-west2' }, async (req, res) => {
+exports.stripeWebhook = (0, https_1.onRequest)({ region: 'europe-west2', secrets: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'RESEND_API_KEY'] }, async (req, res) => {
     if (req.method === 'OPTIONS') {
         res.set('Access-Control-Allow-Origin', '*');
         res.set('Access-Control-Allow-Methods', 'POST');
